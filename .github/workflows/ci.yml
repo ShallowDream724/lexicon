@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.24.0
+          cache-dependency-path: services/dictionary-api/go.sum
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:contracts
+      - run: npm run test:api
+      - run: npm run build
+      - run: npm run test:web
+      - run: docker compose --env-file deploy/server/.env.example -f deploy/server/compose.yaml config --quiet
+      - run: docker compose --env-file deploy/server/.env.example -f deploy/server/compose.yaml build
+      - run: >-
+          docker run --rm
+          --env SITE_ADDRESS=:80
+          --volume "$PWD/deploy/server/Caddyfile:/etc/caddy/Caddyfile:ro"
+          caddy:2.10-alpine
+          caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile

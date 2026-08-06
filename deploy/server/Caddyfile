@@ -1,0 +1,18 @@
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	handle /api/v1/* {
+		reverse_proxy dictionary-api:8787
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+
+	header {
+		-Server
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+	}
+}

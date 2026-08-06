@@ -1,0 +1,67 @@
+name: lexicon-workbench
+
+services:
+  gateway:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      - web
+      - dictionary-api
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    ports:
+      - ${HTTP_PORT:-80}:80
+      - ${HTTPS_PORT:-443}:443
+      - ${HTTPS_PORT:-443}:443/udp
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  web:
+    build:
+      context: ../..
+      dockerfile: deploy/server/web.Dockerfile
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+      - /app/.next/cache:size=64m,mode=1777
+
+  dictionary-api:
+    build:
+      context: ../../services/dictionary-api
+    restart: unless-stopped
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    environment:
+      DICTIONARY_RUNTIME_DB_PATH: /var/lib/lexicon/dictionary.db
+      DICTIONARY_AUDIO_ZIP_PATH: /var/lib/lexicon/headword-audio.zip
+      DICTIONARY_LISTEN: 0.0.0.0:8787
+      DICTIONARY_CORS_ORIGINS: ${DICTIONARY_CORS_ORIGINS:?Set DICTIONARY_CORS_ORIGINS in deploy/server/.env}
+      DICTIONARY_EXAMPLE_AUDIO_BASE_URL: ${DICTIONARY_EXAMPLE_AUDIO_BASE_URL:-}
+      DICTIONARY_ILLUSTRATION_BASE_URL: ${DICTIONARY_ILLUSTRATION_BASE_URL:-}
+    volumes:
+      - type: bind
+        source: ${LEXICON_DATA_DIR:-../../data}/dictionary.db
+        target: /var/lib/lexicon/dictionary.db
+        read_only: true
+      - type: bind
+        source: ${LEXICON_DATA_DIR:-../../data}/headword-audio.zip
+        target: /var/lib/lexicon/headword-audio.zip
+        read_only: true
+
+volumes:
+  caddy-data:
+  caddy-config:

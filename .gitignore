@@ -17,6 +17,7 @@
 /.next/
 /.vinext/
 /out/
+/dist/
 
 # misc
 .DS_Store
@@ -28,15 +29,27 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# environment files
 .env*
-
-# vercel
-.vercel
+!.env.example
+!**/.env.example
 
 # typescript
 next-env.d.ts
-/dist/
+*.tsbuildinfo
+/data/
 /.wrangler/
 /outputs/
 /work/
+/$tmp/
+
+# dictionary sources, generated runtimes, and media
+*.apk
+*.db
+*.sqlite
+*.sqlite3
+*.zip
+*.pdf
+*.mp3
+*.wav
+rest-api.json
