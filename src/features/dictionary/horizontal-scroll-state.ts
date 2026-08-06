@@ -25,6 +25,38 @@ export type HorizontalTabLayout = {
   pageWidth: number;
 };
 
+export type HorizontalTabAvailableWidthMetrics = {
+  dockWidth: number;
+  visualViewportWidth?: number;
+  paddingStart: number;
+  paddingEnd: number;
+  trailingControlWidth: number;
+  gap: number;
+};
+
+function finiteNonNegative(value: number): number {
+  return Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
+export function horizontalTabAvailableWidth(
+  metrics: HorizontalTabAvailableWidthMetrics,
+): number {
+  const dockWidth = finiteNonNegative(metrics.dockWidth);
+  const visualViewportWidth = finiteNonNegative(metrics.visualViewportWidth ?? 0);
+  const visibleDockWidth = visualViewportWidth > 0
+    ? Math.min(dockWidth, visualViewportWidth)
+    : dockWidth;
+
+  return Math.max(
+    0,
+    visibleDockWidth -
+      finiteNonNegative(metrics.paddingStart) -
+      finiteNonNegative(metrics.paddingEnd) -
+      finiteNonNegative(metrics.trailingControlWidth) -
+      finiteNonNegative(metrics.gap),
+  );
+}
+
 export function fitHorizontalTabsToWidth(
   metrics: HorizontalTabLayoutMetrics,
   tolerance = 1,

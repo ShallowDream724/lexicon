@@ -3,9 +3,45 @@ import test from "node:test";
 
 import {
   fitHorizontalTabsToWidth,
+  horizontalTabAvailableWidth,
   horizontalScrollState,
   scrollLeftToAlignItemStart,
 } from "../../src/features/dictionary/horizontal-scroll-state";
+
+test("bounds the dock measurement to the current visual viewport", () => {
+  assert.equal(
+    horizontalTabAvailableWidth({
+      dockWidth: 393,
+      visualViewportWidth: 360,
+      paddingStart: 12,
+      paddingEnd: 12,
+      trailingControlWidth: 84,
+      gap: 12,
+    }),
+    240,
+  );
+  assert.equal(
+    horizontalTabAvailableWidth({
+      dockWidth: 393,
+      paddingStart: 12,
+      paddingEnd: 12,
+      trailingControlWidth: 84,
+      gap: 12,
+    }),
+    273,
+  );
+  assert.equal(
+    horizontalTabAvailableWidth({
+      dockWidth: Number.NaN,
+      visualViewportWidth: Number.POSITIVE_INFINITY,
+      paddingStart: 12,
+      paddingEnd: 12,
+      trailingControlWidth: 84,
+      gap: 12,
+    }),
+    0,
+  );
+});
 
 test("fits the largest whole number of tabs into the measured dock width", () => {
   assert.deepEqual(

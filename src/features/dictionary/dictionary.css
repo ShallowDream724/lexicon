@@ -2392,20 +2392,20 @@
   box-shadow: 0 .16rem .48rem #00132c24;
   display: flex;
   flex: 0 1 auto;
-  max-width: calc(100vw - 3.2rem);
+  max-width: 100%;
   min-width: 0;
   overflow: hidden;
 }
 
 .mobile-quick-find-part-tabs-frame.is-overflowing {
-  flex-shrink: 0;
+  flex-shrink: 1;
 }
 
 .mobile-quick-find-part-tabs {
   align-items: center;
   display: flex;
-  flex: 0 1 auto;
-  max-width: 100%;
+  flex: 1 1 0;
+  max-width: none;
   min-width: 0;
   min-height: 1.38667rem;
   overflow-x: auto;
@@ -2413,6 +2413,7 @@
   scroll-padding-inline: var(--mobile-part-static-inset);
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
+  width: 0;
 }
 
 .mobile-quick-find-part-tabs-frame.is-overflowing .mobile-quick-find-part-tabs {

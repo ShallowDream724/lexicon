@@ -17,6 +17,7 @@ import type {
 import type { EntryPartProjection } from "../entry-sections";
 import {
   fitHorizontalTabsToWidth,
+  horizontalTabAvailableWidth,
   horizontalScrollState,
   scrollLeftToAlignItemStart,
   type HorizontalScrollState,
@@ -84,21 +85,23 @@ export function MobileQuickFind({
         );
         const pixels = (value: string) => {
           const normalized = value.trim();
-          if (normalized.endsWith("rem")) {
-            return Number.parseFloat(normalized) * rootFontSize;
+          const parsed = Number.parseFloat(normalized);
+          if (!Number.isFinite(parsed)) {
+            return 0;
           }
-          return Number.parseFloat(normalized) || 0;
+          if (normalized.endsWith("rem")) {
+            return parsed * (Number.isFinite(rootFontSize) ? rootFontSize : 0);
+          }
+          return parsed;
         };
-        const dockContentWidth =
-          dock.clientWidth -
-          Number.parseFloat(dockStyle.paddingLeft) -
-          Number.parseFloat(dockStyle.paddingRight);
-        const availableWidth = Math.max(
-          0,
-          dockContentWidth -
-            trigger.getBoundingClientRect().width -
-            Number.parseFloat(dockStyle.columnGap),
-        );
+        const availableWidth = horizontalTabAvailableWidth({
+          dockWidth: dock.getBoundingClientRect().width,
+          visualViewportWidth: window.visualViewport?.width,
+          paddingStart: pixels(dockStyle.paddingLeft),
+          paddingEnd: pixels(dockStyle.paddingRight),
+          trailingControlWidth: trigger.getBoundingClientRect().width,
+          gap: pixels(dockStyle.columnGap),
+        });
         const staticInset = pixels(
           frameStyle.getPropertyValue("--mobile-part-static-inset"),
         );
@@ -108,10 +111,14 @@ export function MobileQuickFind({
         const cueWidth = pixels(
           frameStyle.getPropertyValue("--mobile-part-cue-width"),
         );
+        const itemWidth = firstPart.getBoundingClientRect().width;
+        if (availableWidth <= 0 || !Number.isFinite(itemWidth) || itemWidth <= 0) {
+          return;
+        }
         const nextLayout = fitHorizontalTabsToWidth({
           availableWidth,
           itemCount: model.parts.length,
-          itemWidth: firstPart.getBoundingClientRect().width,
+          itemWidth,
           staticChromeWidth: staticInset * 2,
           overflowChromeWidth: (overflowInset + cueWidth) * 2,
         });
@@ -130,11 +137,19 @@ export function MobileQuickFind({
     const resizeObserver = new ResizeObserver(measure);
     resizeObserver.observe(dock);
     resizeObserver.observe(trigger);
+    resizeObserver.observe(firstPart);
+    const visualViewport = window.visualViewport;
     window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    visualViewport?.addEventListener("resize", measure);
+    visualViewport?.addEventListener("scroll", measure);
     return () => {
       window.cancelAnimationFrame(animationFrame);
       resizeObserver.disconnect();
       window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+      visualViewport?.removeEventListener("resize", measure);
+      visualViewport?.removeEventListener("scroll", measure);
     };
   }, [partSignature, model.parts.length]);
 
@@ -209,15 +224,25 @@ export function MobileQuickFind({
     };
   }, [partLayout?.frameWidth, partSignature, scopeKey]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (partTabsRef.current) {
       partTabsRef.current.scrollLeft = 0;
     }
   }, [partSignature, scopeKey]);
 
+  useLayoutEffect(() => {
+    if (partLayout && !partLayout.overflowing && partTabsRef.current) {
+      partTabsRef.current.scrollLeft = 0;
+    }
+  }, [partLayout]);
+
   useEffect(() => {
     const element = partTabsRef.current;
     if (!element) {
+      return;
+    }
+    if (!partLayout?.overflowing) {
+      element.scrollLeft = 0;
       return;
     }
     const frame = window.requestAnimationFrame(() => {
@@ -243,7 +268,7 @@ export function MobileQuickFind({
       }
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [partLayout?.frameWidth, projection.activeIndex, scopeKey]);
+  }, [partLayout?.frameWidth, partLayout?.overflowing, projection.activeIndex, scopeKey]);
 
   const scrollParts = (direction: -1 | 1) => {
     const element = partTabsRef.current;

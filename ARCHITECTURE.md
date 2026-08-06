@@ -170,8 +170,11 @@ The mobile part-of-speech control measures its dock rather than assuming a devic
 A single part remains a non-scrollable, evenly inset capsule. Overflowing entries expose
 the largest whole number of tabs that fit after reserving the quick-find action and
 scroll cues; selecting the right-hand tab aligns it to the next page's leading edge.
-Resize observation expands and contracts the tab page in both directions, while changing
-entries resets the strip to its first tab.
+The measurement is bounded by both the dock rectangle and the visual viewport. Resize,
+visual-viewport, orientation, and tab-size observation expand and contract the tab page
+in both directions. Changing entries resets the strip to its first tab, and every
+non-overflowing layout resets horizontal scroll so a stale mobile-browser offset cannot
+clip the active part.
 
 ### Learning Data
 
