@@ -38,3 +38,16 @@ jobs:
           --volume "$PWD/deploy/server/Caddyfile:/etc/caddy/Caddyfile:ro"
           caddy:2.10-alpine
           caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
+  sync-server:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Fast-forward production branch
+        run: git push origin HEAD:server
