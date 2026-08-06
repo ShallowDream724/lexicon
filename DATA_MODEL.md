@@ -19,24 +19,27 @@ shape is:
 
 ```ts
 interface CanonicalEntry {
-  schemaVersion: 1;
+  schemaVersion: "1.0";
   dictionaryId: string;
   sourceVersion: string;
   id: string;
   headword: string;
-  displayHeadword: RichText;
+  displayHeadword: string;
   searchKey: string;
-  labels: Label[];
-  pronunciations: Pronunciation[];
-  partsOfSpeech: PartOfSpeech[];
-  senses: Sense[];
-  subentries: Subentry[];
-  derivedForms: DerivedForm[];
-  inflectedForms: InflectedForm[];
-  crossReferences: CrossReference[];
-  illustrations: Illustration[];
-  boxes: DictionaryBox[];
-  raw: unknown;
+  labels: CanonicalLabel[];
+  pronunciations: CanonicalPronunciation[];
+  partsOfSpeech: CanonicalPartOfSpeech[];
+  headwordPatterns?: CanonicalText[];
+  senses: CanonicalSense[];
+  subentries: CanonicalEntry[];
+  idioms: CanonicalPhrase[];
+  phrasalVerbs: CanonicalPhrase[];
+  derivedForms: CanonicalForm[];
+  inflectedForms: CanonicalForm[];
+  crossReferences: CanonicalCrossReference[];
+  illustrations: CanonicalIllustration[];
+  grammarUsageBoxes: CanonicalGrammarUsageBox[];
+  raw: JsonObject;
 }
 ```
 
@@ -46,15 +49,23 @@ contain the same semantic sections as a root entry.
 
 ## Rich Text
 
-Dictionary text can carry emphasis, labels, references, superscripts, and source
-tokens. Plain strings lose this information, so display text uses an ordered token
-list:
+Dictionary text can carry emphasis, labels, references, and source tokens. Plain
+strings lose this information, so semantic text keeps both its projection and the
+ordered source tokens:
 
 ```ts
-type RichText = {
-  plainText: string;
-  tokens: RichTextToken[];
-};
+interface CanonicalText {
+  text: string;
+  tokens: SourceToken[];
+  raw: JsonValue;
+}
+
+interface SourceToken {
+  tag?: string;
+  value?: JsonValue;
+  text: string;
+  raw: JsonObject;
+}
 ```
 
 Token metadata remains source-neutral. Source-specific attributes that have no
@@ -62,20 +73,25 @@ canonical meaning stay attached to the corresponding object's `raw` value.
 
 ## Pronunciation And Media
 
-A pronunciation records region, phonetic text, written form, and an optional media
-reference. Media references are opaque keys resolved by the source client:
+A pronunciation records region, phonetic text, written form, and an optional opaque
+`audioKey`. Examples keep ordered audio references, and illustrations keep an opaque
+image key:
 
 ```ts
-interface MediaReference {
-  kind: "headword-audio" | "example-audio" | "illustration";
+interface CanonicalAudioReference {
   key: string;
-  mimeType?: string;
-  sourceUrl?: string;
+  region?: string;
+  raw: JsonObject;
 }
 ```
 
-The renderer never constructs storage paths or remote URLs. This allows the same
-entry to use a local archive, object storage, or a permitted remote provider.
+The renderer never constructs storage paths or provider URLs. The dictionary client
+resolves headword audio, example audio, and illustrations through API media routes,
+allowing a local archive and configured remote object stores to coexist.
+
+When a source provides ordered alternatives for the same media value, adapters select
+the first non-empty value in source priority order. Empty optional media values are
+absent from canonical objects rather than retained as empty keys.
 
 ## Senses And Examples
 
@@ -83,29 +99,132 @@ Sense order is semantically significant and always follows source order. Explici
 source numbering is preserved separately from array position.
 
 ```ts
-interface Sense {
-  id: string;
-  sourceNumber?: string;
-  labels: Label[];
-  definition?: BilingualText;
-  examples: Example[];
-  subsenses: Sense[];
-  crossReferences: CrossReference[];
-  illustrations: Illustration[];
-  boxes: DictionaryBox[];
-  raw: unknown;
+interface CanonicalSense {
+  id?: string;
+  order: number;
+  partOfSpeech?: string;
+  groupHeading?: CanonicalText;
+  patterns?: CanonicalText[];
+  labels: CanonicalLabel[];
+  definition?: CanonicalText;
+  translation?: CanonicalText;
+  examples: CanonicalExample[];
+  inlineUsage?: CanonicalText[];
+  usage: CanonicalText[];
+  usageSegments: CanonicalBoxSegment[];
+  crossReferences: CanonicalCrossReference[];
+  illustrations: CanonicalIllustration[];
+  grammarUsageBoxes: CanonicalGrammarUsageBox[];
+  subsenses: CanonicalSense[];
+  raw: JsonObject;
 }
 ```
 
-An example keeps its English text, translated text, labels, and regional audio as
-one unit. Audio is not inferred from the example string.
+`partOfSpeech` is the nearest unambiguous semantic owner, while `groupHeading`
+preserves a guideword shared by adjacent senses. Renderers derive visible numbering
+from the projected sense list instead of carrying source array indexes across a
+part-of-speech switch.
+
+`headwordPatterns` and sense-level `patterns` preserve constructions such as fixed
+headword wording or complementation patterns. They render as dictionary content,
+without qualifier parentheses, and remain distinct from register, region, subject,
+grammar, and proficiency labels.
+
+An example keeps an optional grammatical `pattern`, its display text, optional
+translation, ordered regional audio, and raw source object as one unit. Audio is not
+inferred from the example string, and a pattern remains a separate line from its
+example sentence.
+
+`inlineUsage` preserves ordered parenthetical or bilingual scope qualifiers that
+precede a definition, such as `(of a person 人)`. These qualifiers share the
+definition's lead line. A grammatical construction in `patterns` owns that lead line,
+so the definition starts on the following line instead.
+
+`usageSegments` retains the visual order of help and usage content when it includes
+embedded examples: for example, text before an example, the translated and voiced
+example, then later text. `usage` remains a plain-text projection for compatibility
+and search. Renderers should use `usageSegments` when it is available. When a source
+places usage before a group of sibling senses, the adapter attaches that shared flow to
+the first sense only, preserving its source order without duplicating the content.
+
+## Forms
+
+`CanonicalForm` covers source-neutral `variant`, `inflection`, `word-family`, and
+`derivative` records. A form always has display text and may carry a stable id,
+introducer, presentation `relation`, part of speech, note, labels, pronunciations,
+and recursive senses. A
+structured derivative therefore keeps its examples and media instead of being
+flattened to a field name. Split spelling fragments are combined once by the adapter
+and do not also appear as labels.
+
+Idioms and phrasal verbs use `CanonicalPhrase`, which keeps canonical display text,
+primary-wording labels, ordered alternative forms, ordered recursive senses,
+group-level `leadingUsage` and `trailingCrossReferences`, and raw source data. Group
+usage attaches to the first phrase in its source group so it is displayed once in the
+same position as the source. A variant retains its introducer, regional labels, and
+`relation`: `alternative` for source wording marked as another form and `equivalent`
+for unintroduced regional wording. Primary labels render before variants, and an
+unintroduced regional equivalent keeps the source's parenthetical form instead of
+inventing punctuation. Phrases remain separate from ordinary entry senses so navigation
+and rendering do not duplicate phrase definitions.
+
+## Cross References
+
+Cross references retain both presentation and navigation information:
+
+```ts
+interface CanonicalCrossReference {
+  id?: string;
+  kind?: CanonicalCrossReferenceKind;
+  label?: string;
+  text: string;
+  qualifier?: string;
+  entryId?: string;
+  targetId?: string;
+  targetType?: string;
+  raw: JsonValue;
+}
+```
+
+`kind` supplies source-neutral presentation semantics. It is optional for additive
+compatibility with existing canonical data; adapters should set it whenever a source
+label can be classified. Renderers use `kind` for consistent treatment and use
+`label` only as clean display wording. `entryId` is the resolved entry route when one
+is available; `targetId` and `targetType` preserve a more specific unresolved source
+target. A renderer may disable navigation when no entry route is known, but it must
+still show the reference.
+
+For ordered source alternatives that identify the same reference target, canonical
+fields use the first non-empty source value. Empty optional ids remain undefined, so
+they do not block a later usable entry or target id.
+
+The current kinds are `synonym`, `antonym`, `compare`, `see-also`, `more-at`,
+`note-at`, `topic-note`, `related`, `inflection`, `equivalent`, `punctuation`, and
+`generic`. An unrecognized future label maps to `generic`; its normalized display
+label and source `raw` data remain available.
+
+Presentation derives placement from `kind`. A sense with a definition places
+`synonym` and `antonym` references immediately after its bilingual definition.
+Destination-oriented kinds such as `compare`, `see-also`, and `more-at` remain in the
+sense's trailing reference block. When a sense has no definition, all references stay
+trailing so none becomes detached from its structural context.
 
 ## Boxes
 
-Grammar, usage, vocabulary, culture, synonym, and comparison material share the
-`DictionaryBox` container. The box keeps a stable kind, title, ordered blocks,
-nested examples, and raw source payload. New box kinds are additive and render
-through a neutral fallback until a dedicated presentation is added.
+Grammar and usage material share `CanonicalGrammarUsageBox`. It keeps an optional
+source id, type, canonical title, structured navigation `references`, structured
+`blocks`, the original ordered JSON `body`, and the raw source object. Lists,
+paragraphs, and table cells retain ordered text, term, cross-reference, and example
+segments. Paragraphs and table cells also keep a plain-text `value` projection for
+searching and compatibility; renderers use their ordered segments whenever present.
+This structure preserves nested examples and media without teaching UI components a
+source format. The original body remains available for future adapter improvements.
+New box types are additive and render through a neutral fallback until a dedicated
+presentation is added.
+
+Navigation metadata is never projected into a title. When a source repeats the same
+reference list in its body, the presentation projection removes only that exact
+duplicate and keeps the structured, navigable references.
 
 ## Raw Preservation
 
@@ -138,4 +257,3 @@ types and do not repeat schema checks.
 - Keep migration functions adjacent to canonical schemas.
 - Keep fixtures for every supported source version.
 - Do not reuse an id for a different semantic object inside one source version.
-
