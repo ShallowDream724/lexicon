@@ -1,14 +1,14 @@
 # Self-Hosted Deployment
 
-## Topology
+## Reference Topology
 
-The supported production layout runs entirely on one server:
+The included reference layout runs entirely on one server:
 
 ```text
 Browser
    |
    v
-Caddy gateway on ports 80 and 443
+TLS reverse proxy on ports 80 and 443
    +-- /api/v1/* ------> Go dictionary API
    +-- all other paths -> standalone Next.js application
 
@@ -17,10 +17,11 @@ Go dictionary API
    +-- pronunciation ZIP, read-only
 ```
 
-The browser calls a same-origin `/api/v1` path. Caddy keeps the application containers
-on a private Compose network, obtains TLS certificates when a domain is configured,
-and exposes only the HTTP and HTTPS ports. History, favorites, and notes remain in the
-browser's IndexedDB; the server stores no personal records.
+The browser calls a same-origin `/api/v1` path. The included Compose file uses Caddy to
+keep application containers on a private network, obtain TLS certificates when a domain
+is configured, and expose only HTTP and HTTPS. An existing reverse proxy can provide the
+same routing without running the included gateway. History, favorites, and notes remain
+in the browser's IndexedDB; the server stores no personal records.
 
 ## Capacity
 
@@ -41,6 +42,10 @@ A full-archive local probe measured API readiness in about 1.2 seconds, a 125 Mi
 working set, and 156 MiB of private memory. A sampled 8,377-byte MP3 streamed in 3.6 ms.
 These numbers exclude the Next.js and Caddy containers and serve as a sizing reference,
 not a cross-platform guarantee.
+
+The current PWA application shell is about 1.07 MiB across 26 precache entries. It is a
+browser-side budget and does not change server asset capacity. Entry JSON, audio, images,
+SQLite, and ZIP files are excluded from the PWA cache.
 
 Reserve 2 GiB of memory so the server can run the stack and rebuild the Next.js image
 without pressure. Five GiB of free disk is the practical minimum for assets, images,
@@ -123,6 +128,28 @@ curl https://dict.example.com/api/v1/health
 When `SITE_ADDRESS=:80`, use the corresponding `http://` server address. The API
 validates the database schema and pronunciation ZIP before it begins serving traffic.
 
+## Existing Reverse Proxy
+
+When TLS and public routing are already handled by another reverse proxy, run only the
+web and dictionary API services on its Docker network. Route `/api/v1/` to the API on
+port 8787 and every other path to the web application on port 3000. Keep the network,
+hostnames, credentials, and media origins in the server's private Compose and environment
+files rather than the public repository.
+
+The proxy must support streaming responses and preserve query strings, response content
+types, `Cache-Control`, and `Service-Worker-Allowed`. Do not enable proxy caching for
+`/api/v1/`, `/serwist/`, or `/manifest.webmanifest`.
+
+The public origin must use HTTPS for PWA installation. The web application emits:
+
+```text
+/serwist/sw.js          Cache-Control: no-cache, no-store, must-revalidate
+/serwist/sw.js          Service-Worker-Allowed: /
+/manifest.webmanifest  Cache-Control: public, max-age=0, must-revalidate
+```
+
+See [PWA.md](PWA.md) for cache boundaries, update behavior, and the release test matrix.
+
 ## Network Security
 
 Expose only ports 80 and 443 through the host firewall. The Compose file publishes no
@@ -148,6 +175,10 @@ docker compose \
 Replace `dictionary.db` only with a fully imported and audited runtime of the supported
 schema version. Stop the API before replacing either mounted file, perform an atomic
 rename, and restart so SQLite metadata and the ZIP central directory are reloaded.
+
+Each web rebuild creates a new PWA revision. Clients install it in the background and
+activate it after explicit acceptance or on their next clean launch. Rebuilding an older
+commit uses the same mechanism for rollback and does not touch browser learning data.
 
 ## Repository Boundary
 

@@ -1,14 +1,15 @@
 # Lexicon Workbench
 
-Lexicon Workbench is a responsive bilingual dictionary workspace with local search,
+Lexicon Workbench is an installable bilingual dictionary workspace with local search,
 pronunciation playback, history, favorites, notes, and adapter-based data import.
-It runs without registration or account state.
+It runs on desktop, tablet, and phone without registration or account state.
 Exact and prefix search can fall back to a bounded one-edit spelling suggestion for a
 single English word without loading or scanning the dictionary in the browser.
 
 ## Technology
 
 - React 19, TypeScript, and Next.js standalone output for the responsive application.
+- Serwist with the Next.js Turbopack adapter for the isolated PWA platform layer.
 - Go for the read-only SQLite and media service.
 - Zod for external data validation.
 - IndexedDB for device-local learning data.
@@ -18,6 +19,7 @@ modules. See [ARCHITECTURE.md](ARCHITECTURE.md), [DATA_MODEL.md](DATA_MODEL.md),
 [ADAPTER_GUIDE.md](ADAPTER_GUIDE.md). Runtime compression decisions and measured
 tradeoffs are in [STORAGE_FORMAT.md](STORAGE_FORMAT.md).
 Production topology and server setup are in [DEPLOYMENT.md](DEPLOYMENT.md).
+Installation, caching, updates, and offline boundaries are in [PWA.md](PWA.md).
 
 ## Requirements
 
@@ -65,6 +67,14 @@ also accept the environment variables documented in
 
 Copy `.env.example` to `.env.local` when the API is available at another origin.
 
+Development mode does not register a Service Worker, which prevents stale caches from
+masking source changes. Test installation and offline behavior with a production build:
+
+```bash
+npm run build
+npm start
+```
+
 ## Verification
 
 ```bash
@@ -73,8 +83,9 @@ npm run lint
 npm test
 ```
 
-`npm test` runs adapter contracts, all Go tests, a production build, and the rendered
-HTML smoke test.
+`npm test` runs adapter contracts, PWA policy contracts, all Go tests, a production
+build, and standalone response tests for the application, manifest, icons, offline
+page, and Service Worker.
 
 ## Data Operations
 
@@ -118,8 +129,8 @@ terms.
 
 ## Deployment
 
-The supported public topology runs Caddy, the standalone Next.js application, and the
-Go API together on one server. The server mounts the generated database and
+The reference public topology runs a TLS reverse proxy, the standalone Next.js
+application, and the Go API together on one server. The server mounts the generated database and
 pronunciation ZIP as read-only files, so code updates never rewrite content assets.
 The ZIP remains packed: the API indexes it once and streams individual MP3 members
 without extracting 256,026 files. See [DEPLOYMENT.md](DEPLOYMENT.md) for the exact

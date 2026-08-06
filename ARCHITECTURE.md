@@ -12,7 +12,8 @@ The first release optimizes for:
 - faithful dictionary-page typography and information density;
 - local, low-latency search over a large SQLite source;
 - complete rendering of nested senses, examples, usage notes, audio, and images;
-- no account, registration, advertising, or application-download surface;
+- no account, registration, advertising, or separately distributed application package;
+- one installable browser application across desktop, tablet, and phone;
 - source adapters that can evolve without changing React components;
 - explicit contracts and tests at every boundary where source data changes shape.
 
@@ -37,6 +38,11 @@ CanonicalEntry v1
         |
         +---- IndexedDB learning data
               history, favorites, notes, preferences
+
+Root application composition
+        |
+        +---- isolated PWA platform layer
+              manifest, registration, updates, offline shell, bounded caches
 ```
 
 Dependencies point down this diagram. UI modules never import source-table names,
@@ -49,6 +55,7 @@ app/                         application routes and global composition
 src/features/dictionary/     dictionary UI and feature state
 src/lib/dictionary-client/   cancellable HTTP client and query orchestration
 src/lib/storage/             device-local learning-data repository
+src/platform/pwa/            install, update, offline, and cache policy
 packages/dictionary-schema/  versioned UI-facing domain contract
 packages/adapters/           source adapters and registry
 services/dictionary-api/     read-only Go/SQLite/media service
@@ -184,6 +191,36 @@ sync can be added later without replacing UI call sites. Clearing browser storag
 removes local learning data; the interface must make that limitation visible in
 settings and export flows.
 
+### PWA Platform
+
+The PWA layer is mounted beside the dictionary workspace in the root layout. Dictionary
+components do not register Service Workers, inspect installation state, or choose cache
+strategies. The platform layer owns:
+
+- the web application manifest and install icons;
+- deferred production-only Service Worker registration;
+- explicit update acceptance and next-launch activation;
+- a branded navigation fallback for disconnected launches;
+- a pure request classifier and a build-time precache allowlist;
+- small status notices that stay outside dictionary layout and modal state.
+
+The Service Worker is an application-shell facility. Hashed JavaScript, CSS, icons, the
+manifest, and the offline page are versioned precache entries. Same-origin navigations
+use a bounded network-first cache. Every `/api/v1` request uses the network, including
+search, entries, audio, and illustrations. Cross-origin media is passed through without
+Service Worker caching. Installation never reads or downloads the runtime database or
+pronunciation archive.
+
+Learning data remains in the existing IndexedDB repository. The Service Worker neither
+opens that database nor duplicates its records in Cache Storage. A future offline
+dictionary would require a separate, user-initiated feature with explicit byte, entry,
+version, and eviction limits.
+
+An update installed during active use waits and presents a restrained system notice.
+Activation occurs after explicit acceptance, or on the next clean page launch when a
+waiting worker is already present. Only the page that requested activation reloads;
+note editing is never interrupted by an automatic mid-session refresh.
+
 ## API Contract
 
 All endpoints use `/api/v1`. Errors have a stable code, message, and request id.
@@ -261,6 +298,8 @@ The minimum release gate is:
    history, and refresh persistence.
 6. Screenshots at desktop, tablet portrait, tablet landscape, and phone viewports,
    with overflow, overlap, sticky navigation, and media-state checks.
+7. Manifest, install-icon, Service Worker header, precache-boundary, update-lifecycle,
+   and offline-navigation checks against standalone production output.
 
 ## Data Delivery
 
@@ -283,7 +322,7 @@ The deployable application is split at the existing HTTP boundary:
 Browser
    |
    v
-Caddy TLS gateway
+TLS reverse proxy
    +---- /api/v1/* ---- Go API container
    |                         +---- read-only runtime SQLite
    |                         +---- read-only pronunciation ZIP
@@ -291,9 +330,10 @@ Caddy TLS gateway
    +---- all other paths --- standalone Next.js container
 ```
 
-The frontend build contains no dictionary payload. The API container contains no
+The frontend build contains no dictionary payload. Its PWA precache contains only the
+small application shell and never includes entry JSON or media. The API container contains no
 content assets; Compose bind-mounts them from the host. This keeps Git history small
-and allows independent code and content releases. Only Caddy publishes host ports;
+and allows independent code and content releases. Only the reverse proxy publishes host ports;
 application containers remain on the private Compose network. The browser uses a
 same-origin `/api/v1` URL, so deployment does not depend on a second public endpoint.
 Operational details are in [DEPLOYMENT.md](DEPLOYMENT.md).

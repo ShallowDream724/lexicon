@@ -1,4 +1,5 @@
 @import "../src/features/dictionary/dictionary.css";
+@import "../src/platform/pwa/pwa.css";
 
 :root {
   --background: #ffffff;

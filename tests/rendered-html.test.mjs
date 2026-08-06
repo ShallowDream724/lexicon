@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { existsSync } from "node:fs";
+import { cpSync, existsSync } from "node:fs";
 import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,6 +46,13 @@ async function waitForServer(url) {
 
 before(async () => {
   assert.equal(existsSync(serverPath), true, "run npm run build before the HTML tests");
+  const standaloneRoot = dirname(serverPath);
+  cpSync(join(projectRoot, "public"), join(standaloneRoot, "public"), {
+    recursive: true,
+  });
+  cpSync(join(projectRoot, ".next", "static"), join(standaloneRoot, ".next", "static"), {
+    recursive: true,
+  });
   const port = await availablePort();
   origin = `http://127.0.0.1:${port}`;
   serverProcess = spawn(process.execPath, [serverPath], {
@@ -108,4 +115,72 @@ test("server-renders deep links without flashing the home collection", async () 
   assert.match(html, /aria-label="正在加载词条"/);
   assert.doesNotMatch(html, /词典首页/);
   assert.doesNotMatch(html, /the act or process of finishing something/);
+});
+
+test("serves an installable manifest and complete icon set", async () => {
+  const response = await fetch(`${origin}/manifest.webmanifest`);
+  assert.equal(response.status, 200);
+  assert.match(
+    response.headers.get("content-type") ?? "",
+    /^application\/manifest\+json\b/i,
+  );
+  assert.match(
+    response.headers.get("cache-control") ?? "",
+    /max-age=0/i,
+  );
+
+  const value = await response.json();
+  assert.equal(value.name, "Lexicon Workbench");
+  assert.equal(value.display, "standalone");
+  assert.equal(value.orientation, "any");
+  assert.ok(
+    value.icons.some(
+      (icon) => icon.sizes === "512x512" && icon.purpose === "maskable",
+    ),
+  );
+
+  for (const pathname of [
+    "/icons/app-192.png",
+    "/icons/app-512.png",
+    "/icons/maskable-192.png",
+    "/icons/maskable-512.png",
+    "/icons/apple-touch-icon.png",
+  ]) {
+    const iconResponse = await fetch(`${origin}${pathname}`);
+    assert.equal(iconResponse.status, 200, pathname);
+    assert.match(iconResponse.headers.get("content-type") ?? "", /^image\/png\b/i);
+  }
+});
+
+test("serves a non-cacheable service worker with a bounded precache", async () => {
+  const response = await fetch(`${origin}/serwist/sw.js`);
+  assert.equal(response.status, 200);
+  assert.match(
+    response.headers.get("content-type") ?? "",
+    /^(?:application|text)\/javascript\b/i,
+  );
+  assert.match(response.headers.get("cache-control") ?? "", /no-store/i);
+  assert.equal(response.headers.get("service-worker-allowed"), "/");
+
+  const body = await response.text();
+  assert.ok(body.length > 1_000);
+  assert.match(body, /\/offline/);
+  assert.match(body, /\/_next\/static/);
+  const precacheUrls = [...body.matchAll(/\burl:"([^"]+)"/g)].map(
+    (match) => match[1],
+  );
+  assert.ok(precacheUrls.length > 2);
+  assert.equal(
+    precacheUrls.some((url) => /api\/v1|\.db\b|\.zip\b|\.mp3\b|illustration/i.test(url)),
+    false,
+  );
+});
+
+test("serves the offline navigation fallback", async () => {
+  const response = await render("/offline");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /当前无法连接词典服务/);
+  assert.match(html, /重新连接/);
+  assert.match(html, /词典首页/);
 });
