@@ -185,3 +185,61 @@ test("projects part-scoped headword metadata and variants", () => {
   ]);
   assert.deepEqual(verbProjection.variants.map((form) => form.text), ["verb form"]);
 });
+
+test("coalesces matching word-family and detailed derivative records without losing detail", () => {
+  const familyNote = { text: "(opposite ungrateful)", tokens: [], raw: [] };
+  const derivativeSense = {
+    id: "gratefully-sense",
+    order: 0,
+    labels: [],
+    examples: [],
+    usage: [],
+    usageSegments: [],
+    crossReferences: [],
+    illustrations: [],
+    grammarUsageBoxes: [],
+    subsenses: [],
+    raw: {},
+  };
+  const root = entry({
+    partsOfSpeech: [{ text: "adj.", tokens: [], raw: "adj." }],
+    derivedForms: [
+      {
+        kind: "word-family",
+        text: "entry",
+        partOfSpeech: "adj.",
+        note: { text: "(opposite nonentry)", tokens: [], raw: [] },
+        tokens: [],
+        raw: {},
+      },
+      {
+        kind: "word-family",
+        text: "gratefully",
+        partOfSpeech: "adv.",
+        note: familyNote,
+        tokens: [],
+        raw: {},
+      },
+      {
+        id: "derived-gratefully",
+        kind: "derivative",
+        text: "grate\u00b7ful\u00b7ly",
+        partOfSpeech: "adv.",
+        tokens: [],
+        pronunciations: [{ transcription: "greitfeli", raw: {} }],
+        senses: [derivativeSense],
+        raw: {},
+      },
+    ],
+  });
+
+  const projection = projectEntryPart(root, 0);
+  assert.equal(projection.derivedForms.length, 1);
+  assert.equal(projection.derivedForms[0]?.id, "derived-gratefully");
+  assert.equal(projection.derivedForms[0]?.note, familyNote);
+  assert.equal(projection.derivedForms[0]?.senses?.[0], derivativeSense);
+  assert.deepEqual(
+    projection.headwordFamilyNotes.map((note) => note.text),
+    ["(opposite nonentry)"],
+  );
+});

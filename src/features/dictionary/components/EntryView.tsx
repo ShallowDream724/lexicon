@@ -56,7 +56,7 @@ type EntryViewProps = {
   onSelectEntry: (entryId: string) => void;
   audioError: string | null;
   onPlayAudio: (key: string, kind: "headword" | "example") => void;
-  resolveIllustration: (key: string) => string;
+  resolveIllustration: (key: string, variant?: "full" | "thumbnail") => string;
 };
 
 function audioRegionClass(region: string | undefined): string {
@@ -506,13 +506,16 @@ function IllustrationImage({
   illustration,
   resolveIllustration,
   className,
+  variant = "full",
 }: {
   illustration: CanonicalIllustration;
   resolveIllustration: EntryViewProps["resolveIllustration"];
   className: string;
+  variant?: "full" | "thumbnail";
 }) {
-  const [failed, setFailed] = useState(false);
-  if (!illustration.key || failed) {
+  const source = illustration.key ? resolveIllustration(illustration.key, variant) : null;
+  const [failedSource, setFailedSource] = useState<string | null>(null);
+  if (!source || failedSource === source) {
     return <ImageIcon className={className} aria-hidden="true" />;
   }
   return (
@@ -520,8 +523,9 @@ function IllustrationImage({
       alt={illustration.text ?? "词条配图"}
       className={className}
       height={480}
-      onError={() => setFailed(true)}
-      src={resolveIllustration(illustration.key)}
+      onError={() => setFailedSource(source)}
+      referrerPolicy="no-referrer"
+      src={source}
       unoptimized
       width={640}
     />
@@ -660,6 +664,7 @@ function ResourceRail({
             className="resource-card-thumbnail"
             illustration={illustration}
             resolveIllustration={resolveIllustration}
+            variant="thumbnail"
           />
           <strong>图解词汇</strong>
           <span>VISUAL VOCABULARY</span>
@@ -1319,6 +1324,16 @@ export function EntryView({
                 patterns={entry.headwordPatterns}
               />
 
+              {projection.headwordFamilyNotes.length ? (
+                <div className="entry-headword-family-notes">
+                  {projection.headwordFamilyNotes.map((note, index) => (
+                    <p key={`${note.text}-${index}`}>
+                      <CanonicalTextContent value={note} />
+                    </p>
+                  ))}
+                </div>
+              ) : null}
+
               <SenseList
                 senses={projection.senses}
                 onPlayAudio={onPlayAudio}
@@ -1412,6 +1427,7 @@ export function EntryView({
         }
         onPartChange={onPartChange}
         projection={projection}
+        scopeKey={entry.id}
       />
     </article>
   );

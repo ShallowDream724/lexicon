@@ -158,7 +158,9 @@
   margin: 0 auto;
   max-width: var(--desktop-content-width);
   min-height: 4.93333rem;
+  min-width: 0;
   padding: 1.41333rem 0 .64rem;
+  width: 95%;
 }
 
 .header-search-region.is-home {
@@ -204,6 +206,7 @@
 .search-form {
   margin-left: 1.6rem;
   max-width: 14.93333rem;
+  min-width: 0;
   position: relative;
   width: 14.93333rem;
 }
@@ -216,6 +219,7 @@
   box-shadow: 0 .26667rem .53333rem #0000000d;
   display: flex;
   min-height: 1.76rem;
+  min-width: 0;
   padding: .21333rem;
   position: relative;
   z-index: 5;
@@ -470,7 +474,7 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin: 0 auto;
   max-width: var(--desktop-content-width);
-  padding: 1.49333rem 1.06667rem 2.13333rem 5.06667rem;
+  padding: 1.49333rem 1.06667rem 2.13333rem;
   width: 95%;
 }
 
@@ -1243,6 +1247,18 @@
   font-size: .53333rem;
   line-height: 1.5;
   margin: 0 0 .42667rem;
+}
+
+.entry-headword-family-notes {
+  color: #4f5666;
+  font-family: "Times New Roman", Times, serif;
+  font-size: .42667rem;
+  font-style: italic;
+  margin: 0 0 .32rem;
+}
+
+.entry-headword-family-notes p {
+  margin: 0;
 }
 
 .entry-headword-form-pattern {
@@ -2365,17 +2381,44 @@
   display: none;
 }
 
-.mobile-quick-find-part-tabs {
+.mobile-quick-find-part-tabs-frame {
+  --mobile-part-cue-width: .24rem;
+  --mobile-part-edge-inset: .08rem;
+  --mobile-part-static-inset: .13333rem;
+  --mobile-part-tab-width: 2rem;
   align-items: center;
   background: #9297a1;
   border-radius: .64rem;
   box-shadow: 0 .16rem .48rem #00132c24;
   display: flex;
-  max-width: calc(100vw - 3.12rem);
+  flex: 0 1 auto;
+  max-width: calc(100vw - 3.2rem);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.mobile-quick-find-part-tabs-frame.is-overflowing {
+  flex-shrink: 0;
+}
+
+.mobile-quick-find-part-tabs {
+  align-items: center;
+  display: flex;
+  flex: 0 1 auto;
+  max-width: 100%;
+  min-width: 0;
   min-height: 1.38667rem;
   overflow-x: auto;
-  padding: .13333rem;
+  padding: var(--mobile-part-static-inset);
+  scroll-padding-inline: var(--mobile-part-static-inset);
+  scroll-snap-type: x mandatory;
   scrollbar-width: none;
+}
+
+.mobile-quick-find-part-tabs-frame.is-overflowing .mobile-quick-find-part-tabs {
+  flex: 1 1 auto;
+  padding: var(--mobile-part-edge-inset);
+  scroll-padding-inline: var(--mobile-part-edge-inset);
 }
 
 .mobile-quick-find-part-tabs::-webkit-scrollbar {
@@ -2388,7 +2431,7 @@
   border-radius: .48rem;
   color: #f7f8fb;
   cursor: pointer;
-  flex: 1 0 2rem;
+  flex: 0 0 2rem;
   font-family: "Times New Roman", Times, serif;
   font-size: .53333rem;
   font-style: italic;
@@ -2396,11 +2439,52 @@
   line-height: 1;
   min-height: 1.12rem;
   padding: 0 .37333rem;
+  scroll-snap-align: start;
+}
+
+.mobile-quick-find-part-tabs-frame.is-overflowing .mobile-quick-find-part-tabs button {
+  flex-basis: var(--mobile-part-tab-width);
 }
 
 .mobile-quick-find-part-tabs button.is-active {
   background: #fff;
   color: #111318;
+}
+
+.mobile-quick-find-scroll-cue {
+  align-items: center;
+  align-self: stretch;
+  background: transparent;
+  border: 0;
+  color: #fff;
+  display: flex;
+  flex: 0 0 var(--mobile-part-cue-width);
+  justify-content: center;
+  opacity: .82;
+  padding: 0;
+  transition: background-color 120ms ease, opacity 120ms ease;
+  width: var(--mobile-part-cue-width);
+}
+
+.mobile-quick-find-scroll-cue:not(:disabled) {
+  cursor: pointer;
+}
+
+.mobile-quick-find-scroll-cue:not(:disabled):hover,
+.mobile-quick-find-scroll-cue:not(:disabled):focus-visible {
+  background: #7e848f;
+  opacity: 1;
+}
+
+.mobile-quick-find-scroll-cue:disabled {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mobile-quick-find-scroll-cue svg {
+  height: .21333rem;
+  stroke-width: 2.2;
+  width: .21333rem;
 }
 
 .mobile-quick-find-trigger {
@@ -2412,6 +2496,7 @@
   color: #fff;
   cursor: pointer;
   display: flex;
+  flex: 0 0 2.24rem;
   flex-direction: row;
   font-size: .26667rem;
   gap: .10667rem;
@@ -2623,6 +2708,7 @@
   }
 
   .mobile-quick-find-part-tabs,
+  .mobile-quick-find-scroll-cue,
   .mobile-quick-find-trigger {
     pointer-events: auto;
   }
@@ -2660,6 +2746,7 @@
     max-width: none;
     padding-left: .4rem;
     padding-right: .4rem;
+    width: 100%;
   }
 
   .product-mark {
@@ -2668,11 +2755,11 @@
   }
 
   .search-form {
-    flex: 1 1 auto;
+    flex: 1 1 0;
     margin-left: .4rem;
     margin-right: 0;
     max-width: 20.34667rem;
-    width: auto;
+    width: 0;
   }
 
   .word-page {
@@ -2681,7 +2768,7 @@
   }
 
   .dictionary-home {
-    padding-left: 4.4rem;
+    padding-left: .8rem;
     padding-right: .8rem;
     width: 100%;
   }
@@ -2740,6 +2827,12 @@
     padding: .4rem 0 .53333rem;
   }
 
+  .header-search-region.is-home {
+    padding-left: .37333rem;
+    padding-right: .37333rem;
+    width: 100%;
+  }
+
   .product-mark {
     align-self: center;
     flex-basis: auto;
@@ -2751,6 +2844,13 @@
     margin-right: auto;
     max-width: none;
     width: 90%;
+  }
+
+  .header-search-region.is-home .search-form {
+    margin-left: auto;
+    margin-right: auto;
+    max-width: none;
+    width: 100%;
   }
 
   .search-recent-row {

@@ -794,10 +794,19 @@ function illustrationsFrom(value: unknown): CanonicalIllustration[] {
     const candidate = record
       ? stringValue(record.url) || stringValue(record.key) || textOf(record.value)
       : textOf(item);
+    const caption = record
+      ? firstNonEmptyText(
+          record.caption,
+          record.title,
+          record.label,
+          record.alt,
+          record.text,
+        )
+      : "";
 
     return {
       key: candidate || undefined,
-      text: textOf(item) || undefined,
+      text: caption && caption !== candidate ? caption : undefined,
       raw: item as JsonValue,
     };
   });
@@ -1585,8 +1594,6 @@ function inflectedFormsFrom(body: JsonObject, topData: Record<string, unknown>):
   });
 }
 
-const phraseGroupFields = new Set(["idm_gs", "pv_gs"]);
-
 interface SourceSense {
   value: Record<string, unknown>;
   partOfSpeech?: string;
@@ -1597,7 +1604,6 @@ interface SourceSense {
 function sourceSensesFrom(
   value: unknown,
   inheritedPartOfSpeech?: string,
-  excludePhraseGroups = false,
 ): SourceSense[] {
   const senses: SourceSense[] = [];
 
@@ -1624,10 +1630,6 @@ function sourceSensesFrom(
       ? ownGroupHeading
       : inheritedGroupHeading;
     for (const [key, child] of Object.entries(current)) {
-      if (excludePhraseGroups && phraseGroupFields.has(key)) {
-        continue;
-      }
-
       if (key === "sn_g") {
         const leadingUsage = current.un;
         asArray(child).filter(isRecord).forEach((sense, index) => {
@@ -1648,6 +1650,10 @@ function sourceSensesFrom(
             visit(item, partOfSpeech, groupHeading);
           }
         });
+        continue;
+      }
+
+      if (semanticScopeBoundaries.has(key)) {
         continue;
       }
 
@@ -1691,12 +1697,10 @@ function canonicalSenseFrom(
 function sensesFrom(
   value: unknown,
   inheritedPartOfSpeech?: string,
-  excludePhraseGroups = false,
 ): CanonicalSense[] {
   return sourceSensesFrom(
     value,
     inheritedPartOfSpeech,
-    excludePhraseGroups,
   ).map(canonicalSenseFrom);
 }
 
@@ -1780,7 +1784,7 @@ function mapEntry(
     pronunciations: pronunciationsFrom(body),
     partsOfSpeech: partsOfSpeechFrom(body),
     headwordPatterns: patternsFrom(topData.top_text),
-    senses: sensesFrom(body, partOfSpeech, true),
+    senses: sensesFrom(body, partOfSpeech),
     subentries,
     idioms: phrasesFrom(body, "idm_gs", "idm_g", "idm_name", "idm_text", partOfSpeech),
     phrasalVerbs: phrasesFrom(body, "pv_gs", "pv_g", "pv_name", "pv_text", partOfSpeech),

@@ -1,17 +1,32 @@
 "use client";
 
-import { ArrowUp, BookOpenText, ChevronLeft, Image as ImageIcon, ListFilter } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  ArrowUp,
+  BookOpenText,
+  ChevronLeft,
+  ChevronRight,
+  Image as ImageIcon,
+  ListFilter,
+} from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type {
   CanonicalGrammarUsageBox,
   CanonicalIllustration,
 } from "../../../../packages/dictionary-schema/src/index";
 import type { EntryPartProjection } from "../entry-sections";
+import {
+  fitHorizontalTabsToWidth,
+  horizontalScrollState,
+  scrollLeftToAlignItemStart,
+  type HorizontalScrollState,
+  type HorizontalTabLayout,
+} from "../horizontal-scroll-state";
 import { projectQuickFind } from "../quick-find-model";
 import { useViewportScrollLock } from "../use-viewport-scroll-lock";
 
 type MobileQuickFindProps = {
+  scopeKey: string;
   projection: EntryPartProjection;
   activeSectionId?: string;
   onPartChange: (index: number) => void;
@@ -21,6 +36,7 @@ type MobileQuickFindProps = {
 };
 
 export function MobileQuickFind({
+  scopeKey,
   projection,
   activeSectionId,
   onPartChange,
@@ -29,12 +45,98 @@ export function MobileQuickFind({
   onOpenIllustration,
 }: MobileQuickFindProps) {
   const [open, setOpen] = useState(false);
+  const [partScroll, setPartScroll] = useState<HorizontalScrollState>({
+    overflowing: false,
+    canScrollLeft: false,
+    canScrollRight: false,
+  });
+  const [partLayout, setPartLayout] = useState<HorizontalTabLayout | null>(null);
+  const dockRef = useRef<HTMLElement>(null);
+  const partFrameRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
+  const partTabsRef = useRef<HTMLDivElement>(null);
   const wasOpenRef = useRef(false);
   const pendingJumpRef = useRef<string | undefined>(undefined);
   const model = projectQuickFind(projection);
+  const partSignature = model.parts.map((part) => part.label).join("\u0000");
   useViewportScrollLock(open);
+
+  useLayoutEffect(() => {
+    const dock = dockRef.current;
+    const frame = partFrameRef.current;
+    const scroller = partTabsRef.current;
+    const trigger = triggerRef.current;
+    const firstPart = scroller?.querySelector<HTMLButtonElement>("[role=tab]");
+    if (!dock || !frame || !scroller || !trigger || !firstPart) {
+      setPartLayout(null);
+      return;
+    }
+
+    let animationFrame = 0;
+    const measure = () => {
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(() => {
+        const dockStyle = window.getComputedStyle(dock);
+        const frameStyle = window.getComputedStyle(frame);
+        const rootFontSize = Number.parseFloat(
+          window.getComputedStyle(document.documentElement).fontSize,
+        );
+        const pixels = (value: string) => {
+          const normalized = value.trim();
+          if (normalized.endsWith("rem")) {
+            return Number.parseFloat(normalized) * rootFontSize;
+          }
+          return Number.parseFloat(normalized) || 0;
+        };
+        const dockContentWidth =
+          dock.clientWidth -
+          Number.parseFloat(dockStyle.paddingLeft) -
+          Number.parseFloat(dockStyle.paddingRight);
+        const availableWidth = Math.max(
+          0,
+          dockContentWidth -
+            trigger.getBoundingClientRect().width -
+            Number.parseFloat(dockStyle.columnGap),
+        );
+        const staticInset = pixels(
+          frameStyle.getPropertyValue("--mobile-part-static-inset"),
+        );
+        const overflowInset = pixels(
+          frameStyle.getPropertyValue("--mobile-part-edge-inset"),
+        );
+        const cueWidth = pixels(
+          frameStyle.getPropertyValue("--mobile-part-cue-width"),
+        );
+        const nextLayout = fitHorizontalTabsToWidth({
+          availableWidth,
+          itemCount: model.parts.length,
+          itemWidth: firstPart.getBoundingClientRect().width,
+          staticChromeWidth: staticInset * 2,
+          overflowChromeWidth: (overflowInset + cueWidth) * 2,
+        });
+        setPartLayout((current) =>
+          current &&
+          current.overflowing === nextLayout.overflowing &&
+          current.visibleCount === nextLayout.visibleCount &&
+          Math.abs(current.frameWidth - nextLayout.frameWidth) < 1
+            ? current
+            : nextLayout,
+        );
+      });
+    };
+
+    measure();
+    const resizeObserver = new ResizeObserver(measure);
+    resizeObserver.observe(dock);
+    resizeObserver.observe(trigger);
+    window.addEventListener("resize", measure);
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [partSignature, model.parts.length]);
 
   const close = () => setOpen(false);
 
@@ -71,6 +173,89 @@ export function MobileQuickFind({
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [open]);
 
+  useEffect(() => {
+    const element = partTabsRef.current;
+    if (!element) {
+      setPartScroll({ overflowing: false, canScrollLeft: false, canScrollRight: false });
+      return;
+    }
+
+    let animationFrame = 0;
+    const measure = () => {
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(() => {
+        const nextState = horizontalScrollState(element);
+        setPartScroll((current) =>
+          current.overflowing === nextState.overflowing &&
+          current.canScrollLeft === nextState.canScrollLeft &&
+          current.canScrollRight === nextState.canScrollRight
+            ? current
+            : nextState,
+        );
+      });
+    };
+
+    measure();
+    element.addEventListener("scroll", measure, { passive: true });
+    const resizeObserver = new ResizeObserver(measure);
+    resizeObserver.observe(element);
+    window.addEventListener("resize", measure);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      element.removeEventListener("scroll", measure);
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [partLayout?.frameWidth, partSignature, scopeKey]);
+
+  useEffect(() => {
+    if (partTabsRef.current) {
+      partTabsRef.current.scrollLeft = 0;
+    }
+  }, [partSignature, scopeKey]);
+
+  useEffect(() => {
+    const element = partTabsRef.current;
+    if (!element) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      const activePart = element.querySelector<HTMLButtonElement>('[aria-selected="true"]');
+      if (!activePart) {
+        return;
+      }
+      const elementBounds = element.getBoundingClientRect();
+      const itemBounds = activePart.getBoundingClientRect();
+      const leadingInset = Number.parseFloat(
+        window.getComputedStyle(element).paddingInlineStart,
+      ) || 0;
+      const target = scrollLeftToAlignItemStart({
+        scrollLeft: element.scrollLeft,
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+        itemLeft: itemBounds.left - elementBounds.left + element.scrollLeft,
+        itemWidth: itemBounds.width,
+        leadingInset,
+      });
+      if (Math.abs(target - element.scrollLeft) > 1) {
+        element.scrollTo({ left: target, behavior: "smooth" });
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [partLayout?.frameWidth, projection.activeIndex, scopeKey]);
+
+  const scrollParts = (direction: -1 | 1) => {
+    const element = partTabsRef.current;
+    if (!element) {
+      return;
+    }
+    element.scrollBy({
+      left: direction * (partLayout?.pageWidth ?? element.clientWidth),
+      behavior: "smooth",
+    });
+  };
+
   const choosePart = (index: number) => {
     close();
     onPartChange(index);
@@ -83,21 +268,59 @@ export function MobileQuickFind({
 
   return (
     <>
-      <nav className="mobile-quick-find-dock" aria-label="词条快捷操作">
+      <nav className="mobile-quick-find-dock" aria-label="词条快捷操作" ref={dockRef}>
         {model.parts.length ? (
-          <div className="mobile-quick-find-part-tabs" role="tablist" aria-label="词性">
-            {model.parts.map((part) => (
+          <div
+            className={`mobile-quick-find-part-tabs-frame${partLayout?.overflowing ? " is-overflowing" : ""}`}
+            ref={partFrameRef}
+            style={partLayout ? {
+              flexBasis: partLayout.frameWidth,
+              width: partLayout.frameWidth,
+            } : undefined}
+          >
+            {partLayout?.overflowing ? (
               <button
-                aria-selected={part.active}
-                className={part.active ? "is-active" : ""}
-                key={part.index}
-                onClick={() => onPartChange(part.index)}
-                role="tab"
+                aria-label="向左查看更多词性"
+                className="mobile-quick-find-scroll-cue is-left"
+                disabled={!partScroll.canScrollLeft}
+                onClick={() => scrollParts(-1)}
+                title="向左查看更多词性"
                 type="button"
               >
-                {part.label}
+                <ChevronLeft aria-hidden="true" />
               </button>
-            ))}
+            ) : null}
+            <div
+              className="mobile-quick-find-part-tabs"
+              ref={partTabsRef}
+              role="tablist"
+              aria-label="词性"
+            >
+              {model.parts.map((part) => (
+                <button
+                  aria-selected={part.active}
+                  className={part.active ? "is-active" : ""}
+                  key={part.index}
+                  onClick={() => onPartChange(part.index)}
+                  role="tab"
+                  type="button"
+                >
+                  {part.label}
+                </button>
+              ))}
+            </div>
+            {partLayout?.overflowing ? (
+              <button
+                aria-label="向右查看更多词性"
+                className="mobile-quick-find-scroll-cue is-right"
+                disabled={!partScroll.canScrollRight}
+                onClick={() => scrollParts(1)}
+                title="向右查看更多词性"
+                type="button"
+              >
+                <ChevronRight aria-hidden="true" />
+              </button>
+            ) : null}
           </div>
         ) : null}
         <button

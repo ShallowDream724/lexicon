@@ -130,9 +130,10 @@ export const dictionaryClient = {
     return url.toString();
   },
 
-  illustrationUrl(key: string): string {
+  illustrationUrl(key: string, variant: "full" | "thumbnail" = "full"): string {
     const url = apiUrl("media/illustration");
     url.searchParams.set("key", key);
+    url.searchParams.set("variant", variant);
     return url.toString();
   },
 };

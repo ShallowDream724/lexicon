@@ -7,6 +7,7 @@ import type {
   CanonicalPartOfSpeech,
   CanonicalPhrase,
   CanonicalSense,
+  CanonicalText,
 } from "../../../packages/dictionary-schema/src/index";
 
 export type PhraseCollection = "idioms" | "phrasalVerbs";
@@ -27,6 +28,7 @@ export type EntryPartProjection = {
   idioms: CanonicalPhrase[];
   phrasalVerbs: CanonicalPhrase[];
   derivedForms: CanonicalForm[];
+  headwordFamilyNotes: CanonicalText[];
   inflectedForms: CanonicalForm[];
   variants: CanonicalForm[];
   illustrations: CanonicalIllustration[];
@@ -181,6 +183,50 @@ function collectScopedForms(
   ];
 }
 
+function normalizedFormText(value: string): string {
+  return value
+    .normalize("NFKC")
+    .replace(/[\u00b7\u2027]/g, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase();
+}
+
+function formLexemeKey(form: CanonicalForm): string {
+  return `${normalizedFormText(form.text)}\u0000${normalizedPart(
+    partOfSpeechTabLabel(form.partOfSpeech ?? ""),
+  )}`;
+}
+
+function coalesceDerivedForms(forms: CanonicalForm[]): CanonicalForm[] {
+  const derivatives = new Map<string, CanonicalForm>();
+  forms.forEach((form) => {
+    if (form.kind === "derivative") {
+      derivatives.set(formLexemeKey(form), form);
+    }
+  });
+
+  const merged = new Set<CanonicalForm>();
+  return forms.flatMap((form) => {
+    if (form.kind === "word-family") {
+      const derivative = derivatives.get(formLexemeKey(form));
+      if (derivative && !merged.has(derivative)) {
+        merged.add(derivative);
+        return [{
+          ...derivative,
+          partOfSpeech: derivative.partOfSpeech ?? form.partOfSpeech,
+          note: derivative.note ?? form.note,
+        }];
+      }
+    }
+
+    if (form.kind === "derivative" && merged.has(form)) {
+      return [];
+    }
+    return [form];
+  });
+}
+
 const headerLabelKinds = new Set(["frequency", "level", "academic-register", "exam"]);
 
 function collectHeaderLabels(
@@ -330,7 +376,21 @@ export function projectEntryPart(
   );
   const idioms = collectEntryPhrases(entry, "idioms", selectedPart);
   const phrasalVerbs = collectEntryPhrases(entry, "phrasalVerbs", selectedPart);
-  const derivedForms = collectScopedForms(entry, "derivedForms", selectedPart);
+  const scopedDerivedForms = collectScopedForms(entry, "derivedForms", selectedPart);
+  const selfFamilyForms = scopedDerivedForms.filter(
+    (form) =>
+      form.kind === "word-family" &&
+      normalizedFormText(form.text) === normalizedFormText(entry.searchKey),
+  );
+  const headwordFamilyNotes = dedupeBy(
+    selfFamilyForms.flatMap((form) =>
+      form.note?.text.trim() ? [form.note] : [],
+    ),
+    (note) => normalizedFormText(note.text),
+  );
+  const derivedForms = coalesceDerivedForms(
+    scopedDerivedForms.filter((form) => !selfFamilyForms.includes(form)),
+  );
   const inflectedForms = collectScopedForms(entry, "inflectedForms", selectedPart);
   const variants = collectScopedForms(entry, "variants", selectedPart);
   const resources = collectScopedResources(entry, selectedPart, activeIndex === 0);
@@ -354,6 +414,7 @@ export function projectEntryPart(
     idioms,
     phrasalVerbs,
     derivedForms,
+    headwordFamilyNotes,
     inflectedForms,
     variants,
     illustrations,

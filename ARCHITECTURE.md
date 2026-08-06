@@ -76,7 +76,7 @@ The service owns runtime storage work:
   around the unmodified entry JSON;
 - indexing the pronunciation archive once and streaming individual assets;
 - resolving optional example-audio and illustration keys through configured,
-  validated media base URLs;
+  validated media URLs and path templates;
 - enforcing request limits, timeouts, cancellation, and structured errors.
 
 It does not build the UI-facing entry model. This avoids implementing the same
@@ -152,6 +152,19 @@ the visible senses, subentries, idioms, phrasal verbs, forms, illustrations, box
 and sidebar navigation as one consistent view. Components do not repeat ownership
 rules. This prevents noun-only auxiliary material from leaking into a verb view and
 keeps navigation synchronized with rendered sections.
+
+That projection also resolves source overlap without mutating canonical data. A
+word-family form and a detailed derivative are coalesced only when normalized spelling
+and part of speech both match; the detailed pronunciation and senses win while a family
+relation note is retained. A word-family record that repeats the active headword moves
+its non-empty note into the headword content instead of appearing as its own derivative.
+
+The mobile part-of-speech control measures its dock rather than assuming a device class.
+A single part remains a non-scrollable, evenly inset capsule. Overflowing entries expose
+the largest whole number of tabs that fit after reserving the quick-find action and
+scroll cues; selecting the right-hand tab aligns it to the next page's leading edge.
+Resize observation expands and contracts the tab page in both directions, while changing
+entries resets the strip to its first tab.
 
 ### Learning Data
 

@@ -104,8 +104,39 @@ test("adapts an ordered normal entry with examples and media keys", () => {
   assert.equal(entry.senses[0]?.examples[0]?.audio[0]?.key, "completion_example_gb");
   assert.equal(entry.senses[0]?.examples[0]?.audio[1]?.region, "na");
   assert.equal(entry.illustrations[0]?.key, "project-cycle");
+  assert.equal(entry.illustrations[0]?.text, undefined);
   assert.equal(entry.senses[0]?.illustrations[0]?.key, "completion-chart");
+  assert.equal(entry.senses[0]?.illustrations[0]?.text, undefined);
   assert.deepEqual(entry.raw.unrecognized_root_field, { retained: true });
+});
+
+test("keeps illustration resource keys separate from explicit captions", () => {
+  const entry = adapter.parse({
+    entryId: "entry-apple",
+    headword: "apple",
+    sourceVersion: "2026.08",
+    body: {
+      top_data: {
+        h: [{ tag: "h", value: "apple" }],
+        ill: [
+          { tag: "ill", value: "fruit_misc" },
+          { tag: "ill", key: "apple-cutaway", caption: "Apple cross-section" },
+        ],
+      },
+      sngs_data: [],
+    },
+  });
+
+  assert.deepEqual(
+    entry.illustrations.map((illustration) => ({
+      key: illustration.key,
+      text: illustration.text,
+    })),
+    [
+      { key: "fruit_misc", text: undefined },
+      { key: "apple-cutaway", text: "Apple cross-section" },
+    ],
+  );
 });
 
 test("keeps empty root POS separate from recursive subentries", () => {
@@ -554,6 +585,7 @@ test("adapts structured derivatives with pronunciation, labels, senses, and exam
     "swift·ly",
     "swift·ness",
   ]);
+  assert.deepEqual(entry.senses, []);
   assert.deepEqual(entry.derivedForms[0]?.pronunciations?.map((item) => item.audioKey), [
     "swiftly_gb",
     "swiftly_us",

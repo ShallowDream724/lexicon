@@ -95,7 +95,9 @@ DICTIONARY_CORS_ORIGINS=http://server-ip
 
 `LEXICON_DATA_DIR` is resolved from `deploy/server/compose.yaml`; the default
 `../../data` points to the repository's ignored `data` directory. Example-audio and
-illustration base URLs are optional and accept only HTTP or HTTPS origins.
+illustration sources are optional and accept only HTTP or HTTPS URLs. Illustration
+URL templates can use `{key}`, `{prefix1}`, `{prefix3}`, and `{prefix5}` path tokens;
+a separate thumbnail template avoids loading full images in compact resource cards.
 
 ## Start
 

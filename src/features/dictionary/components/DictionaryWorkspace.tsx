@@ -83,9 +83,7 @@ export function DictionaryWorkspace({
   const [view, setView] = useState<WorkspaceView>(
     initialRoute.kind === "home"
       ? "home"
-      : initialRoute.kind === "entry"
-        ? "loading"
-        : "search-results",
+      : "loading",
   );
   const [searchResults, setSearchResults] = useState<SearchResultsState>(
     initialRoute.kind === "query"
@@ -270,7 +268,7 @@ export function DictionaryWorkspace({
       setSearchPending(false);
       setSearchError(null);
       setEntryPending(false);
-      setView("search-results");
+      setView("loading");
       setSearchResults({
         query: requestedQuery,
         items: [],
@@ -303,19 +301,19 @@ export function DictionaryWorkspace({
         if (submittedSearchRequest.current !== controller || controller.signal.aborted) {
           return null;
         }
-        setSearchResults({
-          query: requestedQuery,
-          items: resolution.kind === "candidates" ? resolution.items : primaryItems,
-          pending: false,
-          error: null,
-        });
-
         if (resolution.kind === "direct") {
           submittedSearchRequest.current = null;
           const route = options.route === "none" ? "replace" : options.route ?? "push";
           return await selectEntry(resolution.entryId, { route });
         }
 
+        setSearchResults({
+          query: requestedQuery,
+          items: resolution.items,
+          pending: false,
+          error: null,
+        });
+        setView("search-results");
         const route = options.route ?? "push";
         if (route !== "none") {
           updateRoute(
@@ -329,12 +327,16 @@ export function DictionaryWorkspace({
         if (isAbortError(error)) {
           return null;
         }
+        if (submittedSearchRequest.current !== controller || controller.signal.aborted) {
+          return null;
+        }
         setSearchResults({
           query: requestedQuery,
           items: [],
           pending: false,
           error: "词典服务暂不可用",
         });
+        setView("search-results");
         const route = options.route ?? "push";
         if (route !== "none") {
           updateRoute(

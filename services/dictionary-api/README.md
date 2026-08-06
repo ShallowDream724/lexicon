@@ -34,7 +34,8 @@ go run ./cmd/dictionary-api \
   -db ./data/dictionary.db \
   -audio-zip ./data/headword-audio.zip \
   -example-audio-base-url https://media.example.test/audio/examples/ \
-  -illustration-base-url https://media.example.test/images/ \
+  -illustration-url-template 'https://media.example.test/images/{key}.png' \
+  -illustration-thumbnail-url-template 'https://media.example.test/thumbs/{key}.webp?width=240' \
   -listen 127.0.0.1:8787 \
   -cors-origins http://localhost:3000
 ```
@@ -54,6 +55,8 @@ DICTIONARY_RUNTIME_DB_PATH
 DICTIONARY_AUDIO_ZIP_PATH
 DICTIONARY_EXAMPLE_AUDIO_BASE_URL
 DICTIONARY_ILLUSTRATION_BASE_URL
+DICTIONARY_ILLUSTRATION_URL_TEMPLATE
+DICTIONARY_ILLUSTRATION_THUMBNAIL_URL_TEMPLATE
 DICTIONARY_LISTEN
 DICTIONARY_CORS_ORIGINS
 ```
@@ -66,7 +69,7 @@ GET /api/v1/search?q=word&limit=20
 GET /api/v1/entries/{id}
 GET /api/v1/media/headword-audio?key=word%23_gb_1
 GET /api/v1/media/example-audio?key=example%23_gbs_1
-GET /api/v1/media/illustration?key=illustration-key
+GET /api/v1/media/illustration?key=illustration-key&variant=thumbnail
 ```
 
 Each search item contains `id`, `headword`, `partsOfSpeech`, and
@@ -93,8 +96,11 @@ decoding the compressed entry body.
 The optional headword-audio archive is indexed once at startup. Duplicate keys are
 excluded to avoid ambiguous responses, and individual assets stream without
 extraction. Example-audio and illustration routes redirect only to configured HTTP
-or HTTPS base URLs after validating each opaque key as one path segment. Leaving a
-media source unconfigured does not prevent search and entry lookup from starting.
+or HTTPS base URLs or URL templates after validating each opaque key as one path
+segment. Templates support `{key}`, `{prefix1}`, `{prefix3}`, and `{prefix5}` in the
+URL path. Thumbnail requests fall back to the full illustration source when no
+thumbnail template is configured. Leaving a media source unconfigured does not
+prevent search and entry lookup from starting.
 
 ## Container
 

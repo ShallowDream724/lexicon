@@ -27,6 +27,8 @@ func main() {
 	audioPath := flag.String("audio-zip", defaults.audioPath, "path to the headword audio ZIP")
 	exampleAudioBaseURL := flag.String("example-audio-base-url", defaults.exampleAudioBaseURL, "base URL for example audio objects")
 	illustrationBaseURL := flag.String("illustration-base-url", defaults.illustrationBaseURL, "base URL for illustration objects")
+	illustrationURLTemplate := flag.String("illustration-url-template", defaults.illustrationURLTemplate, "URL template for full illustration objects")
+	illustrationThumbnailURLTemplate := flag.String("illustration-thumbnail-url-template", defaults.illustrationThumbnailURLTemplate, "URL template for illustration thumbnails")
 	listen := flag.String("listen", defaults.listen, "HTTP listen address")
 	origins := flag.String("cors-origins", defaults.origins, "comma-separated allowed CORS origins")
 	flag.Parse()
@@ -70,9 +72,12 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	mediaResolver, err := media.NewResolver(map[media.Kind]string{
+	mediaResolver, err := media.NewResolverWithTemplates(map[media.Kind]string{
 		media.ExampleAudio: *exampleAudioBaseURL,
 		media.Illustration: *illustrationBaseURL,
+	}, map[media.Kind]string{
+		media.Illustration:          *illustrationURLTemplate,
+		media.IllustrationThumbnail: *illustrationThumbnailURLTemplate,
 	})
 	if err != nil {
 		logger.Error("configure remote media", "error", err)
@@ -107,17 +112,21 @@ func main() {
 }
 
 type configDefaults struct {
-	dbPath, audioPath, exampleAudioBaseURL, illustrationBaseURL, listen, origins string
+	dbPath, audioPath, exampleAudioBaseURL, illustrationBaseURL string
+	illustrationURLTemplate, illustrationThumbnailURLTemplate   string
+	listen, origins                                             string
 }
 
 func defaultConfig() configDefaults {
 	return configDefaults{
-		dbPath:              envOr("DICTIONARY_RUNTIME_DB_PATH", "./data/dictionary.db"),
-		audioPath:           envOr("DICTIONARY_AUDIO_ZIP_PATH", ""),
-		exampleAudioBaseURL: envOr("DICTIONARY_EXAMPLE_AUDIO_BASE_URL", ""),
-		illustrationBaseURL: envOr("DICTIONARY_ILLUSTRATION_BASE_URL", ""),
-		listen:              envOr("DICTIONARY_LISTEN", "127.0.0.1:8787"),
-		origins:             envOr("DICTIONARY_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"),
+		dbPath:                           envOr("DICTIONARY_RUNTIME_DB_PATH", "./data/dictionary.db"),
+		audioPath:                        envOr("DICTIONARY_AUDIO_ZIP_PATH", ""),
+		exampleAudioBaseURL:              envOr("DICTIONARY_EXAMPLE_AUDIO_BASE_URL", ""),
+		illustrationBaseURL:              envOr("DICTIONARY_ILLUSTRATION_BASE_URL", ""),
+		illustrationURLTemplate:          envOr("DICTIONARY_ILLUSTRATION_URL_TEMPLATE", ""),
+		illustrationThumbnailURLTemplate: envOr("DICTIONARY_ILLUSTRATION_THUMBNAIL_URL_TEMPLATE", ""),
+		listen:                           envOr("DICTIONARY_LISTEN", "127.0.0.1:8787"),
+		origins:                          envOr("DICTIONARY_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"),
 	}
 }
 

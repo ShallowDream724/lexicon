@@ -88,6 +88,8 @@ interface CanonicalAudioReference {
 The renderer never constructs storage paths or provider URLs. The dictionary client
 resolves headword audio, example audio, and illustrations through API media routes,
 allowing a local archive and configured remote object stores to coexist.
+Illustration captions are populated only from an explicit source caption field; opaque
+resource keys are never presented as user-facing text.
 
 When a source provides ordered alternatives for the same media value, adapters select
 the first non-empty value in source priority order. Empty optional media values are

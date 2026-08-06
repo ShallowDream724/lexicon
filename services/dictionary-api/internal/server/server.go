@@ -82,7 +82,7 @@ func (s *Service) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/entries/{id}", s.entry)
 	mux.HandleFunc("GET /api/v1/media/headword-audio", s.headwordAudio)
 	mux.HandleFunc("GET /api/v1/media/example-audio", s.remoteMediaRedirect(media.ExampleAudio))
-	mux.HandleFunc("GET /api/v1/media/illustration", s.remoteMediaRedirect(media.Illustration))
+	mux.HandleFunc("GET /api/v1/media/illustration", s.illustration)
 	return s.withRequestID(s.withCORS(s.withLogging(mux)))
 }
 
@@ -405,23 +405,43 @@ func (s *Service) headwordAudio(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) remoteMediaRedirect(kind media.Kind) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		target, err := s.remoteMedia.Resolve(kind, r.URL.Query().Get("key"))
-		if errors.Is(err, media.ErrUnavailable) {
-			s.writeError(w, r, http.StatusServiceUnavailable, "media_unavailable", "media source is unavailable")
-			return
-		}
-		if errors.Is(err, media.ErrInvalidKey) {
-			s.writeError(w, r, http.StatusNotFound, "media_not_found", "media asset was not found")
-			return
-		}
-		if err != nil {
-			s.logger.Error("media URL resolution failed", "kind", kind, "error", err)
-			s.writeError(w, r, http.StatusInternalServerError, "media_resolution_failed", "media asset could not be resolved")
-			return
-		}
-		w.Header().Set("Cache-Control", "public, max-age=86400")
-		http.Redirect(w, r, target, http.StatusTemporaryRedirect)
+		s.redirectRemoteMedia(w, r, kind)
 	}
+}
+
+func (s *Service) illustration(w http.ResponseWriter, r *http.Request) {
+	kind := media.Illustration
+	switch r.URL.Query().Get("variant") {
+	case "", "full":
+	case "thumbnail":
+		kind = media.IllustrationThumbnail
+	default:
+		s.writeError(w, r, http.StatusNotFound, "media_not_found", "media asset was not found")
+		return
+	}
+	s.redirectRemoteMedia(w, r, kind)
+}
+
+func (s *Service) redirectRemoteMedia(w http.ResponseWriter, r *http.Request, kind media.Kind) {
+	target, err := s.remoteMedia.Resolve(kind, r.URL.Query().Get("key"))
+	if errors.Is(err, media.ErrUnavailable) && kind == media.IllustrationThumbnail {
+		target, err = s.remoteMedia.Resolve(media.Illustration, r.URL.Query().Get("key"))
+	}
+	if errors.Is(err, media.ErrUnavailable) {
+		s.writeError(w, r, http.StatusServiceUnavailable, "media_unavailable", "media source is unavailable")
+		return
+	}
+	if errors.Is(err, media.ErrInvalidKey) {
+		s.writeError(w, r, http.StatusNotFound, "media_not_found", "media asset was not found")
+		return
+	}
+	if err != nil {
+		s.logger.Error("media URL resolution failed", "kind", kind, "error", err)
+		s.writeError(w, r, http.StatusInternalServerError, "media_resolution_failed", "media asset could not be resolved")
+		return
+	}
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	http.Redirect(w, r, target, http.StatusTemporaryRedirect)
 }
 
 func (s *Service) withRequestID(next http.Handler) http.Handler {
