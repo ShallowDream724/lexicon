@@ -1,15 +1,25 @@
-import type { Metadata } from "next";
-import { SkeletonPreview } from "./_sites-preview/SkeletonPreview";
+import {
+  DictionaryWorkspace,
+  type WorkspaceInitialRoute,
+} from "@/src/features/dictionary/components/DictionaryWorkspace";
 
-export const metadata: Metadata = {
-  title: "Your site is taking shape",
-  description:
-    "Your first version will appear here automatically when it’s ready.",
-  other: {
-    "codex-preview": "development",
-  },
+type HomeProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-export default function Home() {
-  return <SkeletonPreview />;
+function firstParameter(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+export default async function Home({ searchParams }: HomeProps) {
+  const parameters = (await searchParams) ?? {};
+  const entryId = firstParameter(parameters.entry)?.trim();
+  const query = firstParameter(parameters.q)?.trim();
+  const initialRoute: WorkspaceInitialRoute = entryId
+    ? { kind: "entry", entryId }
+    : query
+      ? { kind: "query", query }
+      : { kind: "home" };
+
+  return <DictionaryWorkspace initialRoute={initialRoute} />;
 }

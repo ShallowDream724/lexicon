@@ -1,42 +1,41 @@
 {
-  "name": "site-creator-vinext-starter",
+  "name": "lexicon-workbench",
   "version": "0.1.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext dev",
-    "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build",
-    "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
-    "test": "npm run build && node --test tests/rendered-html.test.mjs",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "drizzle-kit generate"
+    "dev": "next dev",
+    "dev:api": "go -C services/dictionary-api run ./cmd/dictionary-api -db ../../data/dictionary.db",
+    "build": "next build",
+    "start": "next start",
+    "dictionary:import": "go -C services/dictionary-api run ./cmd/dictionary-import",
+    "dictionary:benchmark": "go -C services/dictionary-api run ./cmd/dictionary-storage-benchmark",
+    "dictionary:audit": "tsx scripts/audit-bundled-bilingual-corpus.ts",
+    "test": "npm run test:contracts && npm run test:api && npm run build && npm run test:web",
+    "test:api": "go -C services/dictionary-api test ./...",
+    "test:contracts": "tsx --test tests/contracts/*.test.ts",
+    "test:web": "node --test tests/rendered-html.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
   },
   "dependencies": {
-    "drizzle-orm": "0.45.2",
-    "next": "16.2.6",
+    "idb": "^8.0.3",
+    "lucide-react": "^1.28.0",
+    "next": "16.3.0",
     "react": "19.2.6",
     "react-dom": "19.2.6",
-    "react-loading-skeleton": "3.5.0"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "1.37.1",
-    "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
-    "@vitejs/plugin-react": "6.0.2",
-    "@vitejs/plugin-rsc": "0.5.26",
-    "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
-    "eslint-config-next": "16.2.6",
-    "react-server-dom-webpack": "19.2.6",
-    "tailwindcss": "4.2.1",
-    "typescript": "5.9.3",
-    "vinext": "0.0.50",
-    "vite": "8.0.13",
-    "wrangler": "4.92.0"
+    "eslint-config-next": "16.3.0",
+    "tsx": "^4.23.7",
+    "typescript": "5.9.3"
   },
   "type": "module"
 }
