@@ -1,8 +1,8 @@
-# Lexicon Workbench Architecture
+# Lexicon Architecture
 
 ## Goals
 
-Lexicon Workbench is an anonymous, responsive dictionary application for desktop,
+Lexicon is an anonymous, responsive dictionary application for desktop,
 tablet, and phone. It keeps dictionary content read-only, stores each browser's
 learning data separately, and accepts additional dictionary formats through
 versioned adapters.

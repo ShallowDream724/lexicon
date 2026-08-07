@@ -4,7 +4,7 @@ import Image from "next/image";
 import { OfflineActions } from "@/src/platform/pwa/OfflineActions";
 
 export const metadata: Metadata = {
-  title: "离线 | Lexicon Workbench",
+  title: "离线 | Lexicon",
 };
 
 export default function OfflinePage() {
@@ -18,7 +18,7 @@ export default function OfflinePage() {
           alt=""
           priority
         />
-        <strong>Lexicon Workbench</strong>
+        <strong>Lexicon</strong>
       </header>
       <section className="pwa-offline-content">
         <div>

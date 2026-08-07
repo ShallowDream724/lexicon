@@ -142,7 +142,7 @@ export function DictionaryHeader({
       </div>
 
       <div className={`header-search-region${homeMode ? " is-home" : ""}`}>
-        <div className="product-mark" aria-label="Lexicon Workbench">
+        <div className="product-mark" aria-label="Lexicon">
           <span className="product-mark-icon" aria-hidden="true">
             <Image src="/brand-mark.svg" alt="" width={30} height={30} priority />
           </span>

@@ -95,7 +95,7 @@ test("server-renders the anonymous dictionary workspace", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>Lexicon Workbench<\/title>/i);
+  assert.match(html, /<title>Lexicon<\/title>/i);
   assert.match(html, /LEXICON/);
   assert.match(html, /输入要查询的单词或短语/);
   assert.match(html, /词典首页/);
@@ -130,7 +130,7 @@ test("serves an installable manifest and complete icon set", async () => {
   );
 
   const value = await response.json();
-  assert.equal(value.name, "Lexicon Workbench");
+  assert.equal(value.name, "Lexicon");
   assert.equal(value.display, "standalone");
   assert.equal(value.orientation, "any");
   assert.ok(

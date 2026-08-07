@@ -3,7 +3,7 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "Lexicon Workbench",
+    name: "Lexicon",
     short_name: "Lexicon",
     description: "英汉双语词典与个人词汇学习工具",
     start_url: "/",

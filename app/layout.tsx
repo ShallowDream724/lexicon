@@ -5,9 +5,9 @@ import { PwaRuntime } from "@/src/platform/pwa/PwaRuntime";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  applicationName: "Lexicon Workbench",
-  title: "Lexicon Workbench",
-  description: "Responsive bilingual dictionary and personal vocabulary workspace.",
+  applicationName: "Lexicon",
+  title: "Lexicon",
+  description: "Responsive bilingual dictionary and personal vocabulary tool.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,

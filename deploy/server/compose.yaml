@@ -1,4 +1,4 @@
-name: lexicon-workbench
+name: lexicon
 
 services:
   gateway:

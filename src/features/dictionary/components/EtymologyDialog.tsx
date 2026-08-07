@@ -13,6 +13,7 @@ import { dictionaryClient } from "../../../lib/dictionary-client/client";
 import { isArticleResponseForResource } from "../etymology-response";
 import { etymologyArticleLabel } from "../resource-model";
 import { useViewportScrollLock } from "../use-viewport-scroll-lock";
+import { DialogPortal } from "./DialogPortal";
 
 type EtymologyDialogProps = {
   resource: EtymologyResourceSummary | null;
@@ -212,79 +213,81 @@ export function EtymologyDialog({
   };
 
   return (
-    <div className="resource-dialog-layer etymology-dialog-layer" role="presentation" onMouseDown={onClose}>
-      <section
-        className="resource-dialog etymology-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label="词源"
-        onKeyDown={keepFocusInside}
-        onMouseDown={(event) => event.stopPropagation()}
-        ref={dialogRef}
-        tabIndex={-1}
-      >
-        <header>
-          <button type="button" title="关闭" aria-label="关闭" onClick={onClose}>
-            <X aria-hidden="true" />
-          </button>
-          <strong>词源</strong>
-          <span aria-hidden="true" />
-        </header>
-        <div className="etymology-dialog-body">
-          <div className="etymology-gilt-edge" aria-hidden="true" />
-          <div className="etymology-paper">
-            <div className="etymology-watermark" aria-hidden="true" />
-            <h1>{resource.headword}</h1>
-            <div className="etymology-article-tabs" role="tablist" aria-label="词源篇章">
-              {resource.articles.map((article, index) => (
-                <button
-                  aria-selected={article.id === selectedArticleId}
-                  aria-controls={tabPanelId}
-                  className={article.id === selectedArticleId ? "is-active" : ""}
-                  id={`${tabPanelId}-tab-${index}`}
-                  key={article.id}
-                  onClick={() => chooseArticle(article.id)}
-                  onKeyDown={(event) => moveArticleFocus(event, index)}
-                  role="tab"
-                  tabIndex={article.id === selectedArticleId ? 0 : -1}
-                  type="button"
+    <DialogPortal>
+      <div className="resource-dialog-layer etymology-dialog-layer" role="presentation" onMouseDown={onClose}>
+        <section
+          className="resource-dialog etymology-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-label="词源"
+          onKeyDown={keepFocusInside}
+          onMouseDown={(event) => event.stopPropagation()}
+          ref={dialogRef}
+          tabIndex={-1}
+        >
+          <header>
+            <button type="button" title="关闭" aria-label="关闭" onClick={onClose}>
+              <X aria-hidden="true" />
+            </button>
+            <strong>词源</strong>
+            <span aria-hidden="true" />
+          </header>
+          <div className="etymology-dialog-body">
+            <div className="etymology-gilt-edge" aria-hidden="true" />
+            <div className="etymology-paper">
+              <div className="etymology-watermark" aria-hidden="true" />
+              <h1>{resource.headword}</h1>
+              <div className="etymology-article-tabs" role="tablist" aria-label="词源篇章">
+                {resource.articles.map((article, index) => (
+                  <button
+                    aria-selected={article.id === selectedArticleId}
+                    aria-controls={tabPanelId}
+                    className={article.id === selectedArticleId ? "is-active" : ""}
+                    id={`${tabPanelId}-tab-${index}`}
+                    key={article.id}
+                    onClick={() => chooseArticle(article.id)}
+                    onKeyDown={(event) => moveArticleFocus(event, index)}
+                    role="tab"
+                    tabIndex={article.id === selectedArticleId ? 0 : -1}
+                    type="button"
+                  >
+                    {etymologyArticleLabel(article, index)}
+                  </button>
+                ))}
+              </div>
+              {pending ? (
+                <p className="etymology-status" role="status"><LoaderCircle aria-hidden="true" />正在加载</p>
+              ) : null}
+              {error ? (
+                <div className="etymology-status is-error" role="alert">
+                  <p>{error}</p>
+                  <button type="button" onClick={() => {
+                    setErrors((current) => {
+                      const next = { ...current };
+                      if (articleKey) {
+                        delete next[articleKey];
+                      }
+                      return next;
+                    });
+                    setRetryVersion((version) => version + 1);
+                  }}>
+                    <RotateCcw aria-hidden="true" />重试
+                  </button>
+                </div>
+              ) : null}
+              {selected ? (
+                <div
+                  aria-labelledby={`${tabPanelId}-tab-${resource.articles.findIndex((article) => article.id === selectedArticleId)}`}
+                  id={tabPanelId}
+                  role="tabpanel"
                 >
-                  {etymologyArticleLabel(article, index)}
-                </button>
-              ))}
+                  <EtymologyArticleContent article={selected} onNavigate={onNavigate} />
+                </div>
+              ) : null}
             </div>
-            {pending ? (
-              <p className="etymology-status" role="status"><LoaderCircle aria-hidden="true" />正在加载</p>
-            ) : null}
-            {error ? (
-              <div className="etymology-status is-error" role="alert">
-                <p>{error}</p>
-                <button type="button" onClick={() => {
-                  setErrors((current) => {
-                    const next = { ...current };
-                    if (articleKey) {
-                      delete next[articleKey];
-                    }
-                    return next;
-                  });
-                  setRetryVersion((version) => version + 1);
-                }}>
-                  <RotateCcw aria-hidden="true" />重试
-                </button>
-              </div>
-            ) : null}
-            {selected ? (
-              <div
-                aria-labelledby={`${tabPanelId}-tab-${resource.articles.findIndex((article) => article.id === selectedArticleId)}`}
-                id={tabPanelId}
-                role="tabpanel"
-              >
-                <EtymologyArticleContent article={selected} onNavigate={onNavigate} />
-              </div>
-            ) : null}
           </div>
-        </div>
-      </section>
-    </div>
+        </section>
+      </div>
+    </DialogPortal>
   );
 }

@@ -2,7 +2,7 @@
 
 ## Scope
 
-Lexicon Workbench is one browser application that can be installed on desktop,
+Lexicon is one browser application that can be installed on desktop,
 tablet, and phone. Installation changes the launch surface and window chrome; it does
 not install a dictionary database or copy server media onto the device.
 

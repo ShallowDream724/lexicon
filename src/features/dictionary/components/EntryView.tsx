@@ -46,6 +46,7 @@ import { useViewportScrollLock } from "../use-viewport-scroll-lock";
 import { buildEntryResources, type EntryResource } from "../resource-model";
 import type { EtymologyRoute } from "../workspace-route";
 import { CanonicalTextContent } from "./CanonicalTextContent";
+import { DialogPortal } from "./DialogPortal";
 import { EtymologyDialog } from "./EtymologyDialog";
 import { MobileQuickFind } from "./MobileQuickFind";
 import { ResourceRail as EntryResourceRail } from "./ResourceRail";
@@ -581,69 +582,71 @@ function ResourceDialog({
   const labels = box ? grammarUsageBoxLabels(box) : null;
   const boxPresentation = box ? projectGrammarUsageBox(box) : null;
   return (
-    <div className="resource-dialog-layer" role="presentation" onMouseDown={onClose}>
-      <section
-        className="resource-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label={labels?.primary ?? "图解词汇"}
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <header>
-          <button type="button" title="关闭" aria-label="关闭" onClick={onClose}>
-            <X aria-hidden="true" />
-          </button>
-          <strong>{labels ? `${labels.secondary} ${labels.primary}` : "图解词汇"}</strong>
-          <span aria-hidden="true" />
-        </header>
-        <div className="resource-dialog-body">
-          {box ? (
-            <>
-              {boxPresentation?.title ? (
-                <h1>{boxPresentation.title.text.trim()}</h1>
-              ) : null}
-              {boxPresentation?.references.length ? (
-                <div className="box-reference-grid" role="list">
-                  {boxPresentation.references.map((reference, index) => (
-                    <button
-                      disabled={!reference.entryId}
-                      key={reference.id ?? `${reference.text}-${index}`}
-                      onClick={() => {
-                        if (reference.entryId) {
-                          onClose();
-                          onSelectEntry(reference.entryId);
-                        }
-                      }}
-                      role="listitem"
-                      type="button"
-                    >
-                      {reference.text}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              {boxPresentation?.blocks.map((block, index) => (
-                <BoxBlockView
-                  block={block}
-                  key={index}
-                  onPlayAudio={onPlayAudio}
-                  onSelectEntry={onSelectEntry}
+    <DialogPortal>
+      <div className="resource-dialog-layer" role="presentation" onMouseDown={onClose}>
+        <section
+          className="resource-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-label={labels?.primary ?? "图解词汇"}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <header>
+            <button type="button" title="关闭" aria-label="关闭" onClick={onClose}>
+              <X aria-hidden="true" />
+            </button>
+            <strong>{labels ? `${labels.secondary} ${labels.primary}` : "图解词汇"}</strong>
+            <span aria-hidden="true" />
+          </header>
+          <div className="resource-dialog-body">
+            {box ? (
+              <>
+                {boxPresentation?.title ? (
+                  <h1>{boxPresentation.title.text.trim()}</h1>
+                ) : null}
+                {boxPresentation?.references.length ? (
+                  <div className="box-reference-grid" role="list">
+                    {boxPresentation.references.map((reference, index) => (
+                      <button
+                        disabled={!reference.entryId}
+                        key={reference.id ?? `${reference.text}-${index}`}
+                        onClick={() => {
+                          if (reference.entryId) {
+                            onClose();
+                            onSelectEntry(reference.entryId);
+                          }
+                        }}
+                        role="listitem"
+                        type="button"
+                      >
+                        {reference.text}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                {boxPresentation?.blocks.map((block, index) => (
+                  <BoxBlockView
+                    block={block}
+                    key={index}
+                    onPlayAudio={onPlayAudio}
+                    onSelectEntry={onSelectEntry}
+                  />
+                ))}
+              </>
+            ) : illustration ? (
+              <figure>
+                <IllustrationImage
+                  className="resource-dialog-image"
+                  illustration={illustration}
+                  resolveIllustration={resolveIllustration}
                 />
-              ))}
-            </>
-          ) : illustration ? (
-            <figure>
-              <IllustrationImage
-                className="resource-dialog-image"
-                illustration={illustration}
-                resolveIllustration={resolveIllustration}
-              />
-              {illustration.text ? <figcaption>{illustration.text}</figcaption> : null}
-            </figure>
-          ) : null}
-        </div>
-      </section>
-    </div>
+                {illustration.text ? <figcaption>{illustration.text}</figcaption> : null}
+              </figure>
+            ) : null}
+          </div>
+        </section>
+      </div>
+    </DialogPortal>
   );
 }
 
