@@ -55,7 +55,10 @@ func (c *zstdCodec) initialize() {
 	if c.err != nil {
 		return
 	}
-	decoderOptions := []zstd.DOption{zstd.WithDecoderConcurrency(1)}
+	decoderOptions := []zstd.DOption{
+		zstd.WithDecoderConcurrency(1),
+		zstd.WithDecodeAllCapLimit(true),
+	}
 	if len(c.dictionary) > 0 {
 		decoderOptions = append(decoderOptions, zstd.WithDecoderDicts(c.dictionary))
 	}
@@ -75,7 +78,10 @@ func (c *zstdCodec) Decompress(input []byte, expectedSize int64) ([]byte, error)
 	if c.err != nil {
 		return nil, c.err
 	}
-	decoded, err := c.decoder.DecodeAll(input, nil)
+	if expectedSize < 0 || uint64(expectedSize) > uint64(^uint(0)>>1) {
+		return nil, fmt.Errorf("invalid expected payload size %d", expectedSize)
+	}
+	decoded, err := c.decoder.DecodeAll(input, make([]byte, 0, int(expectedSize)))
 	if err != nil {
 		return nil, err
 	}

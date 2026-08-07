@@ -2,6 +2,7 @@ import {
   DictionaryWorkspace,
   type WorkspaceInitialRoute,
 } from "@/src/features/dictionary/components/DictionaryWorkspace";
+import { parseWorkspaceRoute } from "@/src/features/dictionary/workspace-route";
 
 type HomeProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -13,13 +14,14 @@ function firstParameter(value: string | string[] | undefined): string | undefine
 
 export default async function Home({ searchParams }: HomeProps) {
   const parameters = (await searchParams) ?? {};
-  const entryId = firstParameter(parameters.entry)?.trim();
-  const query = firstParameter(parameters.q)?.trim();
-  const initialRoute: WorkspaceInitialRoute = entryId
-    ? { kind: "entry", entryId }
-    : query
-      ? { kind: "query", query }
-      : { kind: "home" };
+  const routeParameters = new URLSearchParams();
+  for (const key of ["entry", "q", "etymology", "article"]) {
+    const value = firstParameter(parameters[key])?.trim();
+    if (value) {
+      routeParameters.set(key, value);
+    }
+  }
+  const initialRoute: WorkspaceInitialRoute = parseWorkspaceRoute(routeParameters);
 
   return <DictionaryWorkspace initialRoute={initialRoute} />;
 }

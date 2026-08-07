@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"dictionary-api/internal/audio"
+	"dictionary-api/internal/etymology"
 	"dictionary-api/internal/importer"
 	"dictionary-api/internal/payload"
 	"dictionary-api/internal/schema"
@@ -240,7 +241,7 @@ func TestSearchKeepsExactAndPrefixPathsAndSkipsIneligibleTypoQueries(t *testing.
 	}{
 		{query: "grateful", want: []string{"grateful"}},
 		{query: "grat", want: []string{"grateful", "gratefyl", "gratitude"}},
-		{query: "te", want: []string{}},
+		{query: "zz", want: []string{}},
 		{query: "grate ful", want: []string{}},
 		{query: strings.Repeat("a", 65), want: []string{}},
 	} {
@@ -270,6 +271,102 @@ func TestAudioLookupStreamsIndexedFileAndRejectsTraversal(t *testing.T) {
 	}
 	if response := get(t, svc, "/api/v1/media/headword-audio?key=../alpha%23_gb_1"); response.Code != http.StatusNotFound {
 		t.Fatalf("traversal: %d", response.Code)
+	}
+}
+
+func TestEtymologyEndpointsEntryEnhancementsAndMergedSearch(t *testing.T) {
+	svc := newFixtureServiceWithEtymology(t)
+
+	term := get(t, svc, "/api/v1/enhancements/etymology/terms/Alpha")
+	if term.Code != http.StatusOK {
+		t.Fatalf("term summary: %d %s", term.Code, term.Body.String())
+	}
+	var summary struct {
+		SchemaVersion string `json:"schemaVersion"`
+		Kind          string `json:"kind"`
+		ResourceID    string `json:"resourceId"`
+		Articles      []struct {
+			ID string `json:"id"`
+		} `json:"articles"`
+	}
+	if err := json.Unmarshal(term.Body.Bytes(), &summary); err != nil {
+		t.Fatal(err)
+	}
+	if summary.SchemaVersion != "1.0" || summary.Kind != "etymology" || summary.ResourceID != "etymology:alpha" || len(summary.Articles) != 1 || summary.Articles[0].ID != "501" {
+		t.Fatalf("unexpected term summary: %#v", summary)
+	}
+
+	article := get(t, svc, "/api/v1/enhancements/etymology/articles/501")
+	if article.Code != http.StatusOK || !strings.Contains(article.Body.String(), `"document":{"blocks"`) {
+		t.Fatalf("article: %d %s", article.Code, article.Body.String())
+	}
+
+	entry := get(t, svc, "/api/v1/entries/exact")
+	if entry.Code != http.StatusOK {
+		t.Fatalf("entry: %d %s", entry.Code, entry.Body.String())
+	}
+	var entryBody struct {
+		Enhancements []struct {
+			Kind string `json:"kind"`
+		} `json:"enhancements"`
+	}
+	if err := json.Unmarshal(entry.Body.Bytes(), &entryBody); err != nil {
+		t.Fatal(err)
+	}
+	if len(entryBody.Enhancements) != 1 || entryBody.Enhancements[0].Kind != "etymology" || strings.Contains(entry.Body.String(), `"document"`) {
+		t.Fatalf("entry enhancement projection: %s", entry.Body.String())
+	}
+	for _, test := range []struct {
+		entryID, resourceID string
+	}{
+		{"terribly", "etymology:terribly"},
+		{"adams", "etymology:adam's apple"},
+	} {
+		response := get(t, svc, "/api/v1/entries/"+test.entryID)
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"resourceId":"`+test.resourceID+`"`) {
+			t.Fatalf("normalized enhancement %s: %d %s", test.entryID, response.Code, response.Body.String())
+		}
+	}
+
+	alpha := get(t, svc, "/api/v1/search?q=alpha&limit=50")
+	if alpha.Code != http.StatusOK {
+		t.Fatalf("merged alpha search: %d %s", alpha.Code, alpha.Body.String())
+	}
+	for _, item := range searchItemsWithKinds(t, alpha) {
+		if item.Kind == "etymology" && item.ID == "alpha" {
+			t.Fatalf("duplicate etymology result survived dictionary match: %#v", item)
+		}
+		if item.Kind != "dictionary" && item.Kind != "etymology" {
+			t.Fatalf("search item has no recognized kind: %#v", item)
+		}
+	}
+
+	only := get(t, svc, "/api/v1/search?q=etymo&limit=10")
+	if only.Code != http.StatusOK {
+		t.Fatalf("sidecar-only search: %d %s", only.Code, only.Body.String())
+	}
+	items := searchItemsWithKinds(t, only)
+	if len(items) != 1 || items[0].ID != "etymo-only" || items[0].Kind != "etymology" {
+		t.Fatalf("sidecar-only result: %#v", items)
+	}
+
+	for _, query := range []string{"adam%27s%20apple", "adam%E2%80%99s%20apple"} {
+		response := get(t, svc, "/api/v1/search?q="+query+"&limit=10")
+		items := searchItemsWithKinds(t, response)
+		if response.Code != http.StatusOK || len(items) != 1 || items[0].ID != "adams" || items[0].Kind != "dictionary" {
+			t.Fatalf("apostrophe-compatible search %q: %d %#v", query, response.Code, items)
+		}
+	}
+}
+
+func TestEtymologyIsOptional(t *testing.T) {
+	svc, _ := newFixtureService(t)
+	if response := get(t, svc, "/api/v1/enhancements/etymology/terms/alpha"); response.Code != http.StatusNotFound {
+		t.Fatalf("optional term endpoint = %d", response.Code)
+	}
+	entry := get(t, svc, "/api/v1/entries/exact")
+	if entry.Code != http.StatusOK || !strings.Contains(entry.Body.String(), `"enhancements":[]`) {
+		t.Fatalf("optional entry response: %d %s", entry.Code, entry.Body.String())
 	}
 }
 
@@ -312,6 +409,69 @@ func newFixtureService(t testing.TB) (*server.Service, string) {
 	return svc, runtimePath
 }
 
+func newFixtureServiceWithEtymology(t testing.TB) *server.Service {
+	t.Helper()
+	directory := t.TempDir()
+	sourcePath := filepath.Join(directory, "source.db")
+	createSource(t, sourcePath)
+	runtimePath := filepath.Join(directory, "runtime.db")
+	if err := importer.Import(context.Background(), importer.Config{SourcePath: sourcePath, TargetPath: runtimePath, SourceVersion: "fixture-v1"}); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", "file:"+runtimePath+"?mode=ro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	codecName, dictionary, err := schema.PayloadSettings(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	codec, known, err := payload.ByName(codecName, dictionary)
+	if err != nil || !known {
+		t.Fatalf("payload codec: known=%t err=%v", known, err)
+	}
+	etymologySourcePath := filepath.Join(directory, "etymology-source.db")
+	createEtymologySource(t, etymologySourcePath)
+	etymologyPath := filepath.Join(directory, "etymology.db")
+	if err := etymology.Import(context.Background(), etymology.ImportConfig{SourcePath: etymologySourcePath, TargetPath: etymologyPath, SourceVersion: "fixture-etymology-v1"}); err != nil {
+		t.Fatal(err)
+	}
+	etymologyStore, err := etymology.Open(etymologyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := server.New(db, nil, server.Config{SourceVersion: "fixture-v1", PayloadCodec: codec, Etymology: etymologyStore, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	t.Cleanup(func() {
+		if err := service.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	return service
+}
+
+func createEtymologySource(t testing.TB, path string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`
+		CREATE TABLE word_index_etymapp (id INTEGER PRIMARY KEY, word TEXT, lowercase TEXT, word_ids TEXT, summary TEXT, related_words TEXT);
+		CREATE TABLE vocabulary_etymapp (id INTEGER PRIMARY KEY, word TEXT, type TEXT, sort INTEGER, etymology TEXT, property TEXT, graph_key TEXT);
+			INSERT INTO word_index_etymapp (id, word, lowercase, word_ids, summary, related_words) VALUES (1, 'Alpha', 'alpha', '[501]', '', '');
+			INSERT INTO word_index_etymapp (id, word, lowercase, word_ids, summary, related_words) VALUES (2, 'Etymo Only', 'etymo-only', '[502]', '', '');
+			INSERT INTO word_index_etymapp (id, word, lowercase, word_ids, summary, related_words) VALUES (3, 'terribly', 'terribly', '[503]', '', '');
+			INSERT INTO word_index_etymapp (id, word, lowercase, word_ids, summary, related_words) VALUES (4, 'Adam''s apple', 'adam''s apple', '[504]', '', '');
+			INSERT INTO vocabulary_etymapp (id, word, type, sort, etymology, property, graph_key) VALUES (501, 'Alpha', 'entry', 1, '<p>Alpha origin</p>', '(origin)', '');
+			INSERT INTO vocabulary_etymapp (id, word, type, sort, etymology, property, graph_key) VALUES (502, 'Etymo Only', 'entry', 1, '<p>Independent origin</p>', '(origin)', '');
+			INSERT INTO vocabulary_etymapp (id, word, type, sort, etymology, property, graph_key) VALUES (503, 'terribly', 'entry', 1, '<p>Terribly origin</p>', '(adv.)', '');
+			INSERT INTO vocabulary_etymapp (id, word, type, sort, etymology, property, graph_key) VALUES (504, 'Adam''s apple', 'entry', 1, '<p>Adam''s apple origin</p>', '(n.)', '');
+	`); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func createSource(t testing.TB, path string) {
 	t.Helper()
 	db, err := sql.Open("sqlite", path)
@@ -329,6 +489,8 @@ func createSource(t testing.TB, path string) {
 		{"grateful", "grateful", "grateful", fixtureBody("grateful")},
 		{"gratefyl", "gratefyl", "gratefyl", fixtureBody("gratefyl")},
 		{"gratitude", "gratitude", "gratitude", fixtureBody("gratitude")},
+		{"terribly", "ter·ribly", "ter·ribly", fixtureBody("terribly")},
+		{"adams", "Adam’s apple", "Adam’s apple", fixtureBody("adams")},
 		{"the", "the", "the", fixtureBody("the")},
 		{"long-a", strings.Repeat("a", 64), strings.Repeat("a", 64), fixtureBody("long-a")},
 	} {
@@ -387,6 +549,24 @@ func searchIDs(t testing.TB, response *httptest.ResponseRecorder) []string {
 		ids = append(ids, item.ID)
 	}
 	return ids
+}
+
+func searchItemsWithKinds(t testing.TB, response *httptest.ResponseRecorder) []struct{ ID, Kind string } {
+	t.Helper()
+	var body struct {
+		Items []struct {
+			ID   string `json:"id"`
+			Kind string `json:"kind"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	items := make([]struct{ ID, Kind string }, 0, len(body.Items))
+	for _, item := range body.Items {
+		items = append(items, struct{ ID, Kind string }{ID: item.ID, Kind: item.Kind})
+	}
+	return items
 }
 
 func BenchmarkRandomEntryDecode(b *testing.B) {

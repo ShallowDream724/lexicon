@@ -1,7 +1,8 @@
 # Lexicon Workbench
 
 Lexicon Workbench is an installable bilingual dictionary workspace with local search,
-pronunciation playback, history, favorites, notes, and adapter-based data import.
+pronunciation playback, optional etymology, history, favorites, notes, and adapter-based
+data import.
 It runs on desktop, tablet, and phone without registration or account state.
 Exact and prefix search can fall back to a bounded one-edit spelling suggestion for a
 single English word without loading or scanning the dictionary in the browser.
@@ -13,6 +14,7 @@ single English word without loading or scanning the dictionary in the browser.
 - Go for the read-only SQLite and media service.
 - Zod for external data validation.
 - IndexedDB for device-local learning data.
+- Independent SQLite sidecars for lazily loaded supplementary resources.
 
 The source service, adapter contract, renderer, and personal-data store are separate
 modules. See [ARCHITECTURE.md](ARCHITECTURE.md), [DATA_MODEL.md](DATA_MODEL.md), and
@@ -26,6 +28,7 @@ Installation, caching, updates, and offline boundaries are in [PWA.md](PWA.md).
 - Node.js 22.13 or newer.
 - Go 1.24 or newer.
 - A generated Lexicon Workbench runtime database.
+- An optional generated etymology sidecar.
 - An optional pronunciation archive.
 
 ## Local Development
@@ -50,6 +53,7 @@ override it with a later `-db` flag. Optional media flags can also be added afte
 ```bash
 npm run dev:api -- \
   -db ../../data/another-runtime.db \
+  -etymology-db ../../data/etymology.db \
   -audio-zip ../../data/headword-audio.zip \
   -example-audio-base-url https://media.example.test/audio/examples/ \
   -illustration-base-url https://media.example.test/images/
@@ -98,6 +102,15 @@ npm run dictionary:import -- \
   -source-version bundled-v1
 ```
 
+Build the optional etymology sidecar from its supported source database:
+
+```bash
+npm run etymology:import -- \
+  -source ../../work/etymonline-data/vocabulary.db \
+  -target ../../data/etymology.db \
+  -source-version etymonline-2024.12.10
+```
+
 Run the reproducible storage matrix with `npm run dictionary:benchmark -- ...`.
 Command arguments use paths relative to `services/dictionary-api`; the complete
 parameter reference is in [STORAGE_FORMAT.md](STORAGE_FORMAT.md).
@@ -127,11 +140,16 @@ The application repository's software license does not automatically apply to
 imported dictionary content. Each data package carries its own provenance and usage
 terms.
 
+Enhancement sidecars follow the same boundary. Entry responses contain only bounded
+summaries; complete articles are fetched on demand. Adding a supplementary dataset does
+not change the canonical primary dictionary contract.
+
 ## Deployment
 
 The reference public topology runs a TLS reverse proxy, the standalone Next.js
-application, and the Go API together on one server. The server mounts the generated database and
-pronunciation ZIP as read-only files, so code updates never rewrite content assets.
+application, and the Go API together on one server. The server mounts generated primary
+and enhancement databases plus the pronunciation ZIP as read-only files, so code updates
+never rewrite content assets.
 The ZIP remains packed: the API indexes it once and streams individual MP3 members
 without extracting 256,026 files. See [DEPLOYMENT.md](DEPLOYMENT.md) for the exact
 layout and commands.

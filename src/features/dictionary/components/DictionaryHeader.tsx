@@ -18,13 +18,13 @@ import {
 } from "react";
 
 import type { HistoryRecord } from "../../../lib/storage/learning-data";
-import type { DictionarySearchItem } from "../../../lib/dictionary-client/client";
+import type { SearchTarget } from "../../../lib/dictionary-client/client";
 import { historyPreviewRecords } from "../history-preview";
 
 type DictionaryHeaderProps = {
   homeMode: boolean;
   query: string;
-  suggestions: DictionarySearchItem[];
+  suggestions: SearchTarget[];
   history: HistoryRecord[];
   searchPending: boolean;
   searchOpen: boolean;
@@ -37,7 +37,7 @@ type DictionaryHeaderProps = {
   onDismissSearch: () => void;
   onHome: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onSelect: (entryId: string) => void;
+  onSelect: (target: SearchTarget) => void;
   onOpenLibrary: (tab: "history" | "favorites") => void;
 };
 
@@ -70,7 +70,7 @@ export function DictionaryHeader({
     const suggestion = suggestions[index];
     if (suggestion) {
       setActiveOption(-1);
-      onSelect(suggestion.id);
+      onSelect(suggestion);
     }
   };
 
@@ -209,7 +209,13 @@ export function DictionaryHeader({
                 <button
                   key={record.key}
                   type="button"
-                  onClick={() => onSelect(record.entryId)}
+                  onClick={() => onSelect({
+                    kind: "dictionary",
+                    id: record.entryId,
+                    headword: record.headword,
+                    partsOfSpeech: [],
+                    translationPreview: "",
+                  })}
                 >
                   {record.headword}
                 </button>
@@ -238,7 +244,7 @@ export function DictionaryHeader({
                     .toLocaleLowerCase() === normalizedQuery;
                 return (
                   <button
-                    key={suggestion.id}
+                    key={`${suggestion.kind}-${suggestion.id}`}
                     id={`dictionary-search-option-${index}`}
                     className={`search-option${activeOption === index ? " is-active" : ""}${exactMatch ? " is-exact" : ""}`}
                     type="button"
@@ -246,7 +252,7 @@ export function DictionaryHeader({
                     aria-selected={activeOption === index}
                     onMouseDown={(event) => event.preventDefault()}
                     onMouseMove={() => setActiveOption(index)}
-                    onClick={() => onSelect(suggestion.id)}
+                    onClick={() => onSelect(suggestion)}
                   >
                     <span className="search-option-headword">{suggestion.headword}</span>
                     <span className="search-option-details">
@@ -259,6 +265,9 @@ export function DictionaryHeader({
                         <span className="search-option-preview">
                           {suggestion.translationPreview}
                         </span>
+                      ) : null}
+                      {suggestion.kind === "etymology" ? (
+                        <span className="search-option-preview">仅词源</span>
                       ) : null}
                     </span>
                   </button>

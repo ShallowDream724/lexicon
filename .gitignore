@@ -42,6 +42,7 @@ next-env.d.ts
 /outputs/
 /work/
 /$tmp/
+/$t/
 
 # dictionary sources, generated runtimes, and media
 *.apk

@@ -57,6 +57,28 @@ that supplies stable `dictionaryId` and source-version data in its validated
 envelope. Media resolution belongs to the client/API configuration and must not be
 embedded in canonical objects.
 
+## Adding An Enhancement Source
+
+Use an enhancement provider when a dataset supplements the primary entry instead of
+supplying a complete competing dictionary. This keeps one reading flow and avoids
+parallel full-entry renderers.
+
+1. Add a versioned resource schema to `packages/enhancement-schema`.
+2. Build a one-way importer and project-owned sidecar or remote provider.
+3. Return only bounded summaries with primary entry responses; fetch full content on
+   demand through a resource-specific API route.
+4. Add the resource kind to `EntryResource`, then register its order, size, quick-find
+   label, and opening action in `src/features/dictionary/resource-model.ts`.
+5. Add one focused card and one full-content renderer. Render structured data rather
+   than source HTML.
+6. Define search merging explicitly. Primary dictionary exact matches remain primary;
+   enhancement-only exact matches may open a dedicated resource view.
+7. Add corpus audits for source ordering, internal links, orphaned content, malformed
+   markup, size limits, and silent field loss.
+
+Multiple resources may enrich one entry. Components receive an ordered resource union
+and never inspect source tables, provider names, or storage paths.
+
 ## Fixture Coverage
 
 Fixtures should be compact while exercising real structural cases:

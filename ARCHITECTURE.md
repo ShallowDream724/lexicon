@@ -25,8 +25,10 @@ Read-only import source
         v
 One-way importer  ----  project-owned runtime SQLite + media manifest
         |
+        +--------------  project-owned enhancement sidecars
+        |
         v
-Go source service  ----  /api/v1/search, /entries, /media
+Go source service  ----  /api/v1/search, /entries, /enhancements, /media
         |
         v
 TypeScript source adapter
@@ -57,6 +59,7 @@ src/lib/dictionary-client/   cancellable HTTP client and query orchestration
 src/lib/storage/             device-local learning-data repository
 src/platform/pwa/            install, update, offline, and cache policy
 packages/dictionary-schema/  versioned UI-facing domain contract
+packages/enhancement-schema/ versioned optional-resource contracts
 packages/adapters/           source adapters and registry
 services/dictionary-api/     read-only Go/SQLite/media service
 tests/contracts/             source-to-domain invariants
@@ -85,6 +88,20 @@ The service owns runtime storage work:
 - resolving optional example-audio and illustration keys through configured,
   validated media URLs and path templates;
 - enforcing request limits, timeouts, cancellation, and structured errors.
+
+Optional enhancement sources use independent read-only sidecars. Each sidecar owns its
+source version, search projection, payload codec, and integrity metadata. The primary
+entry endpoint returns only lightweight enhancement summaries; complete enhancement
+articles load through their own endpoint when a user opens a card. An unavailable
+optional sidecar does not prevent the primary dictionary from starting.
+
+Primary search and enhancement association share one server-side term-key boundary.
+Dictionary keys remove source display syllable separators; enhancement keys additionally
+normalize observed typographic apostrophes. Indexed legacy variants keep existing runtime
+databases searchable without table scans. Hyphens, internal whitespace, trademark marks,
+and other meaning-bearing punctuation remain untouched because corpus auditing shows
+collisions or unsafe semantic merges. Article responses must match resource id, article id,
+and source version before entering UI state.
 
 It does not build the UI-facing entry model. This avoids implementing the same
 semantic conversion in Go and TypeScript.
@@ -119,6 +136,32 @@ The React layer renders only canonical types. It owns:
 - structured headword patterns, inflections, word families, and derivatives;
 - favorites, notes, history, and display preferences through repository methods.
 
+Optional entry resources pass through one registry in
+`src/features/dictionary/resource-model.ts`. The registry determines stable ordering,
+card size, quick-find placement, and opening behavior. Source-specific checks stay in
+resource renderers and clients rather than spreading through the entry view. Featured
+resources may use a wider desktop rail card and span the full resource grid on phone or
+narrow tablet layouts; native dictionary cards retain their compact size. A featured
+card exposes its first article as the card-wide primary action, while article chips are
+independent direct actions for a specific article. Etymology cards retain a book-page
+aspect ratio on desktop and landscape tablets, then use a bounded full-row format on
+phones and portrait tablets. Their title and action occupy fixed layout rows while the
+summary consumes the remaining card height; the card's resize observer derives the
+available line count without introducing viewport-specific text limits. The watermark
+stays anchored to the paper corner and scales from the card block size. Narrow phones
+hide the paper heading so the content begins with the headword while retaining the
+source mark on the spine. The footer is an unseparated inline action whose chevron
+follows its label; its narrow-phone typography is enlarged because the hidden heading
+makes the action carry the resource identity. Summary text uses the same semantic
+emphasis runs as the article source, so presentation never infers historical-language
+spans from words.
+
+Enhancement article routes keep the primary entry id when one exists. Article links
+with a stable target id resolve that article first and then route through the returned
+term, preserving historical aliases. A term absent from the primary dictionary can
+still open an enhancement-only view without synthesizing a canonical entry or personal
+learning record.
+
 Search requests are debounced and cancellable. Full entries load only after a
 selection. Large entry bodies do not enter the initial hydration payload.
 The server derives the initial workspace route from the request URL, so entry deep
@@ -132,13 +175,22 @@ underlying entry from scrolling while preserving the current page position and
 scrollbar width. Quick-find anchor actions run after that lock is released so dialog
 cleanup cannot override the requested destination.
 
+Etymology article dialogs use the same restrained gilded book edge at every viewport.
+Wide layouts preserve the book-page reading inset after that edge; phone layouts keep
+smaller inline padding while reserving equal backdrop space above and below the page so
+either exposed area remains a predictable dismissal target.
+
 Phone layouts keep sense numbers as the first alignment level and dependent content
 as the second. Nested sense lists remove decorative left padding at the narrow-phone
 breakpoint to preserve usable line width. Each bilingual definition uses one inline
 formatting context, so English and Chinese share the available line naturally instead
 of being separated by viewport-specific rendering rules. Auxiliary resource cards
 move ahead of the definition column on narrow layouts without adding a second section
-gap.
+gap. Featured enhancement cards assign their heading, content, and action to explicit
+grid rows. The action row keeps its intrinsic height; a resize observer derives the
+preview line count from the content row's remaining block space and may omit the
+preview when no complete line fits. Source-specific labels never set a minimum line
+count.
 
 Sense lead-line flow is derived from canonical structure. Proficiency and usage labels,
 parenthetical bilingual qualifiers, and the definition remain in one natural inline
@@ -232,6 +284,8 @@ All endpoints use `/api/v1`. Errors have a stable code, message, and request id.
 GET /api/v1/health
 GET /api/v1/search?q=<query>&limit=<bounded integer>
 GET /api/v1/entries/<url-encoded entry id>
+GET /api/v1/enhancements/etymology/terms/<url-encoded term>
+GET /api/v1/enhancements/etymology/articles/<url-encoded article id>
 GET /api/v1/media/headword-audio?key=<url-encoded asset key>
 GET /api/v1/media/example-audio?key=<url-encoded asset key>
 GET /api/v1/media/illustration?key=<url-encoded asset key>
@@ -271,6 +325,11 @@ requests as distinct outcomes.
   version globally and stores each entry's uncompressed length and 32-byte checksum.
 - The media archive is indexed once per service process.
 - Entry JSON is parsed once at the adapter boundary.
+- Enhancement summaries are stored uncompressed and require no article decoding.
+- Enhancement articles use independent Zstandard frames with their own shared trained
+  dictionary, bounded decoded size, capacity-limited decoding, and per-article SHA-256
+  validation. A corrupt frame cannot grow the decoder output beyond the row's validated
+  uncompressed length.
 - Renderer keys use stable source ids, never array positions where source ids exist.
 - Long entries may virtualize or collapse auxiliary sections only after profiling;
   core senses remain available to find-in-page and assistive technology.
@@ -328,6 +387,7 @@ Browser
 TLS reverse proxy
    +---- /api/v1/* ---- Go API container
    |                         +---- read-only runtime SQLite
+   |                         +---- read-only enhancement sidecars
    |                         +---- read-only pronunciation ZIP
    |
    +---- all other paths --- standalone Next.js container

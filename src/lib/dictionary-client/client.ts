@@ -6,25 +6,55 @@ import {
 } from "../../../packages/adapters/src/index";
 import type { CanonicalEntry } from "../../../packages/dictionary-schema/src/index";
 import {
+  enhancementResourceSummariesSchema,
+  etymologyArticleResponseSchema,
+  etymologyResourceSummarySchema,
+  type EtymologyArticleResponse,
+  type EtymologyResourceSummary,
+} from "../../../packages/enhancement-schema/src/index";
+import {
   createDictionaryApiUrl,
   resolveDictionaryApiRoot,
 } from "./api-url";
+import type { SearchTarget } from "./search-target";
 
-const searchItemSchema = z
+const searchItemBaseSchema = z
   .object({
     id: z.string().optional(),
     entryId: z.string().optional(),
     headword: z.string(),
     partsOfSpeech: z.array(z.string()).optional(),
     translationPreview: z.string().optional(),
-  })
+  });
+
+const dictionarySearchItemSchema = searchItemBaseSchema
+  .extend({ kind: z.literal("dictionary") })
   .transform((item) => ({
+    kind: "dictionary" as const,
     id: item.id ?? item.entryId ?? "",
     headword: item.headword,
     partsOfSpeech: item.partsOfSpeech ?? [],
     translationPreview: item.translationPreview ?? "",
   }))
   .refine((item) => item.id.length > 0, "Search result is missing an entry id.");
+
+const etymologySearchItemSchema = searchItemBaseSchema
+  .extend({
+    kind: z.literal("etymology"),
+    id: z.string().min(1),
+  })
+  .transform((item) => ({
+    kind: "etymology" as const,
+    id: item.id,
+    headword: item.headword,
+    partsOfSpeech: item.partsOfSpeech ?? [],
+    translationPreview: item.translationPreview ?? "",
+  }));
+
+const searchItemSchema = z.discriminatedUnion("kind", [
+  dictionarySearchItemSchema,
+  etymologySearchItemSchema,
+]);
 
 const searchResponseSchema = z.object({
   query: z.string().optional(),
@@ -41,7 +71,12 @@ const errorResponseSchema = z.object({
   message: z.string().optional(),
 });
 
-export type DictionarySearchItem = z.infer<typeof searchItemSchema>;
+export type { DictionarySearchItem, EtymologySearchItem, SearchTarget } from "./search-target";
+
+export type DictionaryEntryResponse = {
+  entry: CanonicalEntry;
+  enhancements: EtymologyResourceSummary[];
+};
 
 export class DictionaryClientError extends Error {
   constructor(
@@ -99,7 +134,7 @@ export const dictionaryClient = {
   async search(
     query: string,
     options: { limit?: number; signal?: AbortSignal } = {},
-  ): Promise<DictionarySearchItem[]> {
+  ): Promise<SearchTarget[]> {
     const normalized = query.trim();
     if (!normalized) {
       return [];
@@ -112,10 +147,23 @@ export const dictionaryClient = {
     return searchResponseSchema.parse(payload).items;
   },
 
-  async entry(entryId: string, signal?: AbortSignal): Promise<CanonicalEntry> {
+  async entry(entryId: string, signal?: AbortSignal): Promise<DictionaryEntryResponse> {
     const url = apiUrl(`entries/${encodeURIComponent(entryId)}`);
     const payload = bundledBilingualEnvelopeSchema.parse(await getJson(url, signal));
-    return adapter.adapt(payload);
+    const enhancements = enhancementResourceSummariesSchema.parse(
+      (payload as { enhancements?: unknown }).enhancements ?? [],
+    );
+    return { entry: adapter.adapt(payload), enhancements };
+  },
+
+  async etymologyTerm(term: string, signal?: AbortSignal): Promise<EtymologyResourceSummary> {
+    const url = apiUrl(`enhancements/etymology/terms/${encodeURIComponent(term)}`);
+    return etymologyResourceSummarySchema.parse(await getJson(url, signal));
+  },
+
+  async etymologyArticle(articleId: string, signal?: AbortSignal): Promise<EtymologyArticleResponse> {
+    const url = apiUrl(`enhancements/etymology/articles/${encodeURIComponent(articleId)}`);
+    return etymologyArticleResponseSchema.parse(await getJson(url, signal));
   },
 
   headwordAudioUrl(key: string): string {

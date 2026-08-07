@@ -1,11 +1,6 @@
-import type {
-  CanonicalGrammarUsageBox,
-  CanonicalIllustration,
-  CanonicalPhrase,
-  CanonicalSense,
-} from "../../../packages/dictionary-schema/src/index";
-import { grammarUsageBoxLabels } from "./box-presentation";
+import type { CanonicalPhrase, CanonicalSense } from "../../../packages/dictionary-schema/src/index";
 import { type EntryPartProjection, partOfSpeechTabLabel } from "./entry-sections";
+import { entryResourceLabel, type EntryResource } from "./resource-model";
 
 export type QuickFindSensePath = readonly (string | number)[];
 
@@ -15,17 +10,7 @@ export type QuickFindPart = {
   active: boolean;
 };
 
-export type QuickFindResource =
-  | {
-      kind: "illustration";
-      label: string;
-      illustration: CanonicalIllustration;
-    }
-  | {
-      kind: "box";
-      label: string;
-      box: CanonicalGrammarUsageBox;
-    };
+export type QuickFindResource = EntryResource & { label: string };
 
 export type QuickFindSenseGroup = {
   label: string;
@@ -126,28 +111,20 @@ function phraseItems(
   }));
 }
 
-function resourcesFor(projection: EntryPartProjection): QuickFindResource[] {
-  return [
-    ...projection.illustrations.map((illustration) => ({
-      kind: "illustration" as const,
-      label: "图解词汇",
-      illustration,
-    })),
-    ...projection.grammarUsageBoxes.map((box) => ({
-      kind: "box" as const,
-      label: grammarUsageBoxLabels(box).primary,
-      box,
-    })),
-  ];
+function resourcesFor(resources: readonly EntryResource[]): QuickFindResource[] {
+  return resources.map((resource) => ({ ...resource, label: entryResourceLabel(resource) }));
 }
 
-export function projectQuickFind(projection: EntryPartProjection): QuickFindModel {
+export function projectQuickFind(
+  projection: EntryPartProjection,
+  resources: readonly EntryResource[] = [],
+): QuickFindModel {
   const parts = projection.options.map((part, index) => ({
     index,
     label: partOfSpeechTabLabel(part.text),
     active: index === projection.activeIndex,
   }));
-  const resources = resourcesFor(projection);
+  const quickFindResources = resourcesFor(resources);
   const senseGroups = senseGroupsFor(projection);
   const idioms = phraseItems("idioms", projection.idioms);
   const phrasalVerbs = phraseItems("phrasalVerbs", projection.phrasalVerbs);
@@ -156,7 +133,7 @@ export function projectQuickFind(projection: EntryPartProjection): QuickFindMode
   if (parts.length) {
     sections.push({ id: "parts", label: "词性" });
   }
-  if (resources.length) {
+  if (quickFindResources.length) {
     sections.push({ id: "resources", label: "扩展内容" });
   }
   if (senseGroups.length) {
@@ -169,5 +146,5 @@ export function projectQuickFind(projection: EntryPartProjection): QuickFindMode
     sections.push({ id: "phrasal-verbs", label: "短语动词" });
   }
 
-  return { parts, resources, senseGroups, idioms, phrasalVerbs, sections };
+  return { parts, resources: quickFindResources, senseGroups, idioms, phrasalVerbs, sections };
 }

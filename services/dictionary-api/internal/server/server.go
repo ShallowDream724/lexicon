@@ -19,8 +19,10 @@ import (
 	"time"
 
 	"dictionary-api/internal/audio"
+	"dictionary-api/internal/etymology"
 	"dictionary-api/internal/media"
 	"dictionary-api/internal/payload"
+	"dictionary-api/internal/termkey"
 	"dictionary-api/internal/typo"
 )
 
@@ -39,6 +41,7 @@ type Config struct {
 	RemoteMedia    *media.Resolver
 	AllowedOrigins map[string]struct{}
 	Logger         *slog.Logger
+	Etymology      *etymology.Store
 }
 
 type Service struct {
@@ -49,6 +52,7 @@ type Service struct {
 	remoteMedia    *media.Resolver
 	allowedOrigins map[string]struct{}
 	logger         *slog.Logger
+	etymology      *etymology.Store
 }
 
 func New(db *sql.DB, audioIndex *audio.Index, config Config) *Service {
@@ -61,6 +65,7 @@ func New(db *sql.DB, audioIndex *audio.Index, config Config) *Service {
 		payloadCodec:   config.PayloadCodec,
 		remoteMedia:    config.RemoteMedia,
 		allowedOrigins: config.AllowedOrigins, logger: logger,
+		etymology: config.Etymology,
 	}
 }
 
@@ -72,6 +77,9 @@ func (s *Service) Close() error {
 	if s.db != nil {
 		errs = append(errs, s.db.Close())
 	}
+	if s.etymology != nil {
+		errs = append(errs, s.etymology.Close())
+	}
 	return errors.Join(errs...)
 }
 
@@ -80,6 +88,8 @@ func (s *Service) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/health", s.health)
 	mux.HandleFunc("GET /api/v1/search", s.search)
 	mux.HandleFunc("GET /api/v1/entries/{id}", s.entry)
+	mux.HandleFunc("GET /api/v1/enhancements/etymology/terms/{term...}", s.etymologyTerm)
+	mux.HandleFunc("GET /api/v1/enhancements/etymology/articles/{id}", s.etymologyArticle)
 	mux.HandleFunc("GET /api/v1/media/headword-audio", s.headwordAudio)
 	mux.HandleFunc("GET /api/v1/media/example-audio", s.remoteMediaRedirect(media.ExampleAudio))
 	mux.HandleFunc("GET /api/v1/media/illustration", s.illustration)
@@ -98,9 +108,11 @@ func (s *Service) health(w http.ResponseWriter, r *http.Request) {
 
 type suggestion struct {
 	ID                 string   `json:"id"`
+	Kind               string   `json:"kind"`
 	Headword           string   `json:"headword"`
 	PartsOfSpeech      []string `json:"partsOfSpeech"`
 	TranslationPreview string   `json:"translationPreview"`
+	rank               int
 }
 
 func (s *Service) search(w http.ResponseWriter, r *http.Request) {
@@ -119,20 +131,31 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	canonical := strings.ToLower(strings.ReplaceAll(query, "·", ""))
-	results, err := s.queryPrefixSuggestions(r.Context(), canonical, limit)
+	canonical := termkey.Dictionary(query)
+	results, err := s.queryPrefixSuggestions(r.Context(), canonical, maxLimit)
 	if err != nil {
 		s.logger.Error("dictionary search failed", "error", err)
 		s.writeError(w, r, http.StatusInternalServerError, "search_failed", "search could not be completed")
 		return
 	}
 	if len(results) == 0 && typo.Eligible(canonical) {
-		results, err = s.queryTypoSuggestions(r.Context(), canonical, limit)
+		results, err = s.queryTypoSuggestions(r.Context(), canonical, maxLimit)
 		if err != nil {
 			s.logger.Error("dictionary typo search failed", "error", err)
 			s.writeError(w, r, http.StatusInternalServerError, "search_failed", "search could not be completed")
 			return
 		}
+		for index := range results {
+			results[index].rank += 2
+		}
+	}
+	if err := s.mergeEtymologySuggestions(r.Context(), query, &results); err != nil {
+		s.logger.Error("etymology search failed", "error", err)
+		s.writeError(w, r, http.StatusInternalServerError, "search_failed", "search could not be completed")
+		return
+	}
+	if len(results) > limit {
+		results = results[:limit]
 	}
 	s.writeJSON(w, http.StatusOK, struct {
 		Query string       `json:"query"`
@@ -141,6 +164,41 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) queryPrefixSuggestions(ctx context.Context, canonical string, limit int) ([]suggestion, error) {
+	byEntryID := make(map[string]suggestion, limit)
+	for _, variant := range termkey.DictionaryQueryVariants(canonical) {
+		items, err := s.queryPrefixSuggestionsForTerm(ctx, variant, limit)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			current, exists := byEntryID[item.ID]
+			if !exists || item.rank < current.rank {
+				byEntryID[item.ID] = item
+			}
+		}
+	}
+	results := make([]suggestion, 0, len(byEntryID))
+	for _, item := range byEntryID {
+		results = append(results, item)
+	}
+	sort.Slice(results, func(left, right int) bool {
+		if results[left].rank != results[right].rank {
+			return results[left].rank < results[right].rank
+		}
+		leftHeadword := strings.ToLower(results[left].Headword)
+		rightHeadword := strings.ToLower(results[right].Headword)
+		if leftHeadword != rightHeadword {
+			return leftHeadword < rightHeadword
+		}
+		return results[left].ID < results[right].ID
+	})
+	if len(results) > limit {
+		results = results[:limit]
+	}
+	return results, nil
+}
+
+func (s *Service) queryPrefixSuggestionsForTerm(ctx context.Context, canonical string, limit int) ([]suggestion, error) {
 	prefixEnd := canonical + string(rune(0x10ffff))
 	const statement = `
 	WITH matches AS (
@@ -149,7 +207,7 @@ func (s *Service) queryPrefixSuggestions(ctx context.Context, canonical string, 
 	  WHERE t.term >= ? AND t.term < ?
 	  GROUP BY t.entry_id
 	)
-	SELECT e.id, e.headword, e.parts_of_speech, e.translation_preview
+	SELECT e.id, e.headword, e.parts_of_speech, e.translation_preview, m.exact_rank
 	FROM matches m
 	JOIN entries e ON e.id = m.entry_id
 	ORDER BY
@@ -167,13 +225,14 @@ func (s *Service) queryPrefixSuggestions(ctx context.Context, canonical string, 
 	for rows.Next() {
 		var item suggestion
 		var partsOfSpeech string
-		if err := rows.Scan(&item.ID, &item.Headword, &partsOfSpeech, &item.TranslationPreview); err != nil {
+		if err := rows.Scan(&item.ID, &item.Headword, &partsOfSpeech, &item.TranslationPreview, &item.rank); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(partsOfSpeech), &item.PartsOfSpeech); err != nil || item.PartsOfSpeech == nil {
 			s.logger.Error("dictionary search projection is malformed", "id", item.ID, "error", err)
 			return nil, errors.New("dictionary search projection is malformed")
 		}
+		item.Kind = "dictionary"
 		results = append(results, item)
 	}
 	if err := rows.Err(); err != nil {
@@ -296,7 +355,7 @@ func (s *Service) queryTypoCandidateSuggestions(ctx context.Context, candidates 
 		arguments = append(arguments, candidate.entryID, candidate.rank)
 	}
 	statement.WriteString(`)
-SELECT e.id, e.headword, e.parts_of_speech, e.translation_preview
+	SELECT e.id, e.headword, e.parts_of_speech, e.translation_preview, c.typo_rank
 FROM candidates c
 CROSS JOIN entries e
 WHERE e.id = c.entry_id
@@ -313,13 +372,14 @@ LIMIT ?`)
 	for rows.Next() {
 		var item suggestion
 		var partsOfSpeech string
-		if err := rows.Scan(&item.ID, &item.Headword, &partsOfSpeech, &item.TranslationPreview); err != nil {
+		if err := rows.Scan(&item.ID, &item.Headword, &partsOfSpeech, &item.TranslationPreview, &item.rank); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(partsOfSpeech), &item.PartsOfSpeech); err != nil || item.PartsOfSpeech == nil {
 			s.logger.Error("dictionary search projection is malformed", "id", item.ID, "error", err)
 			return nil, errors.New("dictionary search projection is malformed")
 		}
+		item.Kind = "dictionary"
 		results = append(results, item)
 	}
 	if err := rows.Err(); err != nil {
@@ -332,6 +392,62 @@ func recordTypoCandidate(candidates map[string]int, entryID string, rank int) {
 	if currentRank, exists := candidates[entryID]; !exists || rank < currentRank {
 		candidates[entryID] = rank
 	}
+}
+
+func (s *Service) mergeEtymologySuggestions(ctx context.Context, query string, results *[]suggestion) error {
+	if s.etymology == nil {
+		return nil
+	}
+	etymologyResults, err := s.etymology.Prefix(ctx, query, maxLimit)
+	if err != nil {
+		return err
+	}
+	for _, result := range etymologyResults {
+		duplicate, err := s.dictionaryTermExists(ctx, result.Term)
+		if err != nil {
+			return err
+		}
+		if duplicate {
+			continue
+		}
+		rank := 1
+		if result.Term == termkey.Enhancement(query) {
+			rank = 0
+		}
+		*results = append(*results, suggestion{
+			ID: result.Term, Kind: etymology.Kind, Headword: result.Headword, PartsOfSpeech: []string{}, rank: rank,
+		})
+	}
+	sort.SliceStable(*results, func(left, right int) bool {
+		leftItem, rightItem := (*results)[left], (*results)[right]
+		if leftItem.rank != rightItem.rank {
+			return leftItem.rank < rightItem.rank
+		}
+		leftHeadword, rightHeadword := strings.ToLower(leftItem.Headword), strings.ToLower(rightItem.Headword)
+		if leftHeadword != rightHeadword {
+			return leftHeadword < rightHeadword
+		}
+		if leftItem.ID != rightItem.ID {
+			return leftItem.ID < rightItem.ID
+		}
+		return leftItem.Kind < rightItem.Kind
+	})
+	return nil
+}
+
+func (s *Service) dictionaryTermExists(ctx context.Context, term string) (bool, error) {
+	for _, variant := range termkey.DictionaryQueryVariants(term) {
+		var found int
+		err := s.db.QueryRowContext(ctx, `SELECT 1 FROM entry_terms WHERE term = ? LIMIT 1`, variant).Scan(&found)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 func (s *Service) entry(w http.ResponseWriter, r *http.Request) {
@@ -369,12 +485,63 @@ func (s *Service) entry(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, http.StatusInternalServerError, "invalid_entry_body", "entry has invalid source data")
 		return
 	}
+	enhancements := make([]etymology.ResourceSummary, 0, 1)
+	if s.etymology != nil {
+		summary, err := s.etymology.Summary(r.Context(), headword)
+		if err != nil {
+			s.logger.Error("etymology summary lookup failed", "headword", headword, "error", err)
+			s.writeError(w, r, http.StatusInternalServerError, "entry_lookup_failed", "entry could not be loaded")
+			return
+		}
+		if summary != nil {
+			enhancements = append(enhancements, *summary)
+		}
+	}
 	s.writeJSON(w, http.StatusOK, struct {
-		EntryID       string          `json:"entryId"`
-		Headword      string          `json:"headword"`
-		SourceVersion string          `json:"sourceVersion"`
-		Body          json.RawMessage `json:"body"`
-	}{EntryID: id, Headword: headword, SourceVersion: s.sourceVersion, Body: json.RawMessage(rawBody)})
+		EntryID       string                      `json:"entryId"`
+		Headword      string                      `json:"headword"`
+		SourceVersion string                      `json:"sourceVersion"`
+		Body          json.RawMessage             `json:"body"`
+		Enhancements  []etymology.ResourceSummary `json:"enhancements"`
+	}{EntryID: id, Headword: headword, SourceVersion: s.sourceVersion, Body: json.RawMessage(rawBody), Enhancements: enhancements})
+}
+
+func (s *Service) etymologyTerm(w http.ResponseWriter, r *http.Request) {
+	term := r.PathValue("term")
+	if s.etymology == nil || term == "" || len(term) > 512 {
+		s.writeError(w, r, http.StatusNotFound, "etymology_not_found", "etymology resource was not found")
+		return
+	}
+	summary, err := s.etymology.Summary(r.Context(), term)
+	if err != nil {
+		s.logger.Error("etymology term lookup failed", "error", err)
+		s.writeError(w, r, http.StatusInternalServerError, "etymology_lookup_failed", "etymology resource could not be loaded")
+		return
+	}
+	if summary == nil {
+		s.writeError(w, r, http.StatusNotFound, "etymology_not_found", "etymology resource was not found")
+		return
+	}
+	s.writeJSON(w, http.StatusOK, summary)
+}
+
+func (s *Service) etymologyArticle(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if s.etymology == nil || id == "" || len(id) > 512 {
+		s.writeError(w, r, http.StatusNotFound, "etymology_not_found", "etymology resource was not found")
+		return
+	}
+	article, err := s.etymology.Article(r.Context(), id)
+	if err != nil {
+		s.logger.Error("etymology article lookup failed", "id", id, "error", err)
+		s.writeError(w, r, http.StatusInternalServerError, "etymology_lookup_failed", "etymology resource could not be loaded")
+		return
+	}
+	if article == nil {
+		s.writeError(w, r, http.StatusNotFound, "etymology_not_found", "etymology resource was not found")
+		return
+	}
+	s.writeJSON(w, http.StatusOK, article)
 }
 
 func (s *Service) headwordAudio(w http.ResponseWriter, r *http.Request) {

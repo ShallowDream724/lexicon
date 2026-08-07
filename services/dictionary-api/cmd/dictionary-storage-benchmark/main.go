@@ -19,6 +19,7 @@ import (
 	"dictionary-api/internal/importer"
 	"dictionary-api/internal/payload"
 	"dictionary-api/internal/schema"
+	"dictionary-api/internal/termkey"
 	_ "modernc.org/sqlite"
 )
 
@@ -211,7 +212,7 @@ func stageRuntimeSource(ctx context.Context, inputPath, outputPath string, maxEn
 		if err != nil {
 			return "", fmt.Errorf("decode %q: %w", id, err)
 		}
-		search := alternateTerm(terms[id], canonicalize(headword))
+		search := alternateTerm(terms[id], termkey.Dictionary(headword))
 		if _, err := insert.ExecContext(ctx, id, headword, string(raw), search); err != nil {
 			return "", err
 		}
@@ -463,9 +464,6 @@ func percentileMicros(values []time.Duration, percentile float64) float64 {
 	return float64(sorted[index]) / float64(time.Microsecond)
 }
 
-func canonicalize(value string) string {
-	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(value), "·", ""))
-}
 func readOnlyDSN(path string) string { return "file:" + filepath.ToSlash(path) + "?mode=ro" }
 func min(left, right int) int {
 	if left < right {

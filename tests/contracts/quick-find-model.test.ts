@@ -7,6 +7,7 @@ import type {
   CanonicalSense,
 } from "../../packages/dictionary-schema/src/index";
 import { projectEntryPart } from "../../src/features/dictionary/entry-sections";
+import { buildEntryResources } from "../../src/features/dictionary/resource-model";
 import {
   phraseQuickFindAnchor,
   projectQuickFind,
@@ -87,7 +88,7 @@ test("projects quick-find content in display order and omits empty resource bloc
     phrasalVerbs: [phrase("first phrasal verb")],
   }), 0);
 
-  const model = projectQuickFind(projection);
+  const model = projectQuickFind(projection, buildEntryResources(projection, []));
 
   assert.deepEqual(model.sections.map((section) => section.id), [
     "parts",
@@ -109,6 +110,42 @@ test("projects quick-find content in display order and omits empty resource bloc
     "phrase-idioms-1",
   ]);
   assert.deepEqual(model.phrasalVerbs.map((item) => item.anchor), ["phrase-phrasalVerbs-0"]);
+});
+
+test("orders etymology before native resources and exposes it first in quick-find", () => {
+  const projection = projectEntryPart(entry({
+    illustrations: [{ key: "image", raw: "image" }],
+    grammarUsageBoxes: [{
+      type: "GRAMMAR POINT",
+      blocks: [],
+      body: [],
+      raw: {},
+    }],
+  }), 0);
+  const resources = buildEntryResources(projection, [{
+    schemaVersion: "1.0",
+    kind: "etymology",
+    resourceId: "root",
+    sourceVersion: "test",
+    term: "root",
+    headword: "root",
+    articles: [{
+      id: "noun-1",
+      label: "n.1",
+      preview: "origin",
+      previewRuns: [{ text: "origin", marks: [] }],
+    }],
+  }]);
+
+  assert.deepEqual(resources.map((resource) => resource.kind), [
+    "etymology",
+    "illustration",
+    "box",
+  ]);
+  assert.deepEqual(
+    projectQuickFind(projection, resources).resources.map((resource) => [resource.kind, resource.label]),
+    [["etymology", "词源"], ["illustration", "图解词汇"], ["box", "词典说明"]],
+  );
 });
 
 test("uses source IDs and stable fallback paths for quick-find anchors", () => {

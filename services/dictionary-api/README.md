@@ -1,7 +1,7 @@
 # Dictionary API
 
-Read-only local HTTP service for a generated dictionary database and headword
-pronunciation archive.
+Read-only local HTTP service for a generated dictionary database, optional enhancement
+sidecars, and a headword pronunciation archive.
 
 The same binary runs locally or in the server container. Content files are mounted at
 runtime and are never copied into the image.
@@ -27,11 +27,25 @@ bounded search projections, codec metadata, and checksums. Source application ta
 and unrelated metadata are not copied. Runtime schema upgrades require rebuilding the
 database from the source; existing runtime databases are never migrated in place.
 
+Build the optional etymology sidecar separately:
+
+```sh
+go run ./cmd/etymology-import \
+  -source ./data/etymology-source.db \
+  -target ./data/etymology.db \
+  -source-version etymonline-2024.12.10
+```
+
+This importer projects source HTML into ordered semantic blocks, keeps internal links
+structured, retains valid unindexed articles under their own headword, and writes
+independently compressed article payloads. It never serves or copies the source tables.
+
 ## Run
 
 ```sh
 go run ./cmd/dictionary-api \
   -db ./data/dictionary.db \
+  -etymology-db ./data/etymology.db \
   -audio-zip ./data/headword-audio.zip \
   -example-audio-base-url https://media.example.test/audio/examples/ \
   -illustration-url-template 'https://media.example.test/images/{key}.png' \
@@ -46,12 +60,15 @@ Importer environment variables:
 DICTIONARY_SOURCE_DB_PATH
 DICTIONARY_RUNTIME_DB_PATH
 DICTIONARY_SOURCE_VERSION
+DICTIONARY_ETYMOLOGY_SOURCE_DB_PATH
+DICTIONARY_ETYMOLOGY_SOURCE_VERSION
 ```
 
 API environment variables:
 
 ```text
 DICTIONARY_RUNTIME_DB_PATH
+DICTIONARY_ETYMOLOGY_DB_PATH
 DICTIONARY_AUDIO_ZIP_PATH
 DICTIONARY_EXAMPLE_AUDIO_BASE_URL
 DICTIONARY_ILLUSTRATION_BASE_URL
@@ -67,14 +84,17 @@ Endpoints:
 GET /api/v1/health
 GET /api/v1/search?q=word&limit=20
 GET /api/v1/entries/{id}
+GET /api/v1/enhancements/etymology/terms/{term}
+GET /api/v1/enhancements/etymology/articles/{id}
 GET /api/v1/media/headword-audio?key=word%23_gb_1
 GET /api/v1/media/example-audio?key=example%23_gbs_1
 GET /api/v1/media/illustration?key=illustration-key&variant=thumbnail
 ```
 
-Each search item contains `id`, `headword`, `partsOfSpeech`, and
-`translationPreview`. Errors contain a stable code, message, and request id; the
-same request id is returned in `X-Request-ID`.
+Each search item contains `kind`, `id`, `headword`, `partsOfSpeech`, and
+`translationPreview`. Primary dictionary items use `kind: "dictionary"`; terms found
+only in an enabled enhancement use their resource kind. Errors contain a stable code,
+message, and request id; the same request id is returned in `X-Request-ID`.
 
 ## Storage
 
@@ -102,12 +122,21 @@ URL path. Thumbnail requests fall back to the full illustration source when no
 thumbnail template is configured. Leaving a media source unconfigured does not
 prevent search and entry lookup from starting.
 
+The etymology sidecar is also optional. Entry lookup reads uncompressed article labels
+and previews only. Complete articles are decompressed and integrity-checked after an
+article request. Search merges enhancement-only terms after primary dictionary results
+and removes terms already represented by the primary dictionary. Association keys remove
+display syllable separators and normalize observed typographic apostrophes while retaining
+hyphens, internal spaces, trademark marks, and other potentially meaningful punctuation.
+Existing runtime dictionaries remain compatible through a bounded set of exact indexed
+apostrophe variants.
+
 ## Container
 
-From the repository root, prepare `data/dictionary.db` and
+From the repository root, prepare `data/dictionary.db`, `data/etymology.db`, and
 `data/headword-audio.zip`, then use the Compose definition in `deploy/server`. It
-mounts both files read-only and keeps the API bound to the host loopback interface by
-default. Configure an exact HTTPS frontend origin before starting the service. The
+mounts all files read-only, listens only on the private container network, and publishes
+no API host port. Configure an exact HTTPS frontend origin before starting the service. The
 complete production procedure is in the root [deployment guide](../../DEPLOYMENT.md).
 
 ## Verification

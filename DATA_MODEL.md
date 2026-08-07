@@ -47,6 +47,41 @@ Supporting objects are recursive where the source is recursive. A sense can cont
 subsenses, examples, cross references, illustrations, and boxes. A subentry can
 contain the same semantic sections as a root entry.
 
+## Enhancement Resources
+
+Optional sources that enrich an entry without redefining it use the independent
+`packages/enhancement-schema` contract. They do not add source-specific fields to
+`CanonicalEntry`. A summary is small enough to accompany an entry response and contains
+stable resource identity, source version, display term, and ordered article summaries:
+
+```ts
+interface EtymologyResourceSummary {
+  schemaVersion: "1.0";
+  kind: "etymology";
+  resourceId: string;
+  sourceVersion: string;
+  term: string;
+  headword: string;
+  articles: Array<{
+    id: string;
+    label: string;
+    preview: string;
+    previewRuns: EtymologyTextRun[];
+  }>;
+}
+```
+
+The bounded preview runs retain emphasis and internal-link identity without loading the
+article payload. Complete articles are fetched by article id. Their documents contain
+ordered paragraph or quotation blocks, and each block contains ordered text runs with
+semantic `strong` or `foreign` marks and an optional internal dictionary link. Browsers
+render those structures as React nodes; enhancement HTML never crosses the API boundary.
+
+The resource discriminant is the extension point for future supplementary sources.
+Each new kind adds one schema member, one importer/provider, and one resource-registry
+definition. The primary dictionary remains the owner of senses, learning identity, and
+entry navigation.
+
 ## Rich Text
 
 Dictionary text can carry emphasis, labels, references, and source tokens. Plain

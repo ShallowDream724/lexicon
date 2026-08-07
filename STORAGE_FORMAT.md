@@ -21,6 +21,13 @@ without a duplicate secondary index or FTS table. `term_deletes` is ordered by
 existing `(term, entry_id)` key instead of duplicating entry ids or scanning dictionary
 text.
 
+Term keys are independent of displayed headwords. Primary keys remove source syllable
+separators while preserving punctuation that can change meaning. Enhancement association
+also normalizes the finite set of observed typographic apostrophes. The service probes at
+most three exact indexed variants for compatibility with runtime databases generated
+before apostrophe normalization; it never applies a normalization function across table
+rows at request time.
+
 Exact and prefix lookup always runs first. An empty result may use correction only for
 one lowercase ASCII word of 3-64 characters. At request time the service generates at
 most 127 exact-term candidates and 65 deletion signatures, retains at most 128 entry
@@ -129,6 +136,42 @@ With the complete archive and the 51.45 MiB runtime database, a local Windows pr
 reached the health endpoint in about 1.2 seconds. The Go process used approximately
 125 MiB of working-set memory and 156 MiB of private memory after indexing. A sampled
 8,377-byte MP3 response completed in 3.6 ms. Measurements include the Go API only.
+
+## Enhancement Sidecars
+
+Supplementary datasets use separate project-owned SQLite files so they can be added,
+replaced, or removed without rebuilding the primary dictionary. The etymology sidecar
+contains:
+
+```text
+etymology_schema_migrations  sidecar compatibility
+etymology_metadata           source and codec settings
+etymology_terms              normalized exact/prefix projection
+etymology_articles           summary fields plus compressed article payload
+etymology_term_deletes       bounded one-edit correction signatures
+```
+
+Article labels and 512-character previews remain uncompressed. Semantic emphasis uses
+five bytes per marked range: little-endian 16-bit start and end offsets followed by a
+validated bit mask. The API reconstructs preview runs from those ranges, so opening an
+entry card retains source emphasis without duplicating preview text or decoding a
+complete article. Each complete structured article is an independent Zstandard frame
+with a shared trained dictionary, an explicit decoded-size limit of 16 MiB, and a
+32-byte SHA-256 digest. The decoder receives a destination capped at the validated row
+length, so a malformed frame cannot force an unbounded output allocation before the
+length check. Small fixture corpora that cannot support meaningful dictionary training
+use ordinary independent Zstandard frames; a training failure on a production-sized
+corpus aborts the import.
+
+The current full import contains 46,773 searchable terms, 51,716 articles, and 317,082
+unique deletion signatures in a 45,400,064-byte SQLite file using 8 KiB pages, level 7,
+and a 65,677-byte serialized trained dictionary. Semantic preview ranges occupy 934,495
+bytes across the complete corpus. One valid source article omitted from
+the source index is retained under its own headword instead of being silently dropped.
+
+The sidecar is an optional runtime dependency and a required deployment asset only when
+the corresponding enhancement is enabled. It remains outside the application image,
+Git history, Service Worker cache, and primary runtime database.
 
 ## Reproducing The Matrix
 

@@ -2,7 +2,6 @@
 
 import {
   ArrowRight,
-  BookOpenText,
   Image as ImageIcon,
   KeyRound,
   NotebookPen,
@@ -11,7 +10,7 @@ import {
   X,
 } from "lucide-react";
 import Image from "next/image";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 
 import type {
   CanonicalBoxBlock,
@@ -26,6 +25,10 @@ import type {
   CanonicalPhrase,
   CanonicalSense,
 } from "../../../../packages/dictionary-schema/src/index";
+import type {
+  EtymologyArticleResponse,
+  EtymologyResourceSummary,
+} from "../../../../packages/enhancement-schema/src/index";
 import type { EntryPartProjection } from "../entry-sections";
 import { partOfSpeechTabLabel } from "../entry-sections";
 import { grammarUsageBoxLabels, projectGrammarUsageBox } from "../box-presentation";
@@ -40,11 +43,16 @@ import {
   senseReferencePlacement,
 } from "../sense-presentation";
 import { useViewportScrollLock } from "../use-viewport-scroll-lock";
+import { buildEntryResources, type EntryResource } from "../resource-model";
+import type { EtymologyRoute } from "../workspace-route";
 import { CanonicalTextContent } from "./CanonicalTextContent";
+import { EtymologyDialog } from "./EtymologyDialog";
 import { MobileQuickFind } from "./MobileQuickFind";
+import { ResourceRail as EntryResourceRail } from "./ResourceRail";
 
 type EntryViewProps = {
   entry: CanonicalEntry;
+  enhancements?: EtymologyResourceSummary[];
   projection: EntryPartProjection;
   favorite: boolean;
   entryPending: boolean;
@@ -57,6 +65,10 @@ type EntryViewProps = {
   audioError: string | null;
   onPlayAudio: (key: string, kind: "headword" | "example") => void;
   resolveIllustration: (key: string, variant?: "full" | "thumbnail") => string;
+  etymology?: EtymologyRoute;
+  prefetchedEtymologyArticle?: EtymologyArticleResponse;
+  onEtymologyChange?: (etymology: EtymologyRoute | null) => void;
+  onNavigateEtymology?: (term: string, articleId?: string) => void;
 };
 
 function audioRegionClass(region: string | undefined): string {
@@ -635,60 +647,6 @@ function ResourceDialog({
   );
 }
 
-function ResourceRail({
-  illustrations,
-  boxes,
-  onOpenBox,
-  onOpenIllustration,
-  resolveIllustration,
-}: {
-  illustrations: CanonicalIllustration[];
-  boxes: CanonicalGrammarUsageBox[];
-  onOpenBox: (box: CanonicalGrammarUsageBox) => void;
-  onOpenIllustration: (illustration: CanonicalIllustration) => void;
-  resolveIllustration: EntryViewProps["resolveIllustration"];
-}) {
-  if (!illustrations.length && !boxes.length) {
-    return null;
-  }
-  return (
-    <aside className="entry-resource-rail" aria-label="词条扩展内容">
-      {illustrations.map((illustration, index) => (
-        <button
-          className="resource-card"
-          key={illustration.key ?? index}
-          type="button"
-          onClick={() => onOpenIllustration(illustration)}
-        >
-          <IllustrationImage
-            className="resource-card-thumbnail"
-            illustration={illustration}
-            resolveIllustration={resolveIllustration}
-            variant="thumbnail"
-          />
-          <strong>图解词汇</strong>
-          <span>VISUAL VOCABULARY</span>
-        </button>
-      ))}
-      {boxes.map((box, index) => {
-        const labels = grammarUsageBoxLabels(box);
-        return (
-          <button
-            className="resource-card"
-            key={box.id ?? `${labels.primary}-${index}`}
-            type="button"
-            onClick={() => onOpenBox(box)}
-          >
-            <BookOpenText className="resource-card-icon" aria-hidden="true" />
-            <strong>{labels.primary}</strong>
-            <span>{labels.secondary}</span>
-          </button>
-        );
-      })}
-    </aside>
-  );
-}
-
 function SenseView({
   sense,
   path,
@@ -1189,6 +1147,7 @@ function DerivedFormsView({
 
 export function EntryView({
   entry,
+  enhancements,
   projection,
   favorite,
   entryPending,
@@ -1201,10 +1160,17 @@ export function EntryView({
   onOpenNote,
   onSelectEntry,
   onPlayAudio,
+  etymology,
+  prefetchedEtymologyArticle,
+  onEtymologyChange,
+  onNavigateEtymology,
 }: EntryViewProps) {
   const resourceScope = `${entry.id}:${projection.activeIndex}`;
-  const hasResources =
-    projection.grammarUsageBoxes.length > 0 || projection.illustrations.length > 0;
+  const resources = useMemo(
+    () => buildEntryResources(projection, enhancements ?? []),
+    [enhancements, projection],
+  );
+  const hasResources = resources.length > 0;
   const [activeResource, setActiveResource] = useState<{
     scope: string;
     box?: CanonicalGrammarUsageBox;
@@ -1216,9 +1182,32 @@ export function EntryView({
   const activeIllustration = activeResource?.scope === resourceScope
     ? activeResource.illustration ?? null
     : null;
+  const activeEtymology = etymology
+    ? resources.find(
+        (resource): resource is Extract<EntryResource, { kind: "etymology" }> =>
+          resource.kind === "etymology" &&
+          (etymology.articleId
+            ? resource.summary.articles.some((article) => article.id === etymology.articleId)
+            : resource.summary.term === etymology.term),
+      )?.summary ?? null
+    : null;
 
   const closeResource = () => {
     setActiveResource(null);
+  };
+  const openResource = (resource: EntryResource, articleId?: string) => {
+    if (resource.kind === "etymology") {
+      onEtymologyChange?.({
+        term: resource.summary.term,
+        articleId: articleId ?? resource.summary.articles[0]?.id,
+      });
+      return;
+    }
+    setActiveResource(
+      resource.kind === "box"
+        ? { scope: resourceScope, box: resource.box }
+        : { scope: resourceScope, illustration: resource.illustration },
+    );
   };
 
   return (
@@ -1399,13 +1388,9 @@ export function EntryView({
           />
         </div>
 
-        <ResourceRail
-          boxes={projection.grammarUsageBoxes}
-          illustrations={projection.illustrations}
-          onOpenBox={(box) => setActiveResource({ scope: resourceScope, box })}
-          onOpenIllustration={(illustration) =>
-            setActiveResource({ scope: resourceScope, illustration })
-          }
+        <EntryResourceRail
+          resources={resources}
+          onOpen={openResource}
           resolveIllustration={resolveIllustration}
         />
       </div>
@@ -1418,15 +1403,25 @@ export function EntryView({
         onSelectEntry={onSelectEntry}
         resolveIllustration={resolveIllustration}
       />
+      <EtymologyDialog
+        articleId={etymology?.articleId}
+        initialArticle={prefetchedEtymologyArticle}
+        onArticleChange={(articleId) => {
+          if (etymology) {
+            onEtymologyChange?.({ ...etymology, articleId });
+          }
+        }}
+        onClose={() => onEtymologyChange?.(null)}
+        onNavigate={onNavigateEtymology ?? (() => undefined)}
+        resource={activeEtymology}
+      />
       <MobileQuickFind
         activeSectionId={activeSectionId}
         onJump={onJump}
-        onOpenBox={(box) => setActiveResource({ scope: resourceScope, box })}
-        onOpenIllustration={(illustration) =>
-          setActiveResource({ scope: resourceScope, illustration })
-        }
+        onOpenResource={openResource}
         onPartChange={onPartChange}
         projection={projection}
+        resources={resources}
         scopeKey={entry.id}
       />
     </article>

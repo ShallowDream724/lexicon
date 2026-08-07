@@ -7,13 +7,10 @@ import {
   ChevronRight,
   Image as ImageIcon,
   ListFilter,
+  ScrollText,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import type {
-  CanonicalGrammarUsageBox,
-  CanonicalIllustration,
-} from "../../../../packages/dictionary-schema/src/index";
 import type { EntryPartProjection } from "../entry-sections";
 import {
   fitHorizontalTabsToWidth,
@@ -24,6 +21,7 @@ import {
   type HorizontalTabLayout,
 } from "../horizontal-scroll-state";
 import { projectQuickFind } from "../quick-find-model";
+import { entryResourceQuickFindAction, type EntryResource } from "../resource-model";
 import { useViewportScrollLock } from "../use-viewport-scroll-lock";
 
 type MobileQuickFindProps = {
@@ -32,8 +30,8 @@ type MobileQuickFindProps = {
   activeSectionId?: string;
   onPartChange: (index: number) => void;
   onJump: (anchor: string) => void;
-  onOpenBox: (box: CanonicalGrammarUsageBox) => void;
-  onOpenIllustration: (illustration: CanonicalIllustration) => void;
+  resources: readonly EntryResource[];
+  onOpenResource: (resource: EntryResource) => void;
 };
 
 export function MobileQuickFind({
@@ -42,8 +40,8 @@ export function MobileQuickFind({
   activeSectionId,
   onPartChange,
   onJump,
-  onOpenBox,
-  onOpenIllustration,
+  resources,
+  onOpenResource,
 }: MobileQuickFindProps) {
   const [open, setOpen] = useState(false);
   const [partScroll, setPartScroll] = useState<HorizontalScrollState>({
@@ -59,7 +57,7 @@ export function MobileQuickFind({
   const partTabsRef = useRef<HTMLDivElement>(null);
   const wasOpenRef = useRef(false);
   const pendingJumpRef = useRef<string | undefined>(undefined);
-  const model = projectQuickFind(projection);
+  const model = projectQuickFind(projection, resources);
   const partSignature = model.parts.map((part) => part.label).join("\u0000");
   useViewportScrollLock(open);
 
@@ -421,15 +419,13 @@ export function MobileQuickFind({
                         key={`${resource.kind}-${index}`}
                         onClick={() => {
                           close();
-                          if (resource.kind === "illustration") {
-                            onOpenIllustration(resource.illustration);
-                          } else {
-                            onOpenBox(resource.box);
+                          if (entryResourceQuickFindAction(resource) === "open-resource") {
+                            onOpenResource(resource);
                           }
                         }}
                         type="button"
                       >
-                        {resource.kind === "illustration" ? <ImageIcon aria-hidden="true" /> : <BookOpenText aria-hidden="true" />}
+                        {resource.kind === "illustration" ? <ImageIcon aria-hidden="true" /> : resource.kind === "box" ? <BookOpenText aria-hidden="true" /> : <ScrollText aria-hidden="true" />}
                         <span>{resource.label}</span>
                       </button>
                     ))}

@@ -1510,8 +1510,8 @@
 .entry-content-layout {
   align-items: start;
   display: grid;
-  gap: .8rem;
-  grid-template-columns: minmax(0, 1fr) 3.6rem;
+  gap: .64rem;
+  grid-template-columns: minmax(0, 1fr) 5.6rem;
 }
 
 .entry-main-column {
@@ -1524,6 +1524,11 @@
   padding-top: .8rem;
   position: sticky;
   top: 1.6rem;
+}
+
+.entry-resource-rail .resource-card:not(.is-featured) {
+  justify-self: end;
+  width: 3.6rem;
 }
 
 .resource-card {
@@ -1566,18 +1571,291 @@
   width: .72rem;
 }
 
-.resource-card strong {
+.resource-card > strong {
   font-size: .34667rem;
   font-weight: 500;
   line-height: 1.4;
 }
 
-.resource-card span {
+.resource-card > span {
   color: #5d6576;
   font-family: "Times New Roman", Times, serif;
   font-size: .26667rem;
   line-height: 1.4;
   margin-top: .08rem;
+}
+
+.resource-card.is-featured {
+  background: #fbf7ed;
+  border: .02667rem solid #c9a98c;
+  border-radius: .16rem;
+  box-shadow: 0 .13333rem .4rem #5a1d291c;
+  color: #64202e;
+  justify-content: space-between;
+  min-height: 3.6rem;
+}
+
+.entry-resource-rail .resource-card.is-featured {
+  width: 100%;
+}
+
+.resource-card.is-featured:hover,
+.resource-card.is-featured:focus-visible {
+  box-shadow: 0 .16rem .56rem #5a1d2930;
+  color: #8a2e3d;
+}
+
+.resource-card.is-featured .resource-card-icon {
+  color: #7f2837;
+}
+
+.resource-card.is-featured > strong {
+  color: #64202e;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: .42667rem;
+  font-weight: 700;
+}
+
+.resource-card.is-featured > span {
+  color: #7f5b4d;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: .26667rem;
+  margin-top: .16rem;
+}
+
+.resource-card.etymology-resource-card {
+  align-items: stretch;
+  aspect-ratio: 563 / 578;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 1.06667rem minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  position: relative;
+  text-align: left;
+}
+
+.etymology-resource-card:hover,
+.etymology-resource-card:focus-within {
+  box-shadow: 0 .16rem .56rem #5a1d2930;
+}
+
+.etymology-card-spine {
+  align-items: center;
+  align-self: stretch;
+  background: #970021;
+  border-right: .05333rem double #d9b9a0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: .26667rem .12rem .21333rem;
+}
+
+.etymology-card-emblem {
+  filter: brightness(0) invert(1);
+  height: .72rem;
+  opacity: .94;
+  width: .72rem;
+}
+
+.etymology-card-spine-label {
+  color: #fff7ed;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: .34667rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+  transform: rotate(180deg);
+  writing-mode: vertical-rl;
+}
+
+.etymology-card-hit-area {
+  background: transparent;
+  border: 0;
+  border-radius: inherit;
+  cursor: pointer;
+  inset: 0;
+  padding: 0;
+  position: absolute;
+  z-index: 2;
+}
+
+.etymology-card-hit-area:focus-visible {
+  outline: .05333rem solid #970021;
+  outline-offset: -.10667rem;
+}
+
+.etymology-card-paper {
+  align-self: stretch;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  padding: .29333rem .37333rem .26667rem;
+  position: relative;
+}
+
+.etymology-card-paper::before {
+  background-image: url("/etymology-griffin.png");
+  background-position: right .13333rem bottom .10667rem;
+  background-repeat: no-repeat;
+  background-size: auto clamp(1.12rem, 34%, 2.8rem);
+  content: "";
+  inset: 0;
+  opacity: .045;
+  pointer-events: none;
+  position: absolute;
+}
+
+.etymology-card-paper > * {
+  position: relative;
+  z-index: 1;
+}
+
+.etymology-card-heading {
+  border-bottom: .02667rem solid #d4bca1;
+  display: flex;
+  grid-row: 1;
+  padding-bottom: .18667rem;
+}
+
+.etymology-card-content {
+  display: flex;
+  flex-direction: column;
+  grid-row: 2;
+  min-height: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.resource-card.is-featured .etymology-card-heading strong {
+  color: #970021;
+  font-family: STSong, "Songti SC", "Noto Serif SC", "Source Han Serif SC", SimSun, serif;
+  font-size: .48rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.etymology-card-paper h3 {
+  color: #332b28;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: .53333rem;
+  font-weight: 400;
+  line-height: 1.2;
+  margin: .26667rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.etymology-card-content > h3,
+.etymology-card-articles {
+  flex: 0 0 auto;
+}
+
+.etymology-card-paper h3 small {
+  font-size: .34667rem;
+}
+
+.etymology-card-articles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .10667rem;
+  margin-top: .21333rem;
+  position: relative;
+  z-index: 3;
+}
+
+.etymology-card-articles button {
+  background: #fffaf2e6;
+  border: .02667rem solid #b98b76;
+  border-radius: .21333rem;
+  color: #6f2432;
+  cursor: pointer;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: .26667rem;
+  line-height: 1.2;
+  min-height: .56rem;
+  padding: .05333rem .16rem;
+  pointer-events: auto;
+}
+
+.etymology-card-articles button:hover,
+.etymology-card-articles button:focus-visible {
+  background: #6f2432;
+  border-color: #6f2432;
+  color: #fffaf2;
+}
+
+.etymology-card-preview {
+  --etymology-preview-lines: 3;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: .24rem 0 .10667rem;
+}
+
+.etymology-card-preview p {
+  color: #493d37;
+  display: -webkit-box;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: .34667rem;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--etymology-preview-lines);
+  line-height: 1.42;
+  margin: 0;
+  overflow: hidden;
+}
+
+.etymology-card-preview[data-preview-lines="0"] p {
+  display: none;
+}
+
+.etymology-preview-run.is-foreign {
+  color: #970021;
+  font-style: italic;
+}
+
+.etymology-preview-run.is-strong {
+  font-weight: 700;
+}
+
+.etymology-preview-run.is-link {
+  color: #970021;
+}
+
+.etymology-card-expand {
+  align-items: center;
+  align-self: stretch;
+  background: transparent;
+  border: 0;
+  color: #6f2432;
+  display: flex;
+  font-family: STSong, "Songti SC", "Noto Serif SC", "Source Han Serif SC", SimSun, serif;
+  font-size: .26667rem;
+  font-weight: 400;
+  gap: .08rem;
+  grid-row: 3;
+  justify-content: flex-start;
+  line-height: 1.2;
+  margin-top: 0;
+  min-height: .4rem;
+  padding: .08rem 0 0;
+  text-align: left;
+  width: 100%;
+}
+
+.resource-card.is-featured .etymology-card-expand span {
+  color: inherit;
+  font: inherit;
+  margin: 0;
+}
+
+.etymology-card-expand svg {
+  flex: 0 0 auto;
+  height: .34667rem;
+  width: .34667rem;
 }
 
 .resource-dialog-layer {
@@ -1809,6 +2087,256 @@
 
 .resource-dialog-body figure {
   margin: 0;
+}
+
+.etymology-dialog {
+  background: linear-gradient(to bottom, #f2e9dc 0 1.25333rem, #fbf7ed 1.25333rem);
+  border-radius: .16rem;
+  max-width: 24rem;
+  -webkit-overflow-scrolling: touch;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: #9a7958 transparent;
+  scrollbar-width: thin;
+  width: min(24rem, 100%);
+}
+
+.etymology-dialog::-webkit-scrollbar {
+  background: transparent;
+  width: .26667rem;
+}
+
+.etymology-dialog::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 999px;
+  margin-block: .16rem;
+}
+
+.etymology-dialog::-webkit-scrollbar-thumb {
+  background: #9a7958;
+  background-clip: padding-box;
+  border: .05333rem solid transparent;
+  border-radius: 999px;
+}
+
+.etymology-dialog::-webkit-scrollbar-thumb:hover {
+  background: #77583c;
+}
+
+.etymology-dialog::-webkit-scrollbar-button {
+  -webkit-appearance: none;
+  background: transparent;
+  border: 0;
+  display: none;
+  height: 0;
+  width: 0;
+}
+
+.etymology-dialog::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.etymology-dialog > header {
+  background: #f2e9dc;
+}
+
+.etymology-dialog > header strong {
+  color: #64202e;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.etymology-dialog-body {
+  background: #fbf7ed;
+  display: grid;
+  grid-template-columns: .69333rem minmax(0, 1fr);
+  min-height: 12rem;
+  position: relative;
+}
+
+.etymology-gilt-edge {
+  background:
+    linear-gradient(90deg, #6d253029, #6d253000 60%),
+    repeating-linear-gradient(90deg, #b08d574d 0 .02667rem, transparent .02667rem .10667rem);
+  border-right: .02667rem solid #b08d576b;
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(180deg, transparent, #000 8%, #000 92%, transparent);
+}
+
+.etymology-paper {
+  color: #2e2925;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: .48rem;
+  line-height: 1.65;
+  min-width: 0;
+  overflow: hidden;
+  padding: .74667rem .8rem .93333rem .90667rem;
+  position: relative;
+}
+
+.etymology-paper > *:not(.etymology-watermark) {
+  position: relative;
+  z-index: 1;
+}
+
+.etymology-watermark {
+  background-image: url("/etymology-griffin.png");
+  background-position: right .8rem bottom .8rem;
+  background-repeat: no-repeat;
+  background-size: min(7.2rem, 48%);
+  inset: 0;
+  opacity: .05;
+  pointer-events: none;
+  position: absolute;
+}
+
+.etymology-paper h1 {
+  color: #64202e;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.06667rem;
+  line-height: 1.1;
+  margin: 0 0 .53333rem;
+  overflow-wrap: anywhere;
+}
+
+.etymology-article-tabs {
+  border-bottom: .02667rem solid #d4bd9f;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .13333rem .26667rem;
+  margin: 0 0 .58667rem;
+  padding-bottom: .34667rem;
+}
+
+.etymology-article-tabs button {
+  background: transparent;
+  border: .02667rem solid #bc9781;
+  border-radius: .10667rem;
+  color: #6a3b40;
+  cursor: pointer;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: .37333rem;
+  line-height: 1.3;
+  min-height: .72rem;
+  padding: .08rem .18667rem;
+}
+
+.etymology-article-tabs button.is-active {
+  background: #64202e;
+  border-color: #64202e;
+  color: #fffaf2;
+}
+
+.etymology-article-copy p,
+.etymology-article-copy blockquote {
+  margin: 0 0 .48rem;
+}
+
+.etymology-article-copy blockquote {
+  border-left: .08rem solid #a36a59;
+  color: #5d4c43;
+  font-style: italic;
+  margin-left: 0;
+  padding-left: .4rem;
+}
+
+.etymology-inline-link {
+  background: transparent;
+  border: 0;
+  color: #7a2636;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+  text-decoration-color: #b98a76;
+  text-underline-offset: .08rem;
+}
+
+.etymology-status {
+  align-items: center;
+  color: #6d5548;
+  display: flex;
+  font-size: .37333rem;
+  gap: .16rem;
+  margin: .74667rem 0;
+}
+
+.etymology-status svg {
+  animation: search-spin .8s linear infinite;
+  height: .42667rem;
+  width: .42667rem;
+}
+
+.etymology-status.is-error {
+  align-items: flex-start;
+  color: #8b2f3e;
+  flex-direction: column;
+}
+
+.etymology-status.is-error p {
+  margin: 0;
+}
+
+.etymology-status.is-error button,
+.etymology-only-error button {
+  align-items: center;
+  background: #64202e;
+  border: 0;
+  border-radius: .10667rem;
+  color: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: .32rem;
+  gap: .10667rem;
+  padding: .13333rem .26667rem;
+}
+
+.etymology-status.is-error button svg {
+  animation: none;
+  height: .32rem;
+  width: .32rem;
+}
+
+.etymology-only-shell {
+  margin: 0 auto;
+  max-width: var(--desktop-content-width);
+  min-height: 12rem;
+  padding: 1.76rem 1.06667rem 2.4rem 4.8rem;
+  width: 100%;
+}
+
+.etymology-only-view {
+  max-width: 11.2rem;
+}
+
+.etymology-only-view > header {
+  border-bottom: .02667rem solid #dcc5a9;
+  margin-bottom: .53333rem;
+  padding-bottom: .4rem;
+}
+
+.etymology-only-view > header span {
+  color: #79534a;
+  font-size: .29333rem;
+}
+
+.etymology-only-view > header h1 {
+  color: #64202e;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.17333rem;
+  line-height: 1.1;
+  margin: .10667rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.etymology-only-view > .resource-card {
+  min-width: min(100%, 8rem);
+  width: min(100%, 8rem);
+}
+
+.etymology-only-error {
+  color: #8b2f3e;
+  font-size: .42667rem;
 }
 
 .resource-dialog-body figcaption {
@@ -2785,7 +3313,7 @@
   }
 }
 
-@media (min-width: 601px) and (max-width: 820px) {
+@media (min-width: 601px) and (max-width: 1024px) and (orientation: portrait) {
   .entry-content-layout {
     gap: .16rem;
     grid-template-columns: minmax(0, 1fr);
@@ -2797,10 +3325,32 @@
 
   .entry-resource-rail {
     grid-row: 1;
-    grid-template-columns: repeat(auto-fit, minmax(3.2rem, 4rem));
+    grid-template-columns: repeat(auto-fill, minmax(3.2rem, 1fr));
     justify-content: start;
     padding-top: .16rem;
     position: static;
+  }
+
+  .entry-resource-rail .resource-card.is-featured {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    transform: none;
+    width: 100%;
+  }
+
+  .resource-card.etymology-resource-card {
+    aspect-ratio: auto;
+    height: 3.6rem;
+    justify-self: start;
+    max-width: 12rem;
+    min-height: 3.6rem;
+    width: 100%;
+  }
+
+  .entry-resource-rail .resource-card:not(.is-featured) {
+    justify-self: stretch;
+    max-width: 4rem;
+    width: 100%;
   }
 
   .resource-card {
@@ -2892,10 +3442,23 @@
 
   .entry-resource-rail {
     grid-row: 1;
-    grid-template-columns: repeat(auto-fit, 2.93333rem);
+    grid-template-columns: repeat(auto-fill, minmax(2.93333rem, 1fr));
     justify-content: start;
     padding-top: .16rem;
     position: static;
+  }
+
+  .entry-resource-rail .resource-card.is-featured {
+    grid-column: 1 / -1;
+    min-height: 3.2rem;
+    transform: none;
+    width: 100%;
+  }
+
+  .entry-resource-rail .resource-card:not(.is-featured) {
+    justify-self: stretch;
+    max-width: 2.93333rem;
+    width: 100%;
   }
 
   .resource-card {
@@ -2914,13 +3477,94 @@
     width: .64rem;
   }
 
-  .resource-card strong {
+  .resource-card > strong {
     font-size: .32rem;
   }
 
-  .resource-card span {
+  .resource-card > span {
     font-size: .24rem;
     margin-top: .05333rem;
+  }
+
+  .etymology-card-paper {
+    padding: .24rem .26667rem .10667rem;
+  }
+
+  .resource-card.etymology-resource-card {
+    aspect-ratio: auto;
+    grid-template-columns: .88rem minmax(0, 1fr);
+    height: 3.2rem;
+    min-height: 3.2rem;
+  }
+
+  .etymology-card-emblem {
+    height: .58667rem;
+    width: .58667rem;
+  }
+
+  .etymology-card-spine-label {
+    font-size: .29333rem;
+  }
+
+  .etymology-card-heading {
+    display: none;
+  }
+
+  .etymology-card-paper h3 {
+    font-size: .45333rem;
+    margin-top: 0;
+  }
+
+  .etymology-card-preview {
+    --etymology-preview-lines: 2;
+    padding: .16rem 0 0;
+  }
+
+  .etymology-card-preview p {
+    font-size: .32rem;
+  }
+
+  .etymology-card-articles button {
+    font-size: .26667rem;
+  }
+
+  .etymology-card-articles {
+    gap: .08rem;
+    margin-top: .10667rem;
+  }
+
+  .etymology-card-articles button {
+    min-height: .48rem;
+    padding: .02667rem .13333rem;
+  }
+
+  .etymology-card-expand {
+    font-size: .32rem;
+    min-height: .42667rem;
+    padding-top: .02667rem;
+  }
+
+  .etymology-card-expand svg {
+    height: .4rem;
+    width: .4rem;
+  }
+
+  .etymology-dialog-body {
+    min-height: 10rem;
+  }
+
+  .etymology-paper {
+    font-size: .42667rem;
+    padding: .53333rem .48rem .74667rem;
+  }
+
+  .etymology-paper h1 {
+    font-size: .85333rem;
+  }
+
+  .etymology-only-shell {
+    min-height: 8rem;
+    padding: .8rem .37333rem 2.4rem;
   }
 
   .resource-dialog-layer {
@@ -2929,6 +3573,22 @@
 
   .resource-dialog {
     max-height: calc(100vh - .42667rem);
+  }
+
+  .etymology-dialog-layer {
+    padding-block: .53333rem;
+  }
+
+  .etymology-dialog {
+    max-height: calc(100vh - 1.06667rem);
+    max-height: calc(100dvh - 1.06667rem);
+    scrollbar-width: none;
+  }
+
+  .etymology-dialog::-webkit-scrollbar {
+    display: none;
+    height: 0;
+    width: 0;
   }
 
   .entry-header {

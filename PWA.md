@@ -52,7 +52,7 @@ by `npm start` for installation and offline checks.
 | `/api/v1/entries/*` | network only | never stored in Cache Storage |
 | `/api/v1/media/*` | network only | never stored in Cache Storage |
 | Cross-origin audio and illustrations | pass through | never stored by the Service Worker |
-| Runtime SQLite and pronunciation ZIP | server only | never requested by installation |
+| Runtime SQLite, enhancement sidecars, and pronunciation ZIP | server only | never requested by installation |
 | History, favorites, notes, and preferences | existing IndexedDB repository | independent of PWA caches |
 
 The build uses explicit file globs followed by a second URL allowlist. An unexpected
@@ -63,7 +63,7 @@ requests are not handled by the Service Worker.
 The reference production build currently emits 26 precache entries totaling about
 1.07 MiB. The build log reports the exact entry count and byte size for every release.
 Cache Storage adds browser-dependent metadata overhead, and the bounded navigation
-cache may add several small HTML responses. Dictionary entries, audio, illustrations,
+cache may add several small HTML responses. Dictionary entries, enhancement articles, audio, illustrations,
 the 54 MiB runtime database, and the 1.06 GiB pronunciation archive are outside this
 budget.
 
@@ -78,7 +78,7 @@ tries the network and then a recent bounded navigation response; when neither is
 available, the branded offline page is returned. Existing history, favorites, notes,
 and preferences remain available in IndexedDB.
 
-Search, entry retrieval, pronunciation, example audio, and illustrations require the
+Search, entry retrieval, enhancement articles, pronunciation, example audio, and illustrations require the
 Go API or their configured remote origin. They never return stale Service Worker
 copies. An already open dictionary page remains rendered, while a new online-only
 request follows the feature's normal unavailable state.

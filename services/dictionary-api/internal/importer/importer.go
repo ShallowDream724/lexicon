@@ -10,10 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	"dictionary-api/internal/payload"
 	"dictionary-api/internal/schema"
+	"dictionary-api/internal/termkey"
 	"dictionary-api/internal/typo"
 	"github.com/klauspost/compress/zstd"
 	_ "modernc.org/sqlite"
@@ -194,9 +194,9 @@ func copyEntries(ctx context.Context, source, destination *sql.DB, sourceVersion
 		if _, err := entryStatement.ExecContext(ctx, id.String, headword.String, string(partsOfSpeech), projection.TranslationPreview, compressed, len(raw), checksum[:]); err != nil {
 			return err
 		}
-		terms := map[string]struct{}{canonicalize(headword.String): {}}
+		terms := map[string]struct{}{termkey.Dictionary(headword.String): {}}
 		if sourceTerm.Valid {
-			terms[canonicalize(sourceTerm.String)] = struct{}{}
+			terms[termkey.Dictionary(sourceTerm.String)] = struct{}{}
 		}
 		for term := range terms {
 			if term != "" {
@@ -294,10 +294,6 @@ func buildDictionary(options zstd.BuildDictOptions) (dictionary []byte, err erro
 		}
 	}()
 	return zstd.BuildDict(options)
-}
-
-func canonicalize(value string) string {
-	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(value), "·", ""))
 }
 
 func sqliteReadOnlyDSN(path string) string { return "file:" + filepath.ToSlash(path) + "?mode=ro" }

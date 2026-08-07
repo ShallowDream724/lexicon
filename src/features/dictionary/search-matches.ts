@@ -1,13 +1,10 @@
-export type DictionarySearchItem = {
-  id: string;
-  headword: string;
-  partsOfSpeech: string[];
-  translationPreview: string;
-};
+import { searchTargetKey, type SearchTarget } from "../../lib/dictionary-client/search-target";
+
+export type { DictionarySearchItem, EtymologySearchItem, SearchTarget } from "../../lib/dictionary-client/search-target";
 
 export type SearchMatchResolution =
-  | { kind: "direct"; entryId: string }
-  | { kind: "candidates"; items: DictionarySearchItem[] };
+  | { kind: "direct"; target: SearchTarget }
+  | { kind: "candidates"; items: SearchTarget[] };
 
 export function normalizeSearchQuery(value: string): string {
   return value
@@ -59,17 +56,31 @@ export function fallbackSearchQueries(value: string): string[] {
 
 export function resolveSearchMatches(
   query: string,
-  items: readonly DictionarySearchItem[],
+  items: readonly SearchTarget[],
 ): SearchMatchResolution {
   const uniqueItems = items.filter((item, index) =>
-    items.findIndex((candidate) => candidate.id === item.id) === index,
+    items.findIndex((candidate) => searchTargetKey(candidate) === searchTargetKey(item)) === index,
   );
   const normalizedQuery = normalizeSearchQuery(query);
-  const exactMatches = uniqueItems.filter(
-    (item) => normalizeSearchQuery(item.headword) === normalizedQuery,
+  const exactDictionaryMatches = uniqueItems.filter(
+    (item): item is Extract<SearchTarget, { kind: "dictionary" }> =>
+      item.kind === "dictionary" && normalizeSearchQuery(item.headword) === normalizedQuery,
+  );
+  const exactEtymologyMatches = uniqueItems.filter(
+    (item): item is Extract<SearchTarget, { kind: "etymology" }> =>
+      item.kind === "etymology" && normalizeSearchQuery(item.headword) === normalizedQuery,
   );
 
-  return exactMatches.length === 1
-    ? { kind: "direct", entryId: exactMatches[0]!.id }
-    : { kind: "candidates", items: uniqueItems };
+  if (exactDictionaryMatches.length === 1) {
+    return { kind: "direct", target: exactDictionaryMatches[0]! };
+  }
+  if (exactDictionaryMatches.length === 0 && exactEtymologyMatches.length === 1) {
+    return { kind: "direct", target: exactEtymologyMatches[0]! };
+  }
+  return {
+    kind: "candidates",
+    items: uniqueItems.toSorted((left, right) =>
+      left.kind === right.kind ? 0 : left.kind === "dictionary" ? -1 : 1,
+    ),
+  };
 }

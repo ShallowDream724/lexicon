@@ -5,6 +5,7 @@ import {
   fallbackSearchQueries,
   resolveSearchMatches,
   type DictionarySearchItem,
+  type EtymologySearchItem,
 } from "../../src/features/dictionary/search-matches";
 
 const item = (
@@ -12,12 +13,26 @@ const item = (
   headword: string,
   partsOfSpeech: string[] = [],
   translationPreview = "",
-): DictionarySearchItem => ({ id, headword, partsOfSpeech, translationPreview });
+): DictionarySearchItem => ({
+  kind: "dictionary",
+  id,
+  headword,
+  partsOfSpeech,
+  translationPreview,
+});
+
+const etymologyItem = (id: string, headword: string): EtymologySearchItem => ({
+  kind: "etymology",
+  id,
+  headword,
+  partsOfSpeech: [],
+  translationPreview: "",
+});
 
 test("returns a direct entry only for one exact normalized headword", () => {
   assert.deepEqual(
     resolveSearchMatches("Rest", [item("rest", "rest"), item("result", "result")]),
-    { kind: "direct", entryId: "rest" },
+    { kind: "direct", target: item("rest", "rest") },
   );
 });
 
@@ -40,13 +55,36 @@ test("returns an empty candidate list for no matches", () => {
 test("normalizes case, middle dots, and compatibility characters before matching", () => {
   assert.deepEqual(
     resolveSearchMatches("  CO·OPERATE  ", [item("cooperate", "co\u2027operate")]),
-    { kind: "direct", entryId: "cooperate" },
+    { kind: "direct", target: item("cooperate", "co\u2027operate") },
   );
 
   assert.deepEqual(
     resolveSearchMatches("\uFF21", [item("a", "a")]),
-    { kind: "direct", entryId: "a" },
+    { kind: "direct", target: item("a", "a") },
   );
+});
+
+test("keeps a dictionary exact match primary and opens a sole etymology exact match", () => {
+  const dictionary = item("root", "root");
+  const etymology = etymologyItem("root", "root");
+  assert.deepEqual(resolveSearchMatches("root", [etymology, dictionary]), {
+    kind: "direct",
+    target: dictionary,
+  });
+  assert.deepEqual(resolveSearchMatches("origin", [etymologyItem("origin", "origin")]), {
+    kind: "direct",
+    target: etymologyItem("origin", "origin"),
+  });
+});
+
+test("places dictionary candidates before etymology-only candidates without changing group order", () => {
+  const firstDictionary = item("alpha", "alpha");
+  const secondDictionary = item("alpine", "alpine");
+  const etymology = etymologyItem("al", "al");
+  assert.deepEqual(resolveSearchMatches("a", [etymology, firstDictionary, secondDictionary]), {
+    kind: "candidates",
+    items: [firstDictionary, secondDictionary, etymology],
+  });
 });
 
 test("deduplicates repeated ids while retaining first-result order", () => {

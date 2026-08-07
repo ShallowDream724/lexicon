@@ -1,11 +1,11 @@
-import type { DictionarySearchItem } from "../search-matches";
+import type { SearchTarget } from "../../../lib/dictionary-client/search-target";
 
 type SearchResultsProps = {
   query: string;
-  items: readonly DictionarySearchItem[];
+  items: readonly SearchTarget[];
   pending: boolean;
   error?: string | null;
-  onSelect: (entryId: string) => void;
+  onSelect: (target: SearchTarget) => void;
   onRetry?: () => void;
 };
 
@@ -37,11 +37,11 @@ export function SearchResults({
       {!pending && !error && items.length ? (
         <ul className="search-results-list" aria-label="词条">
           {items.map((item) => (
-            <li key={item.id}>
+            <li key={`${item.kind}-${item.id}`}>
               <button
                 className="search-result-item"
                 type="button"
-                onClick={() => onSelect(item.id)}
+                onClick={() => onSelect(item)}
               >
                 <strong>{item.headword}</strong>
                 {item.partsOfSpeech.length ? (
@@ -49,6 +49,9 @@ export function SearchResults({
                 ) : null}
                 {item.translationPreview ? (
                   <span className="search-result-translation">{item.translationPreview}</span>
+                ) : null}
+                {item.kind === "etymology" ? (
+                  <span className="search-result-translation">仅词源</span>
                 ) : null}
               </button>
             </li>

@@ -4,9 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp } from "lucide-react";
 
 import type { CanonicalEntry } from "../../../../packages/dictionary-schema/src/index";
+import type {
+  EtymologyArticleResponse,
+  EtymologyResourceSummary,
+} from "../../../../packages/enhancement-schema/src/index";
 import {
   dictionaryClient,
-  type DictionarySearchItem,
+  type SearchTarget,
 } from "../../../lib/dictionary-client/client";
 import {
   learningData,
@@ -22,9 +26,16 @@ import {
   resolveSearchMatches,
 } from "../search-matches";
 import { activeSectionForScroll } from "../scroll-spy-model";
+import {
+  parseWorkspaceRoute,
+  workspaceRouteUrl,
+  type EtymologyRoute,
+  type WorkspaceRoute as WorkspaceInitialRoute,
+} from "../workspace-route";
 import { DictionaryHeader } from "./DictionaryHeader";
 import { DictionaryHome } from "./DictionaryHome";
 import { EntryView } from "./EntryView";
+import { EtymologyOnlyView } from "./EtymologyOnlyView";
 import { InlineLookup } from "./InlineLookup";
 import { SearchResults } from "./SearchResults";
 import { type LibraryTab, WorkspaceDrawer } from "./WorkspaceDrawer";
@@ -34,12 +45,9 @@ type DrawerState =
   | { mode: "library"; tab: LibraryTab }
   | null;
 
-type WorkspaceView = "home" | "loading" | "entry" | "search-results";
+type WorkspaceView = "home" | "loading" | "entry" | "etymology" | "search-results";
 
-export type WorkspaceInitialRoute =
-  | { kind: "home" }
-  | { kind: "entry"; entryId: string }
-  | { kind: "query"; query: string };
+export type { WorkspaceRoute as WorkspaceInitialRoute } from "../workspace-route";
 
 type DictionaryWorkspaceProps = {
   initialRoute?: WorkspaceInitialRoute;
@@ -47,9 +55,10 @@ type DictionaryWorkspaceProps = {
 
 type SearchResultsState = {
   query: string;
-  items: DictionarySearchItem[];
+  items: SearchTarget[];
   pending: boolean;
   error: string | null;
+  articleTarget?: EtymologyRoute;
 };
 
 const emptySearchResults: SearchResultsState = {
@@ -80,6 +89,18 @@ export function DictionaryWorkspace({
 }: DictionaryWorkspaceProps) {
   const [query, setQuery] = useState(initialRoute.kind === "query" ? initialRoute.query : "");
   const [entry, setEntry] = useState<CanonicalEntry>(demoEntry);
+  const [enhancements, setEnhancements] = useState<EtymologyResourceSummary[]>([]);
+  const [prefetchedEtymologyArticle, setPrefetchedEtymologyArticle] = useState<
+    EtymologyArticleResponse | undefined
+  >();
+  const [autoOpenEtymology, setAutoOpenEtymology] = useState(false);
+  const [etymology, setEtymology] = useState<EtymologyRoute | undefined>(
+    initialRoute.kind === "entry"
+      ? initialRoute.etymology
+      : initialRoute.kind === "etymology"
+        ? initialRoute.etymology
+        : undefined,
+  );
   const [view, setView] = useState<WorkspaceView>(
     initialRoute.kind === "home"
       ? "home"
@@ -90,7 +111,7 @@ export function DictionaryWorkspace({
       ? { query: initialRoute.query, items: [], pending: true, error: null }
       : emptySearchResults,
   );
-  const [suggestions, setSuggestions] = useState<DictionarySearchItem[]>([]);
+  const [suggestions, setSuggestions] = useState<SearchTarget[]>([]);
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [favorites, setFavorites] = useState<FavoriteRecord[]>([]);
   const [notes, setNotes] = useState<NoteRecord[]>([]);
@@ -110,6 +131,7 @@ export function DictionaryWorkspace({
   const submittedSearchRequest = useRef<AbortController | null>(null);
   const submittedSearchQuery = useRef<string | null>(null);
   const entryRequest = useRef<AbortController | null>(null);
+  const etymologyNavigationRequest = useRef<AbortController | null>(null);
   const activeAudio = useRef<HTMLAudioElement | null>(null);
 
   const refreshLearningData = useCallback(async () => {
@@ -148,40 +170,53 @@ export function DictionaryWorkspace({
   const selectEntry = useCallback(
     async (
       entryId: string,
-      options: { route?: "none" | "push" | "replace" } = {},
+      options: { route?: "none" | "push" | "replace"; etymology?: EtymologyRoute } = {},
     ): Promise<boolean | null> => {
       suggestionRequest.current?.abort();
       suggestionRequest.current = null;
+      etymologyNavigationRequest.current?.abort();
+      etymologyNavigationRequest.current = null;
       submittedSearchRequest.current?.abort();
       submittedSearchRequest.current = null;
       entryRequest.current?.abort();
       const controller = new AbortController();
       entryRequest.current = controller;
       setEntryPending(true);
+      setEtymology(options.etymology);
+      if (!options.etymology?.articleId) {
+        setPrefetchedEtymologyArticle(undefined);
+      }
       setSearchOpen(false);
       setSearchPending(false);
       setSuggestions([]);
 
       try {
-        const nextEntry = await dictionaryClient.entry(entryId, controller.signal);
+        const loadedEntry = await dictionaryClient.entry(entryId, controller.signal);
         if (entryRequest.current !== controller || controller.signal.aborted) {
           return null;
         }
         setSearchError(null);
         setView("entry");
-        setEntry(nextEntry);
+        setEntry(loadedEntry.entry);
+        setEnhancements(loadedEntry.enhancements);
         setFavorite(false);
         setNote("");
         setActivePartIndex(0);
         setActiveSectionId("definitions");
-        setQuery(nextEntry.headword);
+        setQuery(loadedEntry.entry.headword);
         const route = options.route ?? "push";
         if (route !== "none") {
-          const nextUrl = `${window.location.pathname}?entry=${encodeURIComponent(nextEntry.id)}`;
-          updateRoute(nextUrl, route);
+          updateRoute(
+            workspaceRouteUrl(window.location.pathname, {
+              kind: "entry",
+              entryId: loadedEntry.entry.id,
+              ...(options.etymology ? { etymology: options.etymology } : {}),
+            }),
+            route,
+          );
         }
         window.scrollTo({ top: 0, behavior: "smooth" });
-        const learningState = await loadEntryLearningState(nextEntry);
+        const learningState = await loadEntryLearningState(loadedEntry.entry);
         if (entryRequest.current !== controller || controller.signal.aborted) {
           return null;
         }
@@ -210,6 +245,66 @@ export function DictionaryWorkspace({
     [loadEntryLearningState],
   );
 
+  const selectEtymology = useCallback(
+    (
+      nextEtymology: EtymologyRoute,
+      options: { route?: "none" | "push" | "replace"; openFirstArticle?: boolean } = {},
+    ): void => {
+      suggestionRequest.current?.abort();
+      suggestionRequest.current = null;
+      etymologyNavigationRequest.current?.abort();
+      etymologyNavigationRequest.current = null;
+      submittedSearchRequest.current?.abort();
+      submittedSearchRequest.current = null;
+      entryRequest.current?.abort();
+      entryRequest.current = null;
+      setEtymology(nextEtymology);
+      setAutoOpenEtymology(options.openFirstArticle ?? false);
+      if (!nextEtymology.articleId) {
+        setPrefetchedEtymologyArticle(undefined);
+      }
+      setEntryPending(false);
+      setSearchOpen(false);
+      setSearchPending(false);
+      setSuggestions([]);
+      setSearchError(null);
+      setView("etymology");
+      setQuery(nextEtymology.term);
+      const route = options.route ?? "push";
+      if (route !== "none") {
+        updateRoute(
+          workspaceRouteUrl(window.location.pathname, {
+            kind: "etymology",
+            etymology: nextEtymology,
+          }),
+          route,
+        );
+      }
+      window.scrollTo({ top: 0, behavior: "auto" });
+    },
+    [],
+  );
+
+  const selectSearchTarget = useCallback(
+    (
+      target: SearchTarget,
+      options: { route?: "none" | "push" | "replace"; articleTarget?: EtymologyRoute } = {},
+    ): Promise<boolean | null> => {
+      if (target.kind === "etymology") {
+        selectEtymology(
+          { term: target.id, articleId: options.articleTarget?.articleId },
+          { route: options.route, openFirstArticle: !options.articleTarget?.articleId },
+        );
+        return Promise.resolve(true);
+      }
+      return selectEntry(target.id, {
+        route: options.route,
+        etymology: options.articleTarget,
+      });
+    },
+    [selectEntry, selectEtymology],
+  );
+
   const showHome = useCallback((shouldUpdateRoute: boolean): void => {
     suggestionRequest.current?.abort();
     suggestionRequest.current = null;
@@ -219,7 +314,13 @@ export function DictionaryWorkspace({
     entryRequest.current?.abort();
     entryRequest.current = null;
     activeAudio.current?.pause();
+    etymologyNavigationRequest.current?.abort();
+    etymologyNavigationRequest.current = null;
+    setPrefetchedEtymologyArticle(undefined);
     setView("home");
+    setEnhancements([]);
+    setEtymology(undefined);
+    setAutoOpenEtymology(false);
     setSearchResults(emptySearchResults);
     setEntryPending(false);
     setSearchOpen(false);
@@ -242,7 +343,10 @@ export function DictionaryWorkspace({
   const runSearch = useCallback(
     async (
       rawQuery: string,
-      options: { route?: "none" | "push" | "replace" } = {},
+      options: {
+        route?: "none" | "push" | "replace";
+        targetArticleId?: string;
+      } = {},
     ): Promise<boolean | null> => {
       const requestedQuery = rawQuery.normalize("NFKC").trim().replace(/\s+/g, " ");
       if (!requestedQuery) {
@@ -256,6 +360,8 @@ export function DictionaryWorkspace({
 
       suggestionRequest.current?.abort();
       suggestionRequest.current = null;
+      etymologyNavigationRequest.current?.abort();
+      etymologyNavigationRequest.current = null;
       submittedSearchRequest.current?.abort();
       entryRequest.current?.abort();
       entryRequest.current = null;
@@ -264,6 +370,9 @@ export function DictionaryWorkspace({
       submittedSearchQuery.current = requestedQuery;
 
       setQuery(requestedQuery);
+      if (!options.targetArticleId) {
+        setPrefetchedEtymologyArticle(undefined);
+      }
       setSearchOpen(false);
       setSearchPending(false);
       setSearchError(null);
@@ -304,7 +413,10 @@ export function DictionaryWorkspace({
         if (resolution.kind === "direct") {
           submittedSearchRequest.current = null;
           const route = options.route === "none" ? "replace" : options.route ?? "push";
-          return await selectEntry(resolution.entryId, { route });
+          const articleTarget = options.targetArticleId
+            ? { term: requestedQuery, articleId: options.targetArticleId }
+            : undefined;
+          return await selectSearchTarget(resolution.target, { route, articleTarget });
         }
 
         setSearchResults({
@@ -312,6 +424,9 @@ export function DictionaryWorkspace({
           items: resolution.items,
           pending: false,
           error: null,
+          articleTarget: options.targetArticleId
+            ? { term: requestedQuery, articleId: options.targetArticleId }
+            : undefined,
         });
         setView("search-results");
         const route = options.route ?? "push";
@@ -353,18 +468,45 @@ export function DictionaryWorkspace({
           submittedSearchQuery.current = null;
         }
       }
-    },
-    [selectEntry, showHome],
+  },
+    [selectSearchTarget, showHome],
   );
+
+  const navigateEtymologyLink = useCallback((term: string, articleId?: string) => {
+    if (!articleId) {
+      void runSearch(term, { route: "push" });
+      return;
+    }
+    etymologyNavigationRequest.current?.abort();
+    const controller = new AbortController();
+    etymologyNavigationRequest.current = controller;
+    void dictionaryClient
+      .etymologyArticle(articleId, controller.signal)
+      .then((article) => {
+        if (etymologyNavigationRequest.current !== controller || controller.signal.aborted) {
+          return;
+        }
+        setPrefetchedEtymologyArticle(article);
+        void runSearch(article.term, { route: "push", targetArticleId: article.article.id });
+      })
+      .catch((error) => {
+        if (!isAbortError(error) && etymologyNavigationRequest.current === controller) {
+          setSearchError("词源内容暂不可用");
+        }
+      })
+      .finally(() => {
+        if (etymologyNavigationRequest.current === controller) {
+          etymologyNavigationRequest.current = null;
+        }
+      });
+  }, [runSearch]);
 
   useEffect(() => {
     const syncLocation = () => {
-      const parameters = new URLSearchParams(window.location.search);
-      const requestedEntry = parameters.get("entry");
-      const requestedQuery = parameters.get("q");
-      if (requestedEntry) {
+      const route = parseWorkspaceRoute(new URLSearchParams(window.location.search));
+      if (route.kind === "entry") {
         setView("loading");
-        void selectEntry(requestedEntry, { route: "none" }).then((loaded) => {
+        void selectEntry(route.entryId, { route: "none", etymology: route.etymology }).then((loaded) => {
           if (loaded === false) {
             window.history.replaceState(null, "", window.location.pathname);
             showHome(false);
@@ -372,8 +514,12 @@ export function DictionaryWorkspace({
         });
         return;
       }
-      if (requestedQuery?.trim()) {
-        void runSearch(requestedQuery, { route: "none" });
+      if (route.kind === "etymology") {
+        selectEtymology(route.etymology, { route: "none" });
+        return;
+      }
+      if (route.kind === "query") {
+        void runSearch(route.query, { route: "none" });
         return;
       }
       showHome(false);
@@ -391,8 +537,9 @@ export function DictionaryWorkspace({
       suggestionRequest.current?.abort();
       submittedSearchRequest.current?.abort();
       entryRequest.current?.abort();
+      etymologyNavigationRequest.current?.abort();
     };
-  }, [refreshLearningData, runSearch, selectEntry, showHome]);
+  }, [refreshLearningData, runSearch, selectEntry, selectEtymology, showHome]);
 
   useEffect(() => {
     const normalized = query.trim();
@@ -443,7 +590,8 @@ export function DictionaryWorkspace({
     event.preventDefault();
     const normalizedQuery = normalizeSearchQuery(query);
     const currentEntryIsOpen =
-      view === "entry" && normalizeSearchQuery(entry.headword) === normalizedQuery;
+      (view === "entry" && normalizeSearchQuery(entry.headword) === normalizedQuery) ||
+      (view === "etymology" && normalizeSearchQuery(etymology?.term ?? "") === normalizedQuery);
     const currentResultsAreShown =
       view === "search-results" &&
       !searchResults.error &&
@@ -618,7 +766,7 @@ export function DictionaryWorkspace({
         }}
         onSubmit={submitSearch}
         onHome={() => showHome(true)}
-        onSelect={(entryId) => void selectEntry(entryId, { route: "push" })}
+        onSelect={(target) => void selectSearchTarget(target, { route: "push" })}
         onOpenLibrary={(tab) => void openLibrary(tab)}
       />
 
@@ -639,9 +787,30 @@ export function DictionaryWorkspace({
             error={searchResults.error}
             items={searchResults.items}
             onRetry={() => void runSearch(searchResults.query, { route: "none" })}
-            onSelect={(entryId) => void selectEntry(entryId, { route: "push" })}
+            onSelect={(target) => void selectSearchTarget(target, {
+              route: "push",
+              articleTarget: searchResults.articleTarget,
+            })}
             pending={searchResults.pending}
             query={searchResults.query}
+          />
+        </div>
+      ) : view === "etymology" && etymology ? (
+        <div className="etymology-only-shell">
+          <EtymologyOnlyView
+            articleId={etymology.articleId}
+            autoOpen={autoOpenEtymology}
+            prefetchedArticle={prefetchedEtymologyArticle}
+            onArticleChange={(articleId) => {
+              const next = { term: etymology.term, articleId };
+              setEtymology(next);
+              updateRoute(
+                workspaceRouteUrl(window.location.pathname, { kind: "etymology", etymology: next }),
+                "push",
+              );
+            }}
+            onNavigate={navigateEtymologyLink}
+            term={etymology.term}
           />
         </div>
       ) : <div className="dictionary-shell">
@@ -677,6 +846,7 @@ export function DictionaryWorkspace({
           <EntryView
             activeSectionId={activeSectionId}
             entry={entry}
+            enhancements={enhancements}
             projection={projection}
             favorite={favorite}
             entryPending={entryPending}
@@ -684,6 +854,20 @@ export function DictionaryWorkspace({
             resolveIllustration={dictionaryClient.illustrationUrl}
             onPartChange={changePart}
             onSelectEntry={(entryId) => void selectEntry(entryId, { route: "push" })}
+            etymology={etymology}
+            prefetchedEtymologyArticle={prefetchedEtymologyArticle}
+            onEtymologyChange={(nextEtymology) => {
+              setEtymology(nextEtymology ?? undefined);
+              updateRoute(
+                workspaceRouteUrl(window.location.pathname, {
+                  kind: "entry",
+                  entryId: entry.id,
+                  ...(nextEtymology ? { etymology: nextEtymology } : {}),
+                }),
+                "push",
+              );
+            }}
+            onNavigateEtymology={navigateEtymologyLink}
             onToggleFavorite={() => void toggleFavorite()}
             onOpenNote={() => setDrawer({ mode: "note" })}
             onPlayAudio={playAudio}
