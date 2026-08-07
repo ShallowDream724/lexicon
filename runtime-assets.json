@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "releaseTag": "runtime-data-v1",
+  "baseUrl": "https://github.com/ShallowDream724/lexicon/releases/download/runtime-data-v1/",
+  "assets": [
+    {
+      "file": "dictionary.db",
+      "bytes": 53952512,
+      "sha256": "296deec07f197d70dfed9eb7f117e6768453c350ae67f26034c97949ab4d038a",
+      "runtimeSchema": 3,
+      "records": 40974
+    },
+    {
+      "file": "etymology.db",
+      "bytes": 45400064,
+      "sha256": "90b7be85875a30d2ef8e64859bd853905c8da239082a2d3d860c1f5daa533220",
+      "runtimeSchema": 3,
+      "records": 51716
+    }
+  ]
+}

@@ -11,7 +11,7 @@
     <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.24-2f7f8f" alt="Go 1.24"></a>
   </p>
 
-  <p><strong>40,974 entries · 51,716 etymology articles · 256,026 pronunciations · 220,328 typo signatures</strong></p>
+  <p><strong>40,974 entries · 51,716 etymology articles · 128,010 headword pronunciations · 220,328 typo signatures</strong></p>
 </div>
 
 <img src="docs/readme/hero-desktop.webp" width="100%" alt="Lexicon desktop entry view with indexed navigation, pronunciation, examples, and etymology">
@@ -59,7 +59,7 @@ than shipping a large JSON corpus to the browser.
 | --- | ---: | --- |
 | Primary dictionary | 40,974 entries | 51.45 MiB read-only SQLite runtime |
 | Etymology enhancement | 46,773 terms / 51,716 articles | 43.30 MiB independent sidecar |
-| Headword pronunciation | 256,026 MP3 members | 1.06 GiB ZIP, indexed and streamed without extraction |
+| Headword pronunciation | 128,010 usable MP3 assets | 1.06 GiB source ZIP, indexed and streamed without extraction |
 | Typo correction index | 220,328 deletion signatures | bounded indexed probes; no substring scan |
 | Installable application shell | 26 precache entries / about 1.07 MiB | UI assets only; no entry JSON, SQLite, ZIP, or media |
 
@@ -106,13 +106,18 @@ rules.
 
 ## Quick start
 
-Requirements: Node.js 22.13 or newer, Go 1.24 or newer, and a generated runtime database at
-`data/dictionary.db`. The etymology sidecar and pronunciation archive are optional during local
-development.
+Requirements: Node.js 22.13 or newer and Go 1.24 or newer. Install dependencies, then download and
+verify the two versioned runtime databases:
 
 ```bash
 npm ci
+npm run data:download
 ```
+
+The downloader pins file sizes and SHA-256 digests from `runtime-assets.json`, then writes
+`data/dictionary.db` and `data/etymology.db`. A private mirror can be selected with
+`LEXICON_DATA_BASE_URL`, and `LEXICON_DATA_DIR` can select another target directory. The
+pronunciation archive remains optional and, when available, belongs at `data/headword-audio.zip`.
 
 Start the API and web application in separate terminals:
 
@@ -191,7 +196,4 @@ The deployment can use the included reverse-proxy reference or join an existing 
 
 ## Data and licensing
 
-The application source is available under the [MIT License](LICENSE). Source databases, generated
-runtimes, media, application packages, and captured payloads have separate provenance and are not
-covered automatically by the software license. Deploy and redistribute only data for which the
-intended use is permitted.
+The application source is available under the [MIT License](LICENSE); dictionary information in the released databases is provided for study use only.

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -49,6 +50,17 @@ func TestImportCreatesDeterministicIsolatedSidecar(t *testing.T) {
 	secondDictionary, secondArticle := readArtifacts(secondPath)
 	if !bytes.Equal(firstDictionary, secondDictionary) || !bytes.Equal(firstArticle, secondArticle) {
 		t.Fatal("identical imports produced different payload artifacts")
+	}
+	firstDatabase, err := os.ReadFile(firstPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondDatabase, err := os.ReadFile(secondPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(firstDatabase, secondDatabase) {
+		t.Fatal("identical imports produced different sidecar database files")
 	}
 
 	source, err := sql.Open("sqlite", sourcePath)

@@ -2,8 +2,25 @@ package payload
 
 import (
 	"bytes"
+	"os"
+	"strings"
 	"testing"
 )
+
+func TestImplementationMatchesZstdDependency(t *testing.T) {
+	module, err := os.ReadFile("../../go.mod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	moduleVersion := strings.TrimPrefix(Implementation, "github.com/klauspost/compress@")
+	if moduleVersion == Implementation {
+		t.Fatalf("invalid implementation metadata %q", Implementation)
+	}
+	declaration := "github.com/klauspost/compress " + moduleVersion
+	if !strings.Contains(string(module), declaration) {
+		t.Fatalf("implementation metadata %q does not match go.mod", Implementation)
+	}
+}
 
 func TestZstdDecompressHonorsExpectedSizeCapacity(t *testing.T) {
 	codec, err := NewZstd(nil)

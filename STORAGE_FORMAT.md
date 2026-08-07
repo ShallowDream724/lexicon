@@ -116,7 +116,9 @@ caching, and block-wide rewrites. Neither tradeoff fits low-latency random looku
 
 Dictionary training samples entries deterministically in primary-key order. Import
 verifies valid source JSON before compression and writes through a temporary database
-followed by an atomic rename. The service validates runtime schema version, codec,
+followed by an atomic rename. Migration rows use the fixed introduction timestamp of
+their schema version, so identical full imports produce byte-identical SQLite files.
+The service validates runtime schema version, codec,
 uncompressed length, SHA-256, and decoded JSON before returning an entry.
 
 The shared dictionary is part of the database format and is stored in the same file.
@@ -125,12 +127,13 @@ into an external dependency.
 
 ## Pronunciation Archive
 
-Headword pronunciation remains in its original ZIP container. The measured archive is
-1,135,490,706 bytes and contains 256,026 MP3 members totaling 1,177,468,953 bytes when
-extracted. Extraction would save no runtime work, increase storage by about 42 MiB,
-and create a large filesystem metadata burden. The API therefore reads the central
-directory once at startup and streams only the selected member. The archive is mounted
-read-only and versioned independently from the runtime database.
+Headword pronunciation remains in its original ZIP container. The measured source
+archive is 1,135,490,706 bytes and contains 128,010 usable MP3 assets totaling
+1,143,628,003 bytes. It also contains 128,013 macOS metadata entries, which the indexer
+ignores. Extraction would save no runtime work and would create a large filesystem
+metadata burden. The API therefore reads the central directory once at startup and
+streams only the selected member. The archive is mounted read-only and versioned
+independently from the runtime database.
 
 With the complete archive and the 51.45 MiB runtime database, a local Windows probe
 reached the health endpoint in about 1.2 seconds. The Go process used approximately

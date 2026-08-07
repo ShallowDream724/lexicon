@@ -24,3 +24,22 @@ func TestValidateRejectsSchemaV1WithReimportGuidance(t *testing.T) {
 		t.Fatalf("Validate() error = %v, want re-import guidance", err)
 	}
 }
+
+func TestApplyRecordsDeterministicSchemaVersion(t *testing.T) {
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "runtime.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := Apply(db); err != nil {
+		t.Fatal(err)
+	}
+	var version int
+	var appliedAt string
+	if err := db.QueryRow(`SELECT version, applied_at FROM schema_migrations`).Scan(&version, &appliedAt); err != nil {
+		t.Fatal(err)
+	}
+	if version != Version || appliedAt != versionAppliedAt {
+		t.Fatalf("schema marker = (%d, %q), want (%d, %q)", version, appliedAt, Version, versionAppliedAt)
+	}
+}

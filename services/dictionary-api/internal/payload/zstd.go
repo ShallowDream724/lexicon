@@ -7,6 +7,8 @@ import (
 	"github.com/klauspost/compress/zstd"
 )
 
+const Implementation = "github.com/klauspost/compress@v1.19.2"
+
 type Codec interface {
 	Name() string
 	Compress([]byte) ([]byte, error)

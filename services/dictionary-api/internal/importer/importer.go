@@ -220,7 +220,7 @@ func copyEntries(ctx context.Context, source, destination *sql.DB, sourceVersion
 		value any
 		blob  any
 	}{
-		{"source_version", sourceVersion, nil}, {"payload_codec", codec.Name(), nil}, {"payload_codec_implementation", "github.com/klauspost/compress@v1.18.0", nil},
+		{"source_version", sourceVersion, nil}, {"payload_codec", codec.Name(), nil}, {"payload_codec_implementation", payload.Implementation, nil},
 		{"payload_compression_level", strconv.Itoa(storage.CompressionLevel), nil}, {"payload_dictionary_version", "1", nil},
 		{"payload_dictionary_size", strconv.Itoa(storage.DictionarySize), nil},
 		{"payload_dictionary_sha256", fmt.Sprintf("%x", digest), nil}, {"payload_dictionary", nil, dictionary},

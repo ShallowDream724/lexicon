@@ -176,12 +176,14 @@ func applySchema(db *sql.DB) error {
 		`CREATE TABLE etymology_articles (id TEXT PRIMARY KEY, term_normalized TEXT NOT NULL REFERENCES etymology_terms(normalized), position INTEGER NOT NULL, label TEXT NOT NULL, preview TEXT NOT NULL CHECK(length(preview) <= 1024), preview_marks BLOB NOT NULL CHECK(length(preview_marks) <= 4096), payload BLOB NOT NULL, payload_size INTEGER NOT NULL CHECK(payload_size >= 0 AND payload_size <= 16777216), payload_sha256 BLOB NOT NULL CHECK(length(payload_sha256) = 32)) WITHOUT ROWID`,
 		`CREATE INDEX etymology_articles_by_term ON etymology_articles(term_normalized, position, id)`,
 		`CREATE TABLE etymology_term_deletes (signature TEXT NOT NULL, term_normalized TEXT NOT NULL REFERENCES etymology_terms(normalized), PRIMARY KEY (signature, term_normalized)) WITHOUT ROWID`,
-		fmt.Sprintf(`INSERT INTO etymology_schema_migrations (version, applied_at) VALUES (%d, datetime('now'))`, SidecarSchemaVersion),
 	}
 	for _, statement := range statements {
 		if _, err := tx.Exec(statement); err != nil {
 			return err
 		}
+	}
+	if _, err := tx.Exec(`INSERT INTO etymology_schema_migrations (version, applied_at) VALUES (?, ?)`, SidecarSchemaVersion, sidecarVersionDate); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -396,7 +398,7 @@ func writeProjection(ctx context.Context, destination *sql.DB, terms []importedT
 		value any
 		blob  any
 	}{
-		{"source_version", sourceVersion, nil}, {"payload_codec", codec.Name(), nil}, {"payload_codec_implementation", "github.com/klauspost/compress@v1.18.0", nil},
+		{"source_version", sourceVersion, nil}, {"payload_codec", codec.Name(), nil}, {"payload_codec_implementation", payload.Implementation, nil},
 		{"payload_compression_level", strconv.Itoa(storage.CompressionLevel), nil}, {"payload_dictionary_version", "1", nil},
 		{"payload_dictionary_size", strconv.Itoa(len(dictionary)), nil},
 		{"payload_dictionary_sha256", fmt.Sprintf("%x", digest), nil}, {"payload_dictionary", nil, dictionary},

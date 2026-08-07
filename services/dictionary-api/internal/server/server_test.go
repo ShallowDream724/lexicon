@@ -134,6 +134,17 @@ func TestImportProducesDeterministicDictionaryAndPayloads(t *testing.T) {
 	if !bytes.Equal(firstDictionary, secondDictionary) || !bytes.Equal(firstPayload, secondPayload) {
 		t.Fatal("identical imports produced different codec artifacts")
 	}
+	firstDatabase, err := os.ReadFile(firstPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondDatabase, err := os.ReadFile(secondPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(firstDatabase, secondDatabase) {
+		t.Fatal("identical imports produced different runtime database files")
+	}
 }
 
 func TestImportAppliesStorageOptionsAndRecordsThem(t *testing.T) {

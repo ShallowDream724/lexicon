@@ -4,6 +4,7 @@ package etymology
 const (
 	SchemaVersion        = "1.0"
 	SidecarSchemaVersion = 3
+	sidecarVersionDate   = "2026-08-07T00:00:00Z"
 	Kind                 = "etymology"
 )
 

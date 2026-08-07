@@ -5,7 +5,10 @@ import (
 	"fmt"
 )
 
-const Version = 3
+const (
+	Version          = 3
+	versionAppliedAt = "2026-08-06T00:00:00Z"
+)
 
 func Apply(db *sql.DB) error {
 	tx, err := db.Begin()
@@ -19,12 +22,14 @@ func Apply(db *sql.DB) error {
 		`CREATE TABLE entries (id TEXT PRIMARY KEY, headword TEXT NOT NULL, parts_of_speech TEXT NOT NULL CHECK(length(parts_of_speech) <= 2048), translation_preview TEXT NOT NULL CHECK(length(translation_preview) <= 120), payload BLOB NOT NULL, payload_size INTEGER NOT NULL CHECK(payload_size >= 0 AND payload_size <= 16777216), payload_sha256 BLOB NOT NULL CHECK(length(payload_sha256) = 32)) WITHOUT ROWID`,
 		`CREATE TABLE entry_terms (term TEXT NOT NULL, entry_id TEXT NOT NULL REFERENCES entries(id), PRIMARY KEY (term, entry_id)) WITHOUT ROWID`,
 		`CREATE TABLE term_deletes (signature TEXT NOT NULL, term TEXT NOT NULL, PRIMARY KEY (signature, term)) WITHOUT ROWID`,
-		`INSERT INTO schema_migrations (version, applied_at) VALUES (3, datetime('now'))`,
 	}
 	for _, statement := range statements {
 		if _, err := tx.Exec(statement); err != nil {
 			return err
 		}
+	}
+	if _, err := tx.Exec(`INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)`, Version, versionAppliedAt); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
