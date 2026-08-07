@@ -25,13 +25,13 @@ Lexicon keeps the same dictionary model across every viewport while adapting the
 Lexicon 在各种视口中保持一致的词典模型，同时适配不同设备上的浏览方式。
 
 - **Desktop:** a persistent entry outline, wide reading column, and compact resource rail.<br>
-  **桌面：**常驻词条大纲、宽幅阅读栏和紧凑资源栏。
+  **桌面：** 常驻词条大纲、宽幅阅读栏和紧凑资源栏。
 - **Tablet:** portrait and landscape compositions that preserve hierarchy without wasting width.<br>
-  **平板：**纵向和横向布局均保留信息层级，避免浪费屏幕宽度。
+  **平板：** 纵向和横向布局均保留信息层级，避免浪费屏幕宽度。
 - **Phone:** touch lookup, a measured part-of-speech dock, and full-width supplementary resources.<br>
-  **手机：**触控查词、尺寸经过控制的词性停靠栏，以及占满宽度的补充资源。
+  **手机：** 触控查词、尺寸经过控制的词性停靠栏，以及占满宽度的补充资源。
 - **Installable PWA:** a small application shell with explicit updates and an offline launch page; dictionary payloads and media are never downloaded as part of installation.<br>
-  **可安装 PWA：**轻量应用外壳，支持明确的更新流程并提供离线启动页；安装过程中不会下载词典数据或媒体资源。
+  **可安装 PWA：** 轻量应用外壳，支持明确的更新流程并提供离线启动页；安装过程中不会下载词典数据或媒体资源。
 
 <img src="docs/readme/responsive-devices.webp" width="100%" alt="Lexicon tablet and phone layouts / Lexicon 平板与手机布局">
 
