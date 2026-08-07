@@ -10,9 +10,13 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const manifestPath = join(repositoryRoot, "runtime-assets.json");
 const defaultTargetDirectory = join(repositoryRoot, "data");
 const sha256Pattern = /^[a-f0-9]{64}$/;
+const assetKinds = new Map([
+  ["database", /\.db$/],
+  ["headword-audio", /^headword-audio\.zip$/],
+]);
 
 export function validateManifest(value) {
-  if (!value || value.schemaVersion !== 1 || typeof value.releaseTag !== "string") {
+  if (!value || value.schemaVersion !== 2 || typeof value.releaseTag !== "string") {
     throw new Error("runtime asset manifest has an unsupported schema");
   }
   const baseUrl = new URL(value.baseUrl);
@@ -24,13 +28,18 @@ export function validateManifest(value) {
   }
   const names = new Set();
   for (const asset of value.assets) {
+    const filePattern = assetKinds.get(asset?.kind);
     if (
       !asset ||
+      !filePattern ||
       typeof asset.file !== "string" ||
       basename(asset.file) !== asset.file ||
-      !asset.file.endsWith(".db") ||
+      !filePattern.test(asset.file) ||
       !Number.isSafeInteger(asset.bytes) ||
       asset.bytes <= 0 ||
+      !Number.isSafeInteger(asset.records) ||
+      asset.records <= 0 ||
+      (asset.kind === "database" && (!Number.isSafeInteger(asset.runtimeSchema) || asset.runtimeSchema <= 0)) ||
       typeof asset.sha256 !== "string" ||
       !sha256Pattern.test(asset.sha256)
     ) {
@@ -72,13 +81,13 @@ function assetUrl(baseUrl, file) {
   return url;
 }
 
-async function fetchAsset(url) {
+async function fetchAsset(url, timeout) {
   let lastError;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
       const response = await fetch(url, {
         redirect: "follow",
-        signal: AbortSignal.timeout(10 * 60 * 1000),
+        signal: AbortSignal.timeout(timeout),
       });
       if (response.ok) {
         return response;
@@ -122,7 +131,9 @@ async function download(asset, baseUrl, targetDirectory, replace) {
   const temporary = join(targetDirectory, `.${asset.file}.${process.pid}.part`);
   await rm(temporary, { force: true });
   try {
-    const response = await fetchAsset(assetUrl(baseUrl, asset.file));
+    const timeout = asset.bytes > 512 * 1024 * 1024 ? 2 * 60 * 60 * 1000 : 10 * 60 * 1000;
+    console.log(`downloading ${asset.file}`);
+    const response = await fetchAsset(assetUrl(baseUrl, asset.file), timeout);
     if (!response.body) {
       throw new Error(`download for ${asset.file} returned no body`);
     }
@@ -132,10 +143,16 @@ async function download(asset, baseUrl, targetDirectory, replace) {
     }
     const digest = createHash("sha256");
     let bytes = 0;
+    let nextProgress = 25;
     const meter = new Transform({
       transform(chunk, encoding, callback) {
         bytes += chunk.length;
         digest.update(chunk);
+        const progress = Math.floor((bytes / asset.bytes) * 100);
+        if (progress >= nextProgress && nextProgress < 100) {
+          console.log(`${asset.file}: ${nextProgress}%`);
+          nextProgress += 25;
+        }
         callback(null, chunk);
       },
     });

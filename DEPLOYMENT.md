@@ -60,20 +60,18 @@ and one normal rebuild; ten GiB leaves room for build cache and atomic asset rep
 - Ports 80 and 443 reachable when automatic HTTPS is used.
 - A domain with an A or AAAA record pointing to the server, or plain HTTP by IP for a
   private deployment.
-- A generated primary runtime. The complete reference Compose additionally enables the
-  etymology sidecar and pronunciation archive.
+- The three released runtime assets downloaded through the project manifest.
 
 ## Prepare Assets
 
-After cloning the repository, download and verify the two released runtime databases:
+After cloning the repository, download and verify the complete runtime asset set:
 
 ```sh
 npm ci
 npm run data:download
 ```
 
-The command creates the ignored `data` directory with this layout. Add the optional
-pronunciation archive manually when it is available:
+The command creates the ignored `data` directory with this layout:
 
 ```text
 data/
@@ -82,13 +80,12 @@ data/
   headword-audio.zip
 ```
 
-Both runtime databases pass importer schema and integrity validation before release. Run
-`npm run data:verify` after transferring them through a mirror or backup. The audio
-filename is a deployment convention; the ZIP body is not rewritten. Keep source assets
-backed up outside the repository. The included Compose
-enables both optional resources and therefore expects all three files. A custom Compose
-may omit the etymology environment variable and mount, the audio environment variable and
-mount, or both; search and entry lookup will continue without those resources.
+Both runtime databases pass importer schema and integrity validation before release. The
+audio archive passes its pinned size and SHA-256 checks and retains its original ZIP body.
+Run `npm run data:verify` after transferring the asset set through a mirror or backup. The
+included Compose expects all three files. A custom Compose may omit the etymology
+environment variable and mount, the audio environment variable and mount, or both;
+search and entry lookup will continue without those resources.
 
 Make all three files readable by the Docker daemon and keep them immutable during normal
 operation. Content assets never enter an image or Git commit.
@@ -219,6 +216,6 @@ commit uses the same mechanism for rollback and does not touch browser learning 
 ## Repository Boundary
 
 The public Git history contains application code, import tooling, schemas,
-documentation, and compact test fixtures. Versioned runtime databases are distributed
-as Release assets and pinned by `runtime-assets.json`; source databases and media stay
-outside Git history.
+documentation, and compact test fixtures. Versioned runtime databases and headword audio
+are distributed as Release assets and pinned by `runtime-assets.json`; source databases
+and remote media stay outside Git history.

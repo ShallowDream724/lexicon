@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "dev:api": "go -C services/dictionary-api run ./cmd/dictionary-api -db ../../data/dictionary.db",
+    "dev:api": "go -C services/dictionary-api run ./cmd/dictionary-api -db ../../data/dictionary.db -etymology-db ../../data/etymology.db -audio-zip ../../data/headword-audio.zip",
     "build": "node scripts/build-web.mjs",
     "start": "next start",
     "dictionary:import": "go -C services/dictionary-api run ./cmd/dictionary-import",

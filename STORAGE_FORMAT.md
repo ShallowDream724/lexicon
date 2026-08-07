@@ -133,7 +133,7 @@ archive is 1,135,490,706 bytes and contains 128,010 usable MP3 assets totaling
 ignores. Extraction would save no runtime work and would create a large filesystem
 metadata burden. The API therefore reads the central directory once at startup and
 streams only the selected member. The archive is mounted read-only and versioned
-independently from the runtime database.
+alongside the runtime databases through `runtime-assets.json`.
 
 With the complete archive and the 51.45 MiB runtime database, a local Windows probe
 reached the health endpoint in about 1.2 seconds. The Go process used approximately

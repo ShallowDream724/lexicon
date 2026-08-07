@@ -39,6 +39,6 @@ interaction changes. Keep examples source-neutral and independently understandab
 
 Do not commit source databases, generated runtime databases, audio, PDFs, application
 packages, captured full entries, credentials, or machine-specific paths. Runtime
-databases are published only as versioned Release assets and pinned in
-`runtime-assets.json`. The repository ignore rules are a final guard, not a substitute
+databases and headword audio are published only as versioned Release assets and pinned
+in `runtime-assets.json`. The repository ignore rules are a final guard, not a substitute
 for reviewing staged files.

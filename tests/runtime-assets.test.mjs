@@ -4,22 +4,38 @@ import test from "node:test";
 
 import { validateManifest } from "../scripts/runtime-data.mjs";
 
-test("runtime release manifest pins clean database artifacts", async () => {
+test("runtime release manifest pins the complete runtime asset set", async () => {
   const manifest = validateManifest(JSON.parse(await readFile(new URL("../runtime-assets.json", import.meta.url), "utf8")));
   assert.deepEqual(
     manifest.assets.map((asset) => asset.file),
-    ["dictionary.db", "etymology.db"],
+    ["dictionary.db", "etymology.db", "headword-audio.zip"],
   );
-  assert.ok(manifest.assets.every((asset) => asset.runtimeSchema === 3));
+  assert.ok(manifest.assets.filter((asset) => asset.kind === "database").every((asset) => asset.runtimeSchema === 3));
+  const audio = manifest.assets.find((asset) => asset.kind === "headword-audio");
+  assert.equal(audio.records, 128010);
+  assert.ok(audio.bytes > 1024 ** 3);
 });
 
 test("runtime release manifest rejects path traversal", () => {
   assert.throws(() =>
     validateManifest({
-      schemaVersion: 1,
+      schemaVersion: 2,
       releaseTag: "test",
       baseUrl: "https://example.test/",
-      assets: [{ file: "../dictionary.db", bytes: 1, sha256: "0".repeat(64) }],
+      assets: [
+        { kind: "database", file: "../dictionary.db", bytes: 1, records: 1, runtimeSchema: 1, sha256: "0".repeat(64) },
+      ],
+    }),
+  );
+});
+
+test("runtime release manifest rejects mismatched asset kinds", () => {
+  assert.throws(() =>
+    validateManifest({
+      schemaVersion: 2,
+      releaseTag: "test",
+      baseUrl: "https://example.test/",
+      assets: [{ kind: "headword-audio", file: "audio.db", bytes: 1, records: 1, sha256: "0".repeat(64) }],
     }),
   );
 });
