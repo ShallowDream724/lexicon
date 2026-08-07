@@ -11,6 +11,7 @@ import {
   type CanonicalEntry,
   type CanonicalExample,
   type CanonicalForm,
+  type CanonicalFormPresentationItem,
   type CanonicalFormRelation,
   type CanonicalGrammarUsageBox,
   type CanonicalIllustration,
@@ -195,6 +196,11 @@ function optionalText(value: unknown): CanonicalText | undefined {
   return value === undefined ? undefined : canonicalText(value);
 }
 
+function semanticListItemCanonicalText(value: unknown): CanonicalText {
+  const projected = canonicalText(value);
+  return { ...projected, text: semanticListItemText(projected.text) };
+}
+
 function firstNonEmptyText(...values: unknown[]): string {
   for (const value of values) {
     const text = textOf(value).trim();
@@ -214,7 +220,7 @@ function searchKeyFor(value: string): string {
 }
 
 function normalizePartOfSpeech(value: string): string {
-  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+  return semanticListItemText(value).replace(/\s+/g, " ").toLocaleLowerCase();
 }
 
 function isNestedEntry(value: unknown): value is Record<string, unknown> {
@@ -352,13 +358,24 @@ function headingLabelsFrom(value: unknown): CanonicalLabel[] {
 
 const semanticLabelTags = new Set(["geo", "gram", "or", "reg", "subj"]);
 
+function leadingSemanticSeparator(value: string): CanonicalLabel["separatorBefore"] {
+  const separator = /^\s*([,;])/.exec(value)?.[1];
+  return separator === "," || separator === ";" ? separator : undefined;
+}
+
+function semanticListItemText(value: string): string {
+  return value.replace(/^\s*[,;]\s*/, "").trim();
+}
+
 function cleanSemanticLabel(value: string): string {
-  return value
-    .trim()
-    .replace(/^[,;]\s*/, "")
+  return semanticListItemText(value)
     .replace(/^\[/, "")
     .replace(/\]$/, "")
     .trim();
+}
+
+function semanticLabelSeparatorFrom(value: string): CanonicalLabel["separatorBefore"] {
+  return leadingSemanticSeparator(value);
 }
 
 function isSenseUsageToken(item: Record<string, unknown>): boolean {
@@ -393,13 +410,23 @@ function semanticLabelsFrom(value: unknown): CanonicalLabel[] {
         return metadata;
       }
 
-      return [...metadata, { text, kind: tag, raw: item as JsonValue }];
+      return [...metadata, {
+        text,
+        kind: tag,
+        separatorBefore: semanticLabelSeparatorFrom(textOf(item)),
+        raw: item as JsonValue,
+      }];
     });
 }
 
-function patternsFrom(value: unknown): CanonicalText[] {
+function patternsFrom(
+  value: unknown,
+  options: { includeParenthesizedVariants?: boolean } = {},
+): CanonicalText[] {
   const patterns: CanonicalText[] = [];
   let current: Record<string, unknown>[] = [];
+  let parenthesizedVariant: Record<string, unknown>[] | undefined;
+  let parenthesizedVariantDepth = 0;
 
   const flush = (): void => {
     if (!current.length) {
@@ -414,17 +441,52 @@ function patternsFrom(value: unknown): CanonicalText[] {
 
   for (const item of asArray(value).filter(isRecord)) {
     const tag = stringValue(item.tag)?.toLocaleLowerCase();
+    const marker = textOf(item);
+    if (parenthesizedVariant) {
+      parenthesizedVariant.push(item);
+      if (tag === "v-gs" && marker.includes("(")) {
+        parenthesizedVariantDepth += 1;
+      }
+      if (tag === "v-gs" && marker.includes(")")) {
+        parenthesizedVariantDepth = Math.max(0, parenthesizedVariantDepth - 1);
+      }
+      if (parenthesizedVariantDepth === 0) {
+        if (options.includeParenthesizedVariants !== false) {
+          patterns.push(canonicalText(parenthesizedVariant));
+        }
+        parenthesizedVariant = undefined;
+      }
+      continue;
+    }
+    if (tag === "v-gs" && marker.includes("(")) {
+      flush();
+      parenthesizedVariant = [item];
+      parenthesizedVariantDepth = marker.includes(")") ? 0 : 1;
+      if (parenthesizedVariantDepth === 0) {
+        if (options.includeParenthesizedVariants !== false) {
+          patterns.push(canonicalText(parenthesizedVariant));
+        }
+        parenthesizedVariant = undefined;
+      }
+      continue;
+    }
     if (tag === "cf" || tag === "v") {
       current.push(item);
+    } else if (tag === "v-g" && marker.trim() === "," && current.length) {
+      current.push(item);
+      flush();
     } else {
       flush();
     }
+  }
+  if (parenthesizedVariant && options.includeParenthesizedVariants !== false) {
+    patterns.push(canonicalText(parenthesizedVariant));
   }
   flush();
   return patterns;
 }
 
-function senseInlineUsageFrom(value: unknown): CanonicalText[] {
+function inlineUsageFrom(value: unknown): CanonicalText[] {
   const usage: CanonicalText[] = [];
   let current: Record<string, unknown>[] = [];
   let currentKind: "display" | "usage" | undefined;
@@ -495,11 +557,16 @@ function pronunciationsFrom(value: unknown): CanonicalPronunciation[] {
 }
 
 function partsOfSpeechFrom(value: unknown): CanonicalPartOfSpeech[] {
-  return fieldItems(value, "pos").map((item) => ({
-    text: textOf(item),
-    tokens: tokensOf(item),
-    raw: item as JsonValue,
-  }));
+  const seen = new Set<string>();
+  return fieldItems(value, "pos").flatMap((item) => {
+    const projected = semanticListItemCanonicalText(item);
+    const key = normalizePartOfSpeech(projected.text);
+    if (!key || seen.has(key)) {
+      return [];
+    }
+    seen.add(key);
+    return [{ text: projected.text, tokens: projected.tokens, raw: projected.raw }];
+  });
 }
 
 function unambiguousPartOfSpeechFrom(value: unknown): string | undefined {
@@ -682,6 +749,29 @@ function cleanCrossReferenceQualifier(value: unknown): string | undefined {
   return qualifier || undefined;
 }
 
+function resolveCrossReferenceSeparators(
+  references: CanonicalCrossReference[],
+): CanonicalCrossReference[] {
+  let previous: CanonicalCrossReference | undefined;
+  return references.map((reference) => {
+    if (
+      reference.kind === "punctuation" &&
+      reference.label?.trim() === "," &&
+      previous
+    ) {
+      const resolved = {
+        ...reference,
+        kind: previous.kind,
+        label: previous.label,
+      };
+      previous = resolved;
+      return resolved;
+    }
+    previous = reference;
+    return reference;
+  });
+}
+
 const crossReferenceScopeBoundaries = new Set([
   "idm_gs",
   "pv_gs",
@@ -735,7 +825,7 @@ function crossReferencesFrom(value: unknown): CanonicalCrossReference[] {
     return [];
   }
 
-  return crossReferenceGroupsFrom(value).flatMap((item) => {
+  const references: CanonicalCrossReference[] = crossReferenceGroupsFrom(value).flatMap((item) => {
     if (!isRecord(item)) {
       const text = textOf(item).trim();
       return text ? [{ text, raw: item as JsonValue }] : [];
@@ -786,6 +876,7 @@ function crossReferencesFrom(value: unknown): CanonicalCrossReference[] {
       }];
     });
   });
+  return resolveCrossReferenceSeparators(references);
 }
 
 function illustrationsFrom(value: unknown): CanonicalIllustration[] {
@@ -837,12 +928,13 @@ function flattenedBoxContentFrom(value: unknown): unknown[] {
 function boxContentTextFrom(value: unknown): CanonicalText {
   const textItems = flattenedBoxContentFrom(value).filter((item) => {
     const tag = isRecord(item) ? stringValue(item.tag)?.toLocaleLowerCase() : undefined;
-    return tag !== "x-g" && tag !== "xr-gs";
+    return tag !== "x-g" && tag !== "xr-gs" && tag !== "audio" && tag !== "xaudio";
   });
   return canonicalText(textItems);
 }
 
 const flatExampleBoundaryTags = new Set(["x-g", "x-g_end", "x-gs", "x-gs_end"]);
+const flatPronunciationTags = new Set(["pron-g", "pron-gs", "phon", "audio", "form"]);
 const flatExampleNonTextTags = new Set([
   ...flatExampleBoundaryTags,
   "x",
@@ -906,6 +998,28 @@ function boxSegmentsFrom(value: unknown): CanonicalBoxSegment[] {
     const next = items[index + 1];
     const nextTag = isRecord(next) ? stringValue(next.tag)?.toLocaleLowerCase() : undefined;
 
+    if (isRecord(item) && tag === "pron-g") {
+      flushText();
+      let endIndex = index + 1;
+      while (endIndex < items.length) {
+        const candidate = items[endIndex];
+        const candidateTag = isRecord(candidate)
+          ? stringValue(candidate.tag)?.toLocaleLowerCase()
+          : undefined;
+        if (!candidateTag || !flatPronunciationTags.has(candidateTag)) {
+          break;
+        }
+        endIndex += 1;
+      }
+      const raw = items.slice(index, endIndex).filter(isRecord);
+      const pronunciations = flattenedPronunciationsFrom(raw);
+      if (pronunciations.length) {
+        segments.push({ kind: "pronunciations", items: pronunciations, raw: raw as JsonValue });
+      }
+      index = endIndex - 1;
+      continue;
+    }
+
     if (
       isRecord(item) &&
       tag === "eb" &&
@@ -914,7 +1028,7 @@ function boxSegmentsFrom(value: unknown): CanonicalBoxSegment[] {
     ) {
       flushText();
       const partOfSpeech = nextTag === "pos" && isRecord(next)
-        ? canonicalText(next)
+        ? semanticListItemCanonicalText(next)
         : undefined;
       segments.push({
         kind: "term",
@@ -1203,6 +1317,37 @@ function grammarUsageBoxesFrom(value: unknown): CanonicalGrammarUsageBox[] {
     });
 }
 
+const topUsageBoxTypes = new Map([
+  ["[HELP]", "HELP 语法说明"],
+  ["[ORIGIN]", "ORIGIN 词源说明"],
+]);
+
+function topUsageBoxesFrom(topData: Record<string, unknown>): CanonicalGrammarUsageBox[] {
+  const rawItems = asArray(topData.top_un);
+  if (!rawItems.length) {
+    return [];
+  }
+  const marker = isRecord(rawItems[0]) ? textOf(rawItems[0]).trim() : "";
+  const content = topUsageBoxTypes.has(marker) ? rawItems.slice(1) : rawItems;
+  const segments = boxSegmentsFrom(content);
+  if (!segments.length) {
+    return [];
+  }
+  const raw = { top_un: rawItems as JsonValue } satisfies JsonObject;
+  return [{
+    type: topUsageBoxTypes.get(marker) ?? "NOTE 词典说明",
+    blocks: [{
+      kind: "paragraph",
+      value: boxContentTextFrom(content),
+      segments,
+      layout: "flow",
+      raw,
+    }],
+    body: rawItems as JsonValue[],
+    raw,
+  }];
+}
+
 function wordFamilyFormsFrom(value: unknown): CanonicalForm[] {
   return fieldItems(value, "wfg").flatMap((item) => {
     if (!isRecord(item)) {
@@ -1217,7 +1362,7 @@ function wordFamilyFormsFrom(value: unknown): CanonicalForm[] {
       id: stringValue(item.id) || undefined,
       kind: "word-family",
       text,
-      partOfSpeech: textOf(item.wfp).trim() || undefined,
+      partOfSpeech: semanticListItemText(textOf(item.wfp)) || undefined,
       note: note?.text.trim() ? note : undefined,
       labels: [],
       tokens: tokensOf(item.wfw),
@@ -1255,7 +1400,10 @@ function derivativeFormsFrom(value: unknown): CanonicalForm[] {
       kind: "derivative",
       text,
       partOfSpeech,
-      labels: topData ? semanticLabelsFrom(topData.top_text) : [],
+      labels: topData ? labelsOutsideVariantGroupsFrom(topData.top_text) : [],
+      variants: topData ? variantsFrom(topData) : [],
+      usage: topData ? inlineUsageFrom(topData.top_text) : [],
+      inflectedForms: topData ? inflectedFormsFrom(asJsonObject(item), topData) : [],
       tokens: tokensOf(heading.length ? heading : item),
       pronunciations: topData ? pronunciationsFrom(topData) : [],
       senses: sensesFrom(item, partOfSpeech),
@@ -1309,6 +1457,24 @@ function flattenedPronunciationsFrom(
   );
 }
 
+function sensePronunciationsFrom(value: unknown): CanonicalPronunciation[] {
+  const directItems = asArray(value).filter(isRecord).filter((item) => {
+    const path = stringValue(item.path)?.toLocaleLowerCase() ?? "";
+    return !["v-gs", "if-gs", "x-gs", "use"].some((scope) =>
+      path.split("/").includes(scope)
+    );
+  });
+  return flattenedPronunciationsFrom(directItems);
+}
+
+function inflectionIntroducerFrom(
+  items: Record<string, unknown>[],
+): CanonicalText | undefined {
+  const introducer = canonicalText(items);
+  const text = semanticListItemText(introducer.text);
+  return text ? { ...introducer, text } : undefined;
+}
+
 function flattenedInflectedFormsFrom(value: unknown): CanonicalForm[] {
   const forms: CanonicalForm[] = [];
   let current:
@@ -1319,6 +1485,8 @@ function flattenedInflectedFormsFrom(value: unknown): CanonicalForm[] {
       }
     | undefined;
   let pendingIntroducer: Record<string, unknown>[] = [];
+  let pendingRaw: Record<string, unknown>[] = [];
+  let groupDepth = 0;
 
   const flush = (): void => {
     const text = current?.textItems.map(textOf).join("").trim() ?? "";
@@ -1337,35 +1505,77 @@ function flattenedInflectedFormsFrom(value: unknown): CanonicalForm[] {
     current = undefined;
   };
 
+  const flushConstraint = (): void => {
+    const constraint = inflectionIntroducerFrom(pendingIntroducer);
+    if (constraint) {
+      forms.push({
+        kind: "inflection-constraint",
+        text: constraint.text,
+        tokens: constraint.tokens,
+        raw: pendingRaw as JsonValue,
+      });
+    }
+    pendingIntroducer = [];
+    pendingRaw = [];
+  };
+
   for (const item of asArray(value).filter(isRecord)) {
     const tag = stringValue(item.tag)?.toLocaleLowerCase();
     const path = stringValue(item.path)?.toLocaleLowerCase() ?? "";
+    if (tag === "if-gs") {
+      const marker = textOf(item);
+      const opens = marker.match(/\(/g)?.length ?? 0;
+      const closes = marker.match(/\)/g)?.length ?? 0;
+      if (opens && groupDepth === 0) {
+        flush();
+        flushConstraint();
+      }
+      groupDepth += opens;
+      if (current) {
+        current.raw.push(item);
+      } else {
+        pendingRaw.push(item);
+      }
+      groupDepth = Math.max(0, groupDepth - closes);
+      if (closes && groupDepth === 0) {
+        flush();
+        flushConstraint();
+      }
+      continue;
+    }
     if (tag !== "if" && !path.includes("/if-gs")) {
       continue;
     }
     if (tag === "if") {
-      flush();
-      current = {
-        textItems: [item],
-        raw: [...pendingIntroducer, item],
-        introducer: pendingIntroducer.length
-          ? canonicalText(pendingIntroducer)
-          : undefined,
-      };
-      pendingIntroducer = [];
+      if (current) {
+        current.textItems.push(item);
+        current.raw.push(item);
+      } else {
+        current = {
+          textItems: [item],
+          raw: [...pendingRaw, item],
+          introducer: inflectionIntroducerFrom(pendingIntroducer),
+        };
+        pendingIntroducer = [];
+        pendingRaw = [];
+      }
       continue;
     }
     if (tag === "if-g") {
       const text = textOf(item).trim();
       if (current) {
-        current.raw.push(item);
+        flush();
       }
+      pendingRaw.push(item);
       if (text && !/^[,;/().\s]+$/.test(text)) {
-        pendingIntroducer = [item];
+        pendingIntroducer.push(item);
       }
       continue;
     }
     if (!current) {
+      if (groupDepth > 0) {
+        pendingRaw.push(item);
+      }
       continue;
     }
     current.raw.push(item);
@@ -1374,11 +1584,16 @@ function flattenedInflectedFormsFrom(value: unknown): CanonicalForm[] {
     }
   }
   flush();
+  flushConstraint();
   return forms;
 }
 
-function variantTokenGroupsFrom(value: unknown): Record<string, unknown>[][] {
+function variantTokenGroupsFrom(
+  value: unknown,
+  options: { allowUnwrapped?: boolean; requireUnwrappedMarker?: boolean } = {},
+): Record<string, unknown>[][] {
   const groups: Record<string, unknown>[][] = [];
+  const items = asArray(value).filter(isRecord);
   let current: Record<string, unknown>[] | undefined;
 
   const flush = (): void => {
@@ -1388,7 +1603,26 @@ function variantTokenGroupsFrom(value: unknown): Record<string, unknown>[][] {
     current = undefined;
   };
 
-  for (const item of asArray(value).filter(isRecord)) {
+  const canStartUnwrappedGroup = (item: Record<string, unknown>): boolean => {
+    if (!options.allowUnwrapped) {
+      return false;
+    }
+    const tag = stringValue(item.tag)?.toLocaleLowerCase();
+    if (tag === "v-gs") {
+      return !textOf(item).trim();
+    }
+    if (options.requireUnwrappedMarker) {
+      return false;
+    }
+    if (tag !== "v" && tag !== "ptl") {
+      return false;
+    }
+    const path = stringValue(item.path)?.toLocaleLowerCase() ?? "";
+    const scopes = path.split("/");
+    return !path || (scopes.includes("v-gs") && !scopes.includes("if-gs"));
+  };
+
+  for (const item of items) {
     const tag = stringValue(item.tag)?.toLocaleLowerCase();
     const marker = textOf(item);
     if (tag === "v-gs") {
@@ -1403,12 +1637,16 @@ function variantTokenGroupsFrom(value: unknown): Record<string, unknown>[][] {
         if (marker.includes(")")) {
           flush();
         }
+      } else if (canStartUnwrappedGroup(item)) {
+        current = [item];
       }
       continue;
     }
 
     if (current) {
       current.push(item);
+    } else if (canStartUnwrappedGroup(item)) {
+      current = [item];
     }
   }
   flush();
@@ -1431,7 +1669,7 @@ function variantContextLabelsFrom(body: JsonObject): CanonicalLabel[] {
         }
         continue;
       }
-      if (!insideVariant && (tag === "geo" || tag === "reg")) {
+      if (!insideVariant && tag && semanticLabelTags.has(tag)) {
         labels.push(item);
       }
     }
@@ -1439,10 +1677,79 @@ function variantContextLabelsFrom(body: JsonObject): CanonicalLabel[] {
   });
 }
 
-const variantIntroducerPattern = /^(?:also|or|also\s+or)$/i;
+const variantIntroducerPattern = /^(?:abbr\.|also(?:\s+or)?|often|or|sometimes|symb\.|usually)$/i;
 
 function isVariantIntroducer(value: string): boolean {
   return variantIntroducerPattern.test(value.trim());
+}
+
+function isVariantFormSeparator(item: Record<string, unknown>): boolean {
+  return (
+    stringValue(item.tag)?.toLocaleLowerCase() === "v-g" &&
+    textOf(item).trim() === ","
+  );
+}
+
+function splitVariantFormGroups(
+  items: Record<string, unknown>[],
+): Record<string, unknown>[][] {
+  const groups: Record<string, unknown>[][] = [];
+  let current: Record<string, unknown>[] = [];
+
+  const flush = (): void => {
+    if (current.length) {
+      groups.push(current);
+    }
+    current = [];
+  };
+
+  for (const item of items) {
+    current.push(item);
+    if (isVariantFormSeparator(item)) {
+      flush();
+    }
+  }
+  flush();
+  return groups;
+}
+
+function variantPresentationFrom(
+  items: Record<string, unknown>[],
+): CanonicalFormPresentationItem[] {
+  const presentation: CanonicalFormPresentationItem[] = [];
+  let hasPronunciation = false;
+  let hasTarget = false;
+  items.forEach((item) => {
+    const tag = stringValue(item.tag)?.toLocaleLowerCase();
+    const text = textOf(item).trim();
+    if (
+      (tag === "v-g" && !isVariantFormSeparator(item) && text) ||
+      (tag === "v" && isVariantIntroducer(text))
+    ) {
+      presentation.push({ kind: "introducer", value: canonicalText([item]) });
+      return;
+    }
+    if ((tag === "v" || tag === "ptl") && !hasTarget) {
+      presentation.push({ kind: "target" });
+      hasTarget = true;
+      return;
+    }
+    if (
+      !hasPronunciation &&
+      (tag === "pron-g" || tag === "phon" || tag === "audio" || tag === "form")
+    ) {
+      presentation.push({ kind: "pronunciation" });
+      hasPronunciation = true;
+      return;
+    }
+    if (!tag || !semanticLabelTags.has(tag)) {
+      return;
+    }
+    semanticLabelsFrom([item]).forEach((label) => {
+      presentation.push({ kind: "label", value: label });
+    });
+  });
+  return presentation;
 }
 
 function variantFormFrom(
@@ -1455,7 +1762,7 @@ function variantFormFrom(
   for (const item of items) {
     const tag = stringValue(item.tag)?.toLocaleLowerCase();
     if (tag === "v-g") {
-      if (textOf(item).trim()) {
+      if (!isVariantFormSeparator(item) && textOf(item).trim()) {
         introducerItems.push(item);
       }
       continue;
@@ -1484,27 +1791,86 @@ function variantFormFrom(
     introducer: introducerItems.length
       ? canonicalText(introducerItems)
       : undefined,
-    labels: semanticLabelsFrom(
-      items.filter((item) => {
-        const tag = stringValue(item.tag)?.toLocaleLowerCase();
-        return tag === "geo" || tag === "reg";
-      }),
-    ),
+    labels: semanticLabelsFrom(items.filter((item) => {
+      const tag = stringValue(item.tag)?.toLocaleLowerCase();
+      return Boolean(tag && semanticLabelTags.has(tag));
+    })),
+    presentation: variantPresentationFrom(items),
     tokens: tokensOf(items),
     pronunciations: flattenedPronunciationsFrom(items),
     raw: items as JsonValue,
   };
 }
 
-function variantsFrom(body: JsonObject): CanonicalForm[] {
-  return collectScopeFields(body, "v-gs")
-    .flatMap(variantTokenGroupsFrom)
+function variantFormSignature(form: CanonicalForm): string {
+  return JSON.stringify({
+    text: form.text.trim(),
+    introducer: form.introducer?.text.trim() ?? "",
+    labels: (form.labels ?? []).map((label) => ({
+      kind: label.kind ?? "",
+      text: label.text.trim(),
+      separatorBefore: label.separatorBefore ?? "",
+    })),
+    presentation: (form.presentation ?? []).map((item) => {
+      if (item.kind === "target" || item.kind === "pronunciation") {
+        return { kind: item.kind };
+      }
+      return item.kind === "introducer"
+        ? { kind: item.kind, text: item.value.text.trim() }
+        : {
+            kind: item.kind,
+            labelKind: item.value.kind ?? "",
+            text: item.value.text.trim(),
+            separatorBefore: item.value.separatorBefore ?? "",
+          };
+    }),
+    pronunciations: (form.pronunciations ?? []).map((pronunciation) => ({
+      region: pronunciation.region?.trim() ?? "",
+      transcription: pronunciation.transcription?.trim() ?? "",
+      audioKey: pronunciation.audioKey?.trim() ?? "",
+      form: pronunciation.form?.trim() ?? "",
+    })),
+  });
+}
+
+function variantFormsFromGroups(
+  groups: Record<string, unknown>[][],
+): CanonicalForm[] {
+  const seen = new Set<string>();
+  return groups
+    .flatMap(splitVariantFormGroups)
     .map((items) => variantFormFrom(items))
-    .filter((form): form is CanonicalForm => Boolean(form));
+    .filter((form): form is CanonicalForm => Boolean(form))
+    .filter((form) => {
+      const signature = variantFormSignature(form);
+      if (seen.has(signature)) {
+        return false;
+      }
+      seen.add(signature);
+      return true;
+    });
+}
+
+function variantsFromSources(...sources: unknown[]): CanonicalForm[] {
+  return variantFormsFromGroups(
+    sources.flatMap((source) =>
+      variantTokenGroupsFrom(source, {
+        allowUnwrapped: true,
+        requireUnwrappedMarker: true,
+      })
+    ),
+  );
+}
+
+function variantsFrom(topData: Record<string, unknown>): CanonicalForm[] {
+  return variantFormsFromGroups([
+    ...variantTokenGroupsFrom(topData.top_text),
+    ...variantTokenGroupsFrom(topData["v-gs"], { allowUnwrapped: true }),
+  ]);
 }
 
 function labelsOutsideVariantGroupsFrom(value: unknown): CanonicalLabel[] {
-  const labels: Record<string, unknown>[] = [];
+  const items: Record<string, unknown>[] = [];
   let variantDepth = 0;
 
   for (const item of asArray(value).filter(isRecord)) {
@@ -1519,12 +1885,12 @@ function labelsOutsideVariantGroupsFrom(value: unknown): CanonicalLabel[] {
       }
       continue;
     }
-    if (variantDepth === 0 && tag && semanticLabelTags.has(tag)) {
-      labels.push(item);
+    if (variantDepth === 0) {
+      items.push(item);
     }
   }
 
-  return dedupeLabels(semanticLabelsFrom(labels));
+  return dedupeLabels(semanticLabelsFrom(items));
 }
 
 function phraseVariantRelationFrom(
@@ -1532,7 +1898,7 @@ function phraseVariantRelationFrom(
 ): CanonicalFormRelation {
   const labels = items.filter((item) => {
     const tag = stringValue(item.tag)?.toLocaleLowerCase();
-    return tag === "geo" || tag === "reg";
+    return Boolean(tag && semanticLabelTags.has(tag));
   });
   const hasTextIntroducer = items.some((item) => {
     const tag = stringValue(item.tag)?.toLocaleLowerCase();
@@ -1549,6 +1915,7 @@ function phraseVariantRelationFrom(
 
 function phraseVariantsFrom(value: unknown): CanonicalForm[] {
   return variantTokenGroupsFrom(value)
+    .flatMap(splitVariantFormGroups)
     .map((items) => variantFormFrom(items, phraseVariantRelationFrom(items)))
     .filter((form): form is CanonicalForm => Boolean(form));
 }
@@ -1561,6 +1928,7 @@ function phraseUsageFrom(value: unknown): CanonicalText[] {
 function inflectionGroupSignature(forms: CanonicalForm[]): string {
   return JSON.stringify(
     forms.map((form) => ({
+      kind: form.kind,
       text: form.text.trim(),
       introducer: form.introducer?.text.trim() ?? "",
       pronunciations: (form.pronunciations ?? []).map((pronunciation) => ({
@@ -1678,12 +2046,16 @@ function canonicalSenseFrom(
     order,
     partOfSpeech,
     groupHeading,
-    patterns: patternsFrom(value.sng_text),
-    labels: semanticLabelsFrom(value.sng_text),
-    definition: optionalText(value.def_eng),
+    patterns: patternsFrom(value.sng_text, { includeParenthesizedVariants: false }),
+    variants: variantsFromSources(value.sng_text),
+    inflectedForms: inflectedFormsFrom(asJsonObject(value), { top_text: value.sng_text }),
+    pronunciations: sensePronunciationsFrom(value.sng_text),
+    labels: labelsOutsideVariantGroupsFrom(value.sng_text),
+    definition: value.def_eng === undefined ? undefined : boxContentTextFrom(value.def_eng),
+    definitionSegments: boxSegmentsFrom(value.def_eng),
     translation: optionalText(value.def_simp),
     examples: examplesFrom(value.x_gs),
-    inlineUsage: senseInlineUsageFrom(value.sng_text),
+    inlineUsage: inlineUsageFrom(value.sng_text),
     usage: usageSources.map(canonicalText),
     usageSegments: usageSources.flatMap(boxSegmentsFrom),
     crossReferences: crossReferencesFrom(value),
@@ -1778,22 +2150,26 @@ function mapEntry(
     labels: dedupeLabels([
       ...headingLabelsFrom(headingTokens.slice(1)),
       ...subentryMetadataLabelsFrom(body),
-      ...semanticLabelsFrom(topData.top_text),
+      ...labelsOutsideVariantGroupsFrom(topData.top_text),
       ...variantContextLabelsFrom(body),
     ]),
     pronunciations: pronunciationsFrom(body),
     partsOfSpeech: partsOfSpeechFrom(body),
-    headwordPatterns: patternsFrom(topData.top_text),
+    headwordPatterns: patternsFrom(topData.top_text, { includeParenthesizedVariants: false }),
+    headwordUsage: inlineUsageFrom(topData.top_text),
     senses: sensesFrom(body, partOfSpeech),
     subentries,
     idioms: phrasesFrom(body, "idm_gs", "idm_g", "idm_name", "idm_text", partOfSpeech),
     phrasalVerbs: phrasesFrom(body, "pv_gs", "pv_g", "pv_name", "pv_text", partOfSpeech),
     derivedForms: derivedFormsFrom(body),
     inflectedForms: inflectedFormsFrom(body, topData),
-    variants: variantsFrom(body),
+    variants: variantsFrom(topData),
     crossReferences: crossReferencesFrom(body),
     illustrations: illustrationsFrom(body),
-    grammarUsageBoxes: grammarUsageBoxesFrom(body),
+    grammarUsageBoxes: [
+      ...topUsageBoxesFrom(topData),
+      ...grammarUsageBoxesFrom(body),
+    ],
     raw: body,
   });
 }

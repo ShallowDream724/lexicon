@@ -177,6 +177,12 @@ precede a definition, such as `(of a person 人)`. These qualifiers share the
 definition's lead line. A grammatical construction in `patterns` owns that lead line,
 so the definition starts on the following line instead.
 
+`definitionSegments` is the ordered rich projection of the English definition when it
+contains an embedded pronunciation run. The adjacent term stays in the text segment,
+while region, transcription, and audio remain a pronunciation segment at the same
+position. `definition` remains the plain-text compatibility projection; renderers use
+the segments when a structured run is present.
+
 `usageSegments` retains the visual order of help and usage content when it includes
 embedded examples: for example, text before an example, the translated and voiced
 example, then later text. `usage` remains a plain-text projection for compatibility
@@ -189,10 +195,23 @@ the first sense only, preserving its source order without duplicating the conten
 `CanonicalForm` covers source-neutral `variant`, `inflection`, `word-family`, and
 `derivative` records. A form always has display text and may carry a stable id,
 introducer, presentation `relation`, part of speech, note, labels, pronunciations,
-and recursive senses. A
-structured derivative therefore keeps its examples and media instead of being
-flattened to a field name. Split spelling fragments are combined once by the adapter
-and do not also appear as labels.
+recursive senses, and attached variants. `presentation` orders introducers, semantic
+labels, the target sentinel, and pronunciation sentinel around the form text while
+`introducer` and `labels` remain convenient typed projections. A structured derivative
+therefore keeps its regional spellings, pronunciations, examples, and media instead of
+being flattened to a field name. Split spelling fragments are combined once by the
+adapter and do not also appear as labels.
+
+Renderers use `presentation` when it is present. This preserves both
+`also less frequent anarchical` and `a/c especially in BrE` without reconstructing
+order or punctuation from separate arrays. `separatorBefore` on a presentation label
+records only a source-owned comma or semicolon; grouping parentheses and delimiters
+between complete forms remain presentation structure.
+
+Sense-scoped forms from an explicit `v-gs` group live in `CanonicalSense.variants`,
+whether the source group includes visible parentheses or not; constructions stay in
+`patterns`. This keeps `(also bide)` and a voiced sense spelling structurally distinct
+from a construction such as `absolutely no…, absolutely nothing`.
 
 Idioms and phrasal verbs use `CanonicalPhrase`, which keeps canonical display text,
 primary-wording labels, ordered alternative forms, ordered recursive senses,

@@ -16,6 +16,7 @@
     "data:verify": "node scripts/runtime-data.mjs verify",
     "dictionary:benchmark": "go -C services/dictionary-api run ./cmd/dictionary-storage-benchmark",
     "dictionary:audit": "tsx scripts/audit-bundled-bilingual-corpus.ts",
+    "readme:capture": "node scripts/capture-readme.mjs",
     "test": "npm run test:contracts && npm run test:assets && npm run test:api && npm run build && npm run test:web",
     "test:assets": "node --test tests/runtime-assets.test.mjs",
     "test:api": "go -C services/dictionary-api test ./...",
@@ -41,7 +42,9 @@
     "esbuild": "0.28.1",
     "eslint": "9.39.4",
     "eslint-config-next": "16.3.0",
+    "playwright-core": "^1.62.1",
     "serwist": "9.5.12",
+    "sharp": "^0.35.3",
     "tsx": "^4.23.7",
     "typescript": "5.9.3"
   },

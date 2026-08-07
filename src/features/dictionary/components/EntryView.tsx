@@ -10,7 +10,7 @@ import {
   X,
 } from "lucide-react";
 import Image from "next/image";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useMemo, useState } from "react";
 
 import type {
   CanonicalBoxBlock,
@@ -19,10 +19,12 @@ import type {
   CanonicalEntry,
   CanonicalExample,
   CanonicalForm,
+  CanonicalFormPresentationItem,
   CanonicalGrammarUsageBox,
   CanonicalIllustration,
   CanonicalLabel,
   CanonicalPhrase,
+  CanonicalPronunciation,
   CanonicalSense,
 } from "../../../../packages/dictionary-schema/src/index";
 import type {
@@ -128,14 +130,14 @@ function SenseLabels({ labels }: { labels: CanonicalLabel[] }) {
   for (let index = 0; index < labels.length; index += 1) {
     const label = labels[index]!;
     if (label.kind === "gram") {
-      const grammar = [label.text];
+      const grammar = [label];
       while (labels[index + 1]?.kind === "gram") {
-        grammar.push(labels[index + 1]!.text);
+        grammar.push(labels[index + 1]!);
         index += 1;
       }
       content.push(
         <span className="sense-label-grammar" key={`gram-${index}`}>
-          [{grammar.join(", ")}]
+          [{labelListText(grammar)}]
         </span>,
       );
       continue;
@@ -181,14 +183,38 @@ function SenseLabels({ labels }: { labels: CanonicalLabel[] }) {
   return <span className="sense-labels">{content}</span>;
 }
 
+function labelListText(
+  labels: CanonicalLabel[],
+  defaultSeparator: ", " | " " = ", ",
+): string {
+  return labels.map((label, index) => {
+    return `${labelSeparatorBefore(labels, index, defaultSeparator)}${label.text.trim()}`;
+  }).join("");
+}
+
+function labelSeparatorBefore(
+  labels: CanonicalLabel[],
+  index: number,
+  defaultSeparator: ", " | " " = ", ",
+): string {
+  if (index === 0) {
+    return "";
+  }
+  const label = labels[index]!;
+  const previous = labels[index - 1];
+  if (label.separatorBefore) {
+    return `${label.separatorBefore} `;
+  }
+  return label.kind === "or" || previous?.kind === "or" ? " " : defaultSeparator;
+}
+
 function EntryQualifierLine({ labels }: { labels: CanonicalLabel[] }) {
   const qualifiers = labels
     .filter((label) => !["frequency", "level", "academic-register", "exam"].includes(label.kind ?? ""))
-    .map((label) => label.text.trim())
-    .filter(Boolean);
+    .filter((label) => label.text.trim());
 
   return qualifiers.length ? (
-    <p className="entry-qualifier-line">({qualifiers.join(", ")})</p>
+    <p className="entry-qualifier-line">({labelListText(qualifiers)})</p>
   ) : null;
 }
 
@@ -340,11 +366,13 @@ function ContentSegmentsView({
   onPlayAudio,
   onSelectEntry,
   textClassName = "box-text",
+  flow = false,
 }: {
   segments: CanonicalBoxSegment[];
   onPlayAudio: EntryViewProps["onPlayAudio"];
   onSelectEntry: EntryViewProps["onSelectEntry"];
   textClassName?: string;
+  flow?: boolean;
 }) {
   return segments.map((segment, segmentIndex) => {
     if (segment.kind === "example") {
@@ -382,7 +410,33 @@ function ContentSegmentsView({
         </div>
       );
     }
-    return (
+    if (segment.kind === "pronunciations") {
+      const className = `box-pronunciations${flow ? " is-inline" : ""}`;
+      return flow ? (
+        <span className={className} key={`pronunciations-${segmentIndex}`} aria-label="发音">
+          <InlinePronunciations
+            className="box-pronunciation"
+            pronunciations={segment.items}
+            spokenText="说明中的词语"
+            onPlayAudio={onPlayAudio}
+          />
+        </span>
+      ) : (
+        <div className={className} key={`pronunciations-${segmentIndex}`} aria-label="发音">
+          <InlinePronunciations
+            className="box-pronunciation"
+            pronunciations={segment.items}
+            spokenText="说明中的词语"
+            onPlayAudio={onPlayAudio}
+          />
+        </div>
+      );
+    }
+    return flow ? (
+      <span className={`${textClassName} is-inline`} key={`text-${segmentIndex}`}>
+        <CanonicalTextContent value={segment.value} />
+      </span>
+    ) : (
       <div className={textClassName} key={`text-${segmentIndex}`}>
         <CanonicalTextContent value={segment.value} />
       </div>
@@ -412,6 +466,7 @@ function BoxBlockView({
           segments={block.segments}
           onPlayAudio={onPlayAudio}
           onSelectEntry={onSelectEntry}
+          flow={block.layout === "flow"}
         />
       </div>
     ) : (
@@ -425,29 +480,12 @@ function BoxBlockView({
   if (block.kind === "pronunciations") {
     return (
       <div className="box-pronunciations" aria-label="发音">
-        {block.items.map((pronunciation, index) => (
-          <span
-            className={`box-pronunciation ${audioRegionClass(pronunciation.region)}`}
-            key={`${pronunciation.region}-${pronunciation.transcription}-${index}`}
-          >
-            {pronunciation.region ? <em>{pronunciation.region}</em> : null}
-            {pronunciation.form ? <span>{pronunciation.form}</span> : null}
-            {pronunciation.transcription ? (
-              <span className="phonetic">{displayTranscription(pronunciation.transcription)}</span>
-            ) : null}
-            {pronunciation.audioKey ? (
-              <button
-                className={`voice-button ${audioRegionClass(pronunciation.region)}`}
-                type="button"
-                title={`播放${pronunciation.region ?? ""}发音`}
-                aria-label={`播放${pronunciation.region ?? ""}发音`}
-                onClick={() => onPlayAudio(pronunciation.audioKey!, "headword")}
-              >
-                <Volume2 />
-              </button>
-            ) : null}
-          </span>
-        ))}
+        <InlinePronunciations
+          className="box-pronunciation"
+          pronunciations={block.items}
+          spokenText="说明中的词语"
+          onPlayAudio={onPlayAudio}
+        />
       </div>
     );
   }
@@ -650,6 +688,30 @@ function ResourceDialog({
   );
 }
 
+function SenseVariantsView({
+  forms,
+  onPlayAudio,
+}: {
+  forms: CanonicalForm[];
+  onPlayAudio: EntryViewProps["onPlayAudio"];
+}) {
+  if (!forms.length) {
+    return null;
+  }
+  return (
+    <span className="sense-variants">
+      {forms.map((form, index) => (
+        <span className="sense-variant" key={`${form.text}-${index}`}>
+          {index > 0 ? <span className="sense-variant-separator">, </span> : null}
+          <span aria-hidden="true">(</span>
+          <VariantFormContent classPrefix="sense" form={form} onPlayAudio={onPlayAudio} />
+          <span aria-hidden="true">)</span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function SenseView({
   sense,
   path,
@@ -670,11 +732,20 @@ function SenseView({
   const displayNumber = path.join(".");
   const definitionFlow = senseDefinitionFlow(sense);
   const referencePlacement = senseReferencePlacement(sense);
+  const definitionSegments = sense.definitionSegments ?? [];
+  const hasStructuredDefinition =
+    definitionSegments.some((segment) => segment.kind === "pronunciations") &&
+    definitionSegments.every(
+      (segment) => segment.kind === "text" || segment.kind === "pronunciations",
+    );
   const inlineEquivalentReferences =
     referencePlacement.trailing.length > 0 &&
     referencePlacement.trailing.every(
       (reference) => reference.kind === "equivalent" || reference.kind === "punctuation",
     ) &&
+    !(sense.pronunciations ?? []).length &&
+    !(sense.variants ?? []).length &&
+    !(sense.inflectedForms ?? []).length &&
     !(sense.patterns ?? []).some((pattern) => pattern.text.trim()) &&
     !(sense.inlineUsage ?? []).some((usage) => usage.text.trim()) &&
     !sense.definition?.text.trim() &&
@@ -699,7 +770,19 @@ function SenseView({
           </span>
         ) : null}
         <div className="sense-content">
+          <InlinePronunciations
+            className="sense-pronunciation"
+            pronunciations={sense.pronunciations ?? []}
+            spokenText="该词义"
+            onPlayAudio={onPlayAudio}
+          />
+          <InflectedFormsView
+            classPrefix="sense"
+            forms={sense.inflectedForms ?? []}
+            onPlayAudio={onPlayAudio}
+          />
           {sense.labels.length ? <SenseLabels labels={sense.labels} /> : null}
+          <SenseVariantsView forms={sense.variants ?? []} onPlayAudio={onPlayAudio} />
           <EntryPatterns className="sense-patterns" patterns={sense.patterns} />
           {sense.inlineUsage?.map((usage, index) => (
             <span className="sense-inline-usage" key={`${usage.text}-${index}`}>
@@ -710,7 +793,17 @@ function SenseView({
             <p className={`sense-definition is-${definitionFlow}`}>
               {sense.definition?.text ? (
                 <span className="definition-english">
-                  <CanonicalTextContent value={sense.definition} />
+                  {hasStructuredDefinition ? (
+                    <ContentSegmentsView
+                      flow
+                      onPlayAudio={onPlayAudio}
+                      onSelectEntry={onSelectEntry}
+                      segments={definitionSegments}
+                      textClassName="definition-english"
+                    />
+                  ) : (
+                    <CanonicalTextContent value={sense.definition} />
+                  )}
                 </span>
               ) : null}
               {sense.translation?.text ? (
@@ -883,16 +976,18 @@ function displayTranscription(value: string): string {
     : `/${normalized.replace(/^\/+|\/+$/g, "")}/`;
 }
 
-function FormPronunciations({
-  form,
+function InlinePronunciations({
+  pronunciations,
+  spokenText,
   className,
   onPlayAudio,
 }: {
-  form: CanonicalForm;
+  pronunciations: CanonicalPronunciation[];
+  spokenText: string;
   className: string;
   onPlayAudio: EntryViewProps["onPlayAudio"];
 }) {
-  return (form.pronunciations ?? []).map((pronunciation, pronunciationIndex) => (
+  return pronunciations.map((pronunciation, pronunciationIndex) => (
     <span
       className={`${className} ${audioRegionClass(pronunciation.region)}`}
       key={`${pronunciation.region}-${pronunciation.transcription}-${pronunciationIndex}`}
@@ -906,8 +1001,8 @@ function FormPronunciations({
         <button
           className={`voice-button ${audioRegionClass(pronunciation.region)}`}
           type="button"
-          title={`播放${form.text}${pronunciation.region ?? ""}发音`}
-          aria-label={`播放${form.text}${pronunciation.region ?? ""}发音`}
+          title={`播放${spokenText}${pronunciation.region ?? ""}发音`}
+          aria-label={`播放${spokenText}${pronunciation.region ?? ""}发音`}
           onClick={() => onPlayAudio(pronunciation.audioKey!, "headword")}
         >
           <Volume2 />
@@ -915,6 +1010,142 @@ function FormPronunciations({
       ) : null}
     </span>
   ));
+}
+
+function InflectedFormsView({
+  classPrefix,
+  forms,
+  onPlayAudio,
+}: {
+  classPrefix: "derived-form" | "entry" | "sense";
+  forms: CanonicalForm[];
+  onPlayAudio: EntryViewProps["onPlayAudio"];
+}) {
+  const visible = forms.filter((form) => form.text.trim());
+  if (!visible.length) {
+    return null;
+  }
+
+  return (
+    <span className={`${classPrefix}-inflected-forms`}>
+      <span aria-hidden="true">(</span>
+      {visible.map((form, formIndex) => (
+        <span
+          className={`${classPrefix}-inflected-form`}
+          key={`${form.kind}-${form.text}-${formIndex}`}
+        >
+          {formIndex > 0 ? <span className={`${classPrefix}-inflected-separator`}>, </span> : null}
+          {form.kind === "inflection-constraint" ? (
+            <em className={`${classPrefix}-inflection-constraint`}>{form.text}</em>
+          ) : (
+            <>
+              {form.introducer?.text.trim() ? <em>{form.introducer.text.trim()} </em> : null}
+              <strong>{form.text}</strong>
+              <InlinePronunciations
+                className={`${classPrefix}-inflected-pronunciation`}
+                pronunciations={form.pronunciations ?? []}
+                spokenText={form.text}
+                onPlayAudio={onPlayAudio}
+              />
+            </>
+          )}
+        </span>
+      ))}
+      <span aria-hidden="true">)</span>
+    </span>
+  );
+}
+
+function formPresentationItems(form: CanonicalForm): CanonicalFormPresentationItem[] {
+  if (form.presentation?.length) {
+    return form.presentation;
+  }
+  return [
+    ...(form.introducer
+      ? [{ kind: "introducer" as const, value: form.introducer }]
+      : []),
+    ...(form.labels ?? []).map((label) => ({
+      kind: "label" as const,
+      value: label,
+    })),
+    { kind: "target" as const },
+    ...((form.pronunciations ?? []).length
+      ? [{ kind: "pronunciation" as const }]
+      : []),
+  ];
+}
+
+function FormPresentationContent({
+  classPrefix,
+  form,
+  items,
+  onPlayAudio,
+}: {
+  classPrefix: "derived-form" | "entry" | "phrase" | "sense";
+  form: CanonicalForm;
+  items: CanonicalFormPresentationItem[];
+  onPlayAudio: EntryViewProps["onPlayAudio"];
+}) {
+  return items.map((item, index) => {
+    const separator = index === 0 || item.kind === "pronunciation"
+      ? ""
+      : item.kind === "label" && item.value.separatorBefore
+        ? `${item.value.separatorBefore} `
+        : " ";
+    if (item.kind === "target") {
+      return (
+        <Fragment key={`target-${index}`}>
+          {separator}<strong className={`${classPrefix}-variant-target`}>{form.text}</strong>
+        </Fragment>
+      );
+    }
+    if (item.kind === "pronunciation") {
+      return (
+        <InlinePronunciations
+          className={`${classPrefix}-variant-pronunciation`}
+          pronunciations={form.pronunciations ?? []}
+          spokenText={form.text}
+          key={`pronunciation-${index}`}
+          onPlayAudio={onPlayAudio}
+        />
+      );
+    }
+    if (item.kind === "introducer") {
+      return (
+        <em className={`${classPrefix}-variant-introducer`} key={`introducer-${index}`}>
+          {separator}<CanonicalTextContent value={item.value} />
+        </em>
+      );
+    }
+    return (
+      <em
+        className={`${classPrefix}-variant-label`}
+        key={`${item.value.kind}-${item.value.text}-${index}`}
+      >
+        {separator}{item.value.text}
+      </em>
+    );
+  });
+}
+
+function VariantFormContent({
+  classPrefix,
+  form,
+  onPlayAudio,
+}: {
+  classPrefix: "derived-form" | "entry" | "phrase" | "sense";
+  form: CanonicalForm;
+  onPlayAudio: EntryViewProps["onPlayAudio"];
+}) {
+  const presentation = formPresentationItems(form);
+  return (
+    <FormPresentationContent
+      classPrefix={classPrefix}
+      form={form}
+      items={presentation}
+      onPlayAudio={onPlayAudio}
+    />
+  );
 }
 
 function PhraseVariantsView({
@@ -926,7 +1157,7 @@ function PhraseVariantsView({
   primaryLabels: CanonicalLabel[];
   onPlayAudio: EntryViewProps["onPlayAudio"];
 }) {
-  const labels = primaryLabels.map((label) => label.text.trim()).filter(Boolean);
+  const labels = primaryLabels.filter((label) => label.text.trim());
   if (!forms.length && !labels.length) {
     return null;
   }
@@ -934,62 +1165,22 @@ function PhraseVariantsView({
   return (
     <div className="phrase-variants">
       {labels.length ? (
-        <span className="phrase-labels">({labels.join(", ")})</span>
+        <span className="phrase-labels">({labelListText(labels)})</span>
       ) : null}
-      {forms.map((form, formIndex) => {
-        const equivalent = form.relation === "equivalent";
-        return (
-          <span
-            className={`phrase-variant is-${equivalent ? "equivalent" : "alternative"}`}
-            key={`${form.text}-${formIndex}`}
-          >
-            {equivalent ? (
-              <>
-                <span aria-hidden="true">(</span>
-                {(form.labels ?? []).length ? (
-                  <>
-                    {(form.labels ?? []).map((label, labelIndex) => (
-                      <em
-                        className="phrase-variant-label"
-                        key={`${label.kind}-${label.text}-${labelIndex}`}
-                      >
-                        {labelIndex > 0 ? ", " : null}{label.text}
-                      </em>
-                    ))}
-                    {" "}
-                  </>
-                ) : null}
-                <strong className="phrase-variant-target">{form.text}</strong>
-                <span aria-hidden="true">)</span>
-              </>
-            ) : (
-              <>
-                <span aria-hidden="true">(</span>
-                {form.introducer?.text.trim() ? (
-                  <em className="phrase-variant-introducer">
-                    <CanonicalTextContent value={form.introducer} />{" "}
-                  </em>
-                ) : null}
-                {(form.labels ?? []).map((label, labelIndex) => (
-                  <em
-                    className="phrase-variant-label"
-                    key={`${label.kind}-${label.text}-${labelIndex}`}
-                  >
-                    {label.text}{" "}
-                  </em>
-                ))}
-                <strong>{form.text}</strong>
-                <span aria-hidden="true">)</span>
-              </>
-            )}
-            <FormPronunciations
-              className="phrase-variant-pronunciation"
-              form={form}
-              onPlayAudio={onPlayAudio}
-            />
-          </span>
-        );
-      })}
+      {forms.map((form, formIndex) => (
+        <span
+          className={`phrase-variant is-${form.relation === "equivalent" ? "equivalent" : "alternative"}`}
+          key={`${form.text}-${formIndex}`}
+        >
+          <span aria-hidden="true">(</span>
+          <VariantFormContent
+            classPrefix="phrase"
+            form={form}
+            onPlayAudio={onPlayAudio}
+          />
+          <span aria-hidden="true">)</span>
+        </span>
+      ))}
     </div>
   );
 }
@@ -1011,19 +1202,8 @@ function VariantFormsView({
       {forms.map((form, formIndex) => (
         <span className="entry-variant" key={`${form.text}-${formIndex}`}>
           {formIndex > 0 ? <span className="entry-variant-separator">, </span> : null}
-          {(form.labels ?? []).map((label, labelIndex) => (
-            <em className="entry-variant-label" key={`${label.kind}-${label.text}-${labelIndex}`}>
-              {label.text}{" "}
-            </em>
-          ))}
-          {form.introducer?.text.trim() ? (
-            <em className="entry-variant-introducer">
-              {form.introducer.text.trim()}{" "}
-            </em>
-          ) : null}
-          <strong>{form.text}</strong>
-          <FormPronunciations
-            className="entry-variant-pronunciation"
+          <VariantFormContent
+            classPrefix="entry"
             form={form}
             onPlayAudio={onPlayAudio}
           />
@@ -1035,46 +1215,39 @@ function VariantFormsView({
 }
 
 function HeadwordFormsView({
+  usage,
   patterns,
   forms,
   onPlayAudio,
 }: {
+  usage: CanonicalEntry["headwordUsage"];
   patterns: CanonicalEntry["headwordPatterns"];
   forms: CanonicalForm[];
   onPlayAudio: EntryViewProps["onPlayAudio"];
 }) {
+  const visibleUsage = (usage ?? []).filter((item) => item.text.trim());
   const visiblePatterns = (patterns ?? []).filter((pattern) => pattern.text.trim());
-  if (!visiblePatterns.length && !forms.length) {
+  if (!visibleUsage.length && !visiblePatterns.length && !forms.length) {
     return null;
   }
 
   return (
     <p className="entry-headword-forms">
+      {visibleUsage.map((item, index) => (
+        <span className="entry-headword-usage" key={`${item.text}-${index}`}>
+          {index > 0 ? " " : null}
+          <CanonicalTextContent value={item} />
+        </span>
+      ))}
+      {visibleUsage.length && visiblePatterns.length ? " " : null}
       {visiblePatterns.map((pattern, index) => (
         <span className="entry-headword-form-pattern" key={`${pattern.text}-${index}`}>
           {index > 0 ? " " : null}
           <CanonicalTextContent value={pattern} />
         </span>
       ))}
-      {visiblePatterns.length && forms.length ? " " : null}
-      {forms.length ? (
-        <>
-          <span aria-hidden="true">(</span>
-          {forms.map((form, formIndex) => (
-            <span className="entry-inflected-form" key={`${form.kind}-${form.text}-${formIndex}`}>
-              {formIndex > 0 ? <span className="entry-inflected-separator">, </span> : null}
-              {form.introducer?.text.trim() ? <em>{form.introducer.text.trim()} </em> : null}
-              <strong>{form.text}</strong>
-              <FormPronunciations
-                className="entry-inflected-pronunciation"
-                form={form}
-                onPlayAudio={onPlayAudio}
-              />
-            </span>
-          ))}
-          <span aria-hidden="true">)</span>
-        </>
-      ) : null}
+      {(visibleUsage.length || visiblePatterns.length) && forms.length ? " " : null}
+      <InflectedFormsView classPrefix="entry" forms={forms} onPlayAudio={onPlayAudio} />
     </p>
   );
 }
@@ -1106,6 +1279,37 @@ function DerivedFormsView({
                 <CanonicalTextContent
                   value={{ text: form.text, tokens: form.tokens, raw: form.raw }}
                 />
+                {(form.variants ?? []).length ? (
+                  <span className="derived-form-variants">
+                    {" "}<span aria-hidden="true">(</span>
+                    {(form.variants ?? []).map((variant, variantIndex) => (
+                      <span
+                        className="derived-form-variant"
+                        key={`${variant.text}-${variantIndex}`}
+                      >
+                        {variantIndex > 0 ? (
+                          <span className="derived-form-variant-separator">, </span>
+                        ) : null}
+                        <VariantFormContent
+                          classPrefix="derived-form"
+                          form={variant}
+                          onPlayAudio={onPlayAudio}
+                        />
+                      </span>
+                    ))}
+                    <span aria-hidden="true">)</span>
+                  </span>
+                ) : null}
+                {(form.inflectedForms ?? []).length ? (
+                  <>
+                    {" "}
+                    <InflectedFormsView
+                      classPrefix="derived-form"
+                      forms={form.inflectedForms ?? []}
+                      onPlayAudio={onPlayAudio}
+                    />
+                  </>
+                ) : null}
               </h3>
               {form.partOfSpeech ? (
                 <span className="derived-form-pos">
@@ -1113,11 +1317,17 @@ function DerivedFormsView({
                 </span>
               ) : null}
             </div>
+            {(form.usage ?? []).map((usage, usageIndex) => (
+              <p className="derived-form-usage" key={`${usage.text}-${usageIndex}`}>
+                <CanonicalTextContent value={usage} />
+              </p>
+            ))}
             {(form.pronunciations ?? []).length ? (
               <div className="derived-form-pronunciations">
-                <FormPronunciations
+                <InlinePronunciations
                   className="derived-form-pronunciation"
-                  form={form}
+                  pronunciations={form.pronunciations ?? []}
+                  spokenText={form.text}
                   onPlayAudio={onPlayAudio}
                 />
               </div>
@@ -1314,6 +1524,7 @@ export function EntryView({
                 forms={projection.inflectedForms}
                 onPlayAudio={onPlayAudio}
                 patterns={entry.headwordPatterns}
+                usage={entry.headwordUsage}
               />
 
               {projection.headwordFamilyNotes.length ? (
@@ -1351,6 +1562,13 @@ export function EntryView({
                       </>
                     ) : null}
                     <EntryQualifierLine labels={subentry.labels} />
+                    {(subentry.headwordUsage ?? []).map((usage, usageIndex) => (
+                      <p className="entry-headword-forms" key={`${usage.text}-${usageIndex}`}>
+                        <span className="entry-headword-usage">
+                          <CanonicalTextContent value={usage} />
+                        </span>
+                      </p>
+                    ))}
                     <EntryPatterns
                       className="entry-headword-patterns"
                       patterns={subentry.headwordPatterns}

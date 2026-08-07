@@ -34,6 +34,8 @@ export interface SourceToken {
 export interface CanonicalLabel {
   text: string;
   kind?: string;
+  /** Source-owned separator that precedes this label inside a semantic label list. */
+  separatorBefore?: "," | ";";
   raw: JsonValue;
 }
 
@@ -81,8 +83,16 @@ export interface CanonicalSense {
   groupHeading?: CanonicalText;
   /** Grammatical constructions or fixed wording shown before the definition. */
   patterns?: CanonicalText[];
+  /** Parenthetical alternative wording scoped to this sense. */
+  variants?: CanonicalForm[];
+  /** Inflected forms and constraints scoped to this sense. */
+  inflectedForms?: CanonicalForm[];
+  /** Pronunciations that qualify this sense rather than the whole headword. */
+  pronunciations?: CanonicalPronunciation[];
   labels: CanonicalLabel[];
   definition?: CanonicalText;
+  /** Ordered definition content when the source embeds pronunciation or other rich runs. */
+  definitionSegments?: CanonicalBoxSegment[];
   translation?: CanonicalText;
   examples: CanonicalExample[];
   /** Parenthetical usage content that precedes the definition in the source. */
@@ -116,6 +126,12 @@ export const CANONICAL_FORM_RELATIONS = ["alternative", "equivalent"] as const;
 
 export type CanonicalFormRelation = (typeof CANONICAL_FORM_RELATIONS)[number];
 
+export type CanonicalFormPresentationItem =
+  | { kind: "introducer"; value: CanonicalText }
+  | { kind: "label"; value: CanonicalLabel }
+  | { kind: "pronunciation" }
+  | { kind: "target" };
+
 export interface CanonicalForm {
   id?: string;
   kind: string;
@@ -128,6 +144,14 @@ export interface CanonicalForm {
   relation?: CanonicalFormRelation;
   /** Register or regional qualifiers that belong to this form. */
   labels?: CanonicalLabel[];
+  /** Ordered semantic items around the form target. */
+  presentation?: CanonicalFormPresentationItem[];
+  /** Alternative spellings or regional equivalents attached to this form. */
+  variants?: CanonicalForm[];
+  /** Parenthetical usage guidance attached to this form. */
+  usage?: CanonicalText[];
+  /** Inflected forms and constraints attached to this form. */
+  inflectedForms?: CanonicalForm[];
   tokens: SourceToken[];
   pronunciations?: CanonicalPronunciation[];
   senses?: CanonicalSense[];
@@ -197,11 +221,18 @@ export interface CanonicalBoxCrossReferenceSegment {
   raw: JsonValue;
 }
 
+export interface CanonicalBoxPronunciationSegment {
+  kind: "pronunciations";
+  items: CanonicalPronunciation[];
+  raw: JsonValue;
+}
+
 export type CanonicalBoxSegment =
   | CanonicalBoxTextSegment
   | CanonicalBoxExampleSegment
   | CanonicalBoxTermSegment
-  | CanonicalBoxCrossReferenceSegment;
+  | CanonicalBoxCrossReferenceSegment
+  | CanonicalBoxPronunciationSegment;
 
 export interface CanonicalBoxListItem {
   segments: CanonicalBoxSegment[];
@@ -233,6 +264,8 @@ export type CanonicalBoxBlock =
       value: CanonicalText;
       /** Ordered rich content, including examples and inline cross references. */
       segments: CanonicalBoxSegment[];
+      /** Keeps adjacent text and pronunciation segments in one reading flow. */
+      layout?: "flow";
       raw: JsonObject;
     }
   | {
@@ -284,6 +317,8 @@ export interface CanonicalEntry {
   partsOfSpeech: CanonicalPartOfSpeech[];
   /** Entry-level constructions that belong below the part-of-speech heading. */
   headwordPatterns?: CanonicalText[];
+  /** Parenthetical usage guidance attached to the headword. */
+  headwordUsage?: CanonicalText[];
   senses: CanonicalSense[];
   subentries: CanonicalEntry[];
   idioms: CanonicalPhrase[];
@@ -314,6 +349,7 @@ const canonicalTextSchema = z.object({
 const canonicalLabelSchema = z.object({
   text: z.string(),
   kind: z.string().optional(),
+  separatorBefore: z.enum([",", ";"]).optional(),
   raw: jsonValueSchema,
 });
 
@@ -380,6 +416,11 @@ const canonicalBoxSegmentSchema = z.discriminatedUnion("kind", [
     references: z.array(canonicalCrossReferenceSchema),
     raw: jsonValueSchema,
   }),
+  z.object({
+    kind: z.literal("pronunciations"),
+    items: z.array(canonicalPronunciationSchema),
+    raw: jsonValueSchema,
+  }),
 ]);
 
 const canonicalBoxBlockSchema = z.discriminatedUnion("kind", [
@@ -393,6 +434,7 @@ const canonicalBoxBlockSchema = z.discriminatedUnion("kind", [
     kind: z.literal("paragraph"),
     value: canonicalTextSchema,
     segments: z.array(canonicalBoxSegmentSchema).default([]),
+    layout: z.literal("flow").optional(),
     raw: jsonObjectSchema,
   }),
   z.object({
@@ -456,8 +498,12 @@ const canonicalSenseSchema: z.ZodType<CanonicalSense> = z.lazy(() =>
     partOfSpeech: z.string().optional(),
     groupHeading: canonicalTextSchema.optional(),
     patterns: z.array(canonicalTextSchema).default([]),
+    variants: z.array(z.lazy(() => canonicalFormSchema)).default([]),
+    inflectedForms: z.array(z.lazy(() => canonicalFormSchema)).default([]),
+    pronunciations: z.array(canonicalPronunciationSchema).default([]),
     labels: z.array(canonicalLabelSchema),
     definition: canonicalTextSchema.optional(),
+    definitionSegments: z.array(canonicalBoxSegmentSchema).default([]),
     translation: canonicalTextSchema.optional(),
     examples: z.array(canonicalExampleSchema),
     inlineUsage: z.array(canonicalTextSchema).default([]),
@@ -482,20 +528,34 @@ const canonicalPhraseSchema: z.ZodType<CanonicalPhrase> = z.object({
   raw: jsonObjectSchema,
 });
 
-const canonicalFormSchema = z.object({
-  id: z.string().optional(),
-  kind: z.string(),
-  text: z.string(),
-  partOfSpeech: z.string().optional(),
-  note: canonicalTextSchema.optional(),
-  introducer: canonicalTextSchema.optional(),
-  relation: z.enum(CANONICAL_FORM_RELATIONS).optional(),
-  labels: z.array(canonicalLabelSchema).default([]),
-  tokens: z.array(sourceTokenSchema),
-  pronunciations: z.array(canonicalPronunciationSchema).default([]),
-  senses: z.array(canonicalSenseSchema).default([]),
-  raw: jsonValueSchema,
-});
+const canonicalFormPresentationItemSchema: z.ZodType<CanonicalFormPresentationItem> =
+  z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("introducer"), value: canonicalTextSchema }),
+    z.object({ kind: z.literal("label"), value: canonicalLabelSchema }),
+    z.object({ kind: z.literal("pronunciation") }),
+    z.object({ kind: z.literal("target") }),
+  ]);
+
+const canonicalFormSchema: z.ZodType<CanonicalForm> = z.lazy(() =>
+  z.object({
+    id: z.string().optional(),
+    kind: z.string(),
+    text: z.string(),
+    partOfSpeech: z.string().optional(),
+    note: canonicalTextSchema.optional(),
+    introducer: canonicalTextSchema.optional(),
+    relation: z.enum(CANONICAL_FORM_RELATIONS).optional(),
+    labels: z.array(canonicalLabelSchema).default([]),
+    presentation: z.array(canonicalFormPresentationItemSchema).default([]),
+    variants: z.array(canonicalFormSchema).default([]),
+    usage: z.array(canonicalTextSchema).default([]),
+    inflectedForms: z.array(canonicalFormSchema).default([]),
+    tokens: z.array(sourceTokenSchema),
+    pronunciations: z.array(canonicalPronunciationSchema).default([]),
+    senses: z.array(canonicalSenseSchema).default([]),
+    raw: jsonValueSchema,
+  }),
+);
 
 export const canonicalEntrySchema: z.ZodType<CanonicalEntry> = z.lazy(() =>
   z.object({
@@ -516,6 +576,7 @@ export const canonicalEntrySchema: z.ZodType<CanonicalEntry> = z.lazy(() =>
       }),
     ),
     headwordPatterns: z.array(canonicalTextSchema).default([]),
+    headwordUsage: z.array(canonicalTextSchema).default([]),
     senses: z.array(canonicalSenseSchema),
     subentries: z.array(canonicalEntrySchema),
     idioms: z.array(canonicalPhraseSchema).default([]),

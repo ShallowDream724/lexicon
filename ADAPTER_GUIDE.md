@@ -111,14 +111,16 @@ default.
 
 | Source structure | Canonical destination |
 | --- | --- |
-| `v` in entry or sense text | `headwordPatterns` or sense `patterns` |
+| `v` in entry or sense text outside a parenthetical `v-gs` group | `headwordPatterns` or sense `patterns` |
 | `cf` in sense text | sense `patterns` |
 | `if`, `if-g`, `ptl` | one `inflection` form |
+| explicit `v-gs` groups in entry, sense, phrase, or derivative text, whether wrapped or unwrapped | one ordered `variant` form per source group, attached to its semantic owner |
 | `wfg` with `wfw`, `wfp`, `wfo` | `word-family` form text, part of speech, and note |
-| structured `dr_gs` | `derivative` form with labels, pronunciations, and senses |
+| structured `dr_gs` | `derivative` form with labels, pronunciations, senses, and nested regional or spelling variants |
 | `idm_gs` / `pv_gs` `un` | first phrase's `leadingUsage` |
 | `idm_text` / `pv_text` `v-gs` | phrase `variants`, including introducer, regional labels, and relation |
 | sense `sng_text` `use` or `dis-g` spans | ordered sense `inlineUsage` before the definition |
+| pronunciation runs embedded in sense `def_eng` | ordered `definitionSegments` beside the term they pronounce |
 | sense `un` flat `x-g` / `x-g_end` span | ordered sense `usageSegments`, including example translation and audio |
 | sense-group `un` before sibling `sn_g` records | first sibling's `usageSegments`, once in source order |
 | box-title navigation objects | box `references` |
@@ -132,6 +134,19 @@ introducers, and pronunciation metadata are identical. Forms with the same spell
 inside one group remain distinct so region, transcription, and audio data cannot be
 discarded.
 
+Structural separators belong to their enclosing source group. A bare comma in `if-g`
+separates adjacent inflection forms; a bare comma in `v-g` separates adjacent
+parenthetical variants. The adapter consumes these delimiters while grouping forms,
+but keeps the original token arrays in `raw`. A delimiter never becomes a canonical
+label, a form introducer, or a renderable cross-reference.
+
+`CanonicalForm.presentation` is the ordered semantic projection of introducers, labels,
+the form target, and pronunciation. Convenience fields `introducer` and `labels`
+remain available, but rendering uses this sequence so neither a prefix such as
+`also less frequent` nor a suffix such as `especially in BrE` can cross the target. A
+label's `separatorBefore` records a source-owned comma or semicolon. Renderers add
+grouping parentheses and separators between complete forms exactly once.
+
 Phrase variants marked by a source `also` or `or` token, including regional labels
 whose wording contains `also`, use the `alternative` relation. A phrase variant with
 regional or register labels and no alternative marker uses `equivalent`, which lets a
@@ -143,13 +158,14 @@ Run the complete source audit after changing any mapping rule:
 
 ```bash
 npm run dictionary:audit -- \
-  --source outputs/source/ciku.db \
+  --source outputs/oalecd10/source/ciku.db \
   --source-version bundled-v1
 ```
 
 The audit enumerates source token tags and fails on unexpected canonical label or form
-kinds, empty forms, invalid source JSON, adapter failures, missing media keys, box
-structure loss across lists, paragraphs, and table cells, and navigation metadata
+kinds, empty forms, invalid source JSON, adapter failures, missing media keys across
+forms, definitions, usage, and boxes, structure loss across lists, paragraphs, and
+table cells, and navigation metadata
 concatenated into box titles. It also recursively compares normalized cross-reference
 target text from every source `xrg` with canonical references across entries, senses,
 phrases, boxes, and subentries, preserving duplicate occurrences. Repeated semantic
@@ -157,6 +173,21 @@ projections of the same source box are checked once using its source id and raw 
 while genuinely distinct boxes remain independent audit subjects. Sense-level inline
 usage and display-qualifier text is compared as an ordered-group multiset so a source
 qualifier cannot survive only in `raw` without failing the audit.
+
+The audit also rejects canonical labels with residual source wrapping, leading
+structural separators, or punctuation-only text; it permits ordinary abbreviation
+periods and other punctuation accompanying semantic text. Inflection and variant
+introducers may not retain structural separators, and the internal `punctuation`
+cross-reference kind may not reach the canonical rendering model. For balanced
+parenthetical `v-gs` groups, including derivative `top_g.top_text`, source and
+canonical variant targets are compared as normalized multisets in both directions.
+The audit separately compares ordered presentation signatures, including introducers,
+label kinds, targets, pronunciations, and source-owned separators. The source side is
+limited to entry `top_data.top_text`, entry `top_data.v-gs`, derivative
+`top_g.top_text`, sense `sng_text`, and phrase `idm_text` / `pv_text`, which are the
+adapter's explicit variant inputs. This checks high-confidence bracketed form targets
+without inferring variants from arbitrary free text or altering the preserved `raw`
+payload.
 
 ## Cross-Reference Normalization
 
@@ -177,7 +208,7 @@ the following source labels:
 | `[IDM] see`, `related noun` | `related` |
 | `past tense, past participle of`, `past tense of`, `pl. of`, `past part. of`, `third person of`, `pres. part. of`, `(comparative of`, `singular of` | `inflection` |
 | `=` | `equivalent` |
-| `,` | `punctuation` |
+| `,` | structural separator resolved during adaptation; absent from canonical output |
 | an arrow with no label | `generic` |
 
 Unknown future labels also map to `generic`. They are valid canonical data and must

@@ -869,9 +869,12 @@
 .pronunciation.voice-american,
 .box-pronunciation.voice-american,
 .derived-form-pronunciation.voice-american,
+.derived-form-variant-pronunciation.voice-american,
 .entry-variant-pronunciation.voice-american,
 .entry-inflected-pronunciation.voice-american,
-.phrase-variant-pronunciation.voice-american {
+.phrase-variant-pronunciation.voice-american,
+.sense-pronunciation.voice-american,
+.sense-variant-pronunciation.voice-american {
   color: var(--american-geo-color);
 }
 
@@ -1118,6 +1121,66 @@
   font-size: .53333rem;
 }
 
+.sense-pronunciation {
+  display: inline;
+  font-family: "Times New Roman", Times, serif;
+  font-size: .53333rem;
+  margin-right: .16rem;
+  white-space: nowrap;
+}
+
+.sense-pronunciation em,
+.sense-pronunciation > span {
+  margin-left: .08rem;
+}
+
+.sense-pronunciation .voice-button {
+  display: inline-flex;
+  margin-left: .05333rem;
+  vertical-align: -.10667rem;
+}
+
+.sense-inflected-forms {
+  display: inline;
+  font-family: "Times New Roman", Times, serif;
+  font-size: .53333rem;
+  margin-right: .16rem;
+}
+
+.sense-variants {
+  display: inline;
+  font-family: "Times New Roman", Times, serif;
+  font-size: .53333rem;
+  margin-right: .16rem;
+}
+
+.sense-variant,
+.sense-variant-pronunciation {
+  display: inline;
+}
+
+.sense-variant-label,
+.sense-variant-introducer {
+  color: #3d4454;
+  font-style: italic;
+}
+
+.sense-variant-pronunciation {
+  margin-left: .13333rem;
+  white-space: nowrap;
+}
+
+.sense-variant-pronunciation em,
+.sense-variant-pronunciation > span {
+  margin-left: .08rem;
+}
+
+.sense-variant-pronunciation .voice-button {
+  display: inline-flex;
+  margin-left: .05333rem;
+  vertical-align: -.10667rem;
+}
+
 .sense-patterns {
   display: inline;
   font-family: "Times New Roman", Times, serif;
@@ -1265,6 +1328,11 @@
   font-weight: 700;
 }
 
+.entry-headword-usage {
+  color: #3d4454;
+  font-weight: 400;
+}
+
 .entry-headword-patterns {
   color: #17191f;
   display: flex;
@@ -1313,25 +1381,45 @@
   vertical-align: -.10667rem;
 }
 
+.entry-inflected-forms,
 .entry-inflected-form,
-.entry-inflected-pronunciation {
+.entry-inflected-pronunciation,
+.sense-inflected-form,
+.sense-inflected-pronunciation,
+.derived-form-inflected-forms,
+.derived-form-inflected-form,
+.derived-form-inflected-pronunciation {
   display: inline;
 }
 
-.entry-inflected-pronunciation {
+.entry-inflected-pronunciation,
+.sense-inflected-pronunciation,
+.derived-form-inflected-pronunciation {
   margin-left: .13333rem;
   white-space: nowrap;
 }
 
 .entry-inflected-pronunciation em,
-.entry-inflected-pronunciation > span {
+.entry-inflected-pronunciation > span,
+.sense-inflected-pronunciation em,
+.sense-inflected-pronunciation > span,
+.derived-form-inflected-pronunciation em,
+.derived-form-inflected-pronunciation > span {
   margin-left: .08rem;
 }
 
-.entry-inflected-pronunciation .voice-button {
+.entry-inflected-pronunciation .voice-button,
+.sense-inflected-pronunciation .voice-button,
+.derived-form-inflected-pronunciation .voice-button {
   display: inline-flex;
   margin-left: .05333rem;
   vertical-align: -.10667rem;
+}
+
+.entry-inflection-constraint,
+.sense-inflection-constraint,
+.derived-form-inflection-constraint {
+  color: #3d4454;
 }
 
 .source-token-help {
@@ -1999,6 +2087,11 @@
   margin: .10667rem 0;
 }
 
+.box-text.is-inline {
+  display: inline;
+  margin: 0;
+}
+
 .box-paragraph {
   margin: .26667rem 0;
 }
@@ -2398,6 +2491,52 @@
   overflow-wrap: anywhere;
 }
 
+.box-pronunciations.is-inline {
+  display: inline-flex;
+  gap: .10667rem;
+  margin: 0 .10667rem;
+  vertical-align: baseline;
+}
+
+.derived-form-variants,
+.derived-form-variant,
+.derived-form-variant-pronunciation {
+  display: inline;
+}
+
+.derived-form-variants {
+  color: #343844;
+  font-size: .42667rem;
+  font-weight: 400;
+}
+
+.derived-form-inflected-forms {
+  color: #343844;
+  font-size: .42667rem;
+  font-weight: 400;
+}
+
+.derived-form-variant-label,
+.derived-form-variant-introducer {
+  font-style: italic;
+}
+
+.derived-form-variant-pronunciation {
+  margin-left: .13333rem;
+  white-space: nowrap;
+}
+
+.derived-form-variant-pronunciation em,
+.derived-form-variant-pronunciation > span {
+  margin-left: .08rem;
+}
+
+.derived-form-variant-pronunciation .voice-button {
+  display: inline-flex;
+  margin-left: .05333rem;
+  vertical-align: -.10667rem;
+}
+
 .subentry-pos {
   color: #697184;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -2461,7 +2600,8 @@
   top: 0;
 }
 
-.derived-form-note {
+.derived-form-note,
+.derived-form-usage {
   color: #4f5666;
   font-family: "Times New Roman", Times, serif;
   font-size: .42667rem;
@@ -3583,6 +3723,10 @@
     max-height: calc(100vh - 1.06667rem);
     max-height: calc(100dvh - 1.06667rem);
     scrollbar-width: none;
+  }
+
+  .etymology-dialog > header strong {
+    font-size: .42667rem;
   }
 
   .etymology-dialog::-webkit-scrollbar {

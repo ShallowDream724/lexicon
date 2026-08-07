@@ -117,10 +117,13 @@ Source tokens enter canonical fields through explicit semantic routing. Label
 conversion uses an allowlist; form fragments, constructions, rich text, navigation
 metadata, and structural containers have dedicated destinations and never fall
 through into visible qualifiers. Entry and sense constructions remain separate from
-labels, structured derivatives retain their pronunciations and senses, and box
-navigation targets remain separate from display blocks. Repeated source transport
-groups may be deduplicated structurally, while ordered same-spelling forms within a
-group remain intact.
+labels, structured derivatives retain their pronunciations, senses, and attached
+variants, definition-level pronunciation stays in ordered content segments beside its
+term, and box navigation targets remain separate from display blocks. A form's ordered
+presentation keeps introducers, semantic labels, its target, and pronunciation in
+source order; renderers never reconstruct that order from source tokens. Repeated
+source transport groups may be deduplicated structurally, while ordered same-spelling
+forms within a group remain intact.
 
 Adapter registration is explicit. A future MDX, StarDict, JSON, or remote source
 adds an adapter and fixtures; it does not add source conditionals to components.

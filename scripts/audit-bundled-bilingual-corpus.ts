@@ -42,6 +42,7 @@ const allowedLabelKinds = new Set([
 const allowedFormKinds = new Set([
   "derivative",
   "inflection",
+  "inflection-constraint",
   "variant",
   "word-family",
 ]);
@@ -82,6 +83,486 @@ function firstNonEmptySourceText(...values: Array<JsonValue | undefined>): strin
 
 function normalizeReferenceText(value: string): string {
   return value.replace(/\s+/g, " ").trim().toLocaleLowerCase();
+}
+
+function isStructuralSeparator(value: string): boolean {
+  return /^[,;:/|\\]+/.test(value);
+}
+
+function isPureStructuralPunctuation(value: string): boolean {
+  return /^[()[\]{}<>,;:/|\\.!?]+$/.test(value.trim());
+}
+
+function hasResidualLabelWrapping(value: string): boolean {
+  const text = value.trim();
+  return /^\[[^\]]*\]$/.test(text) || /^\{[^}]*\}$/.test(text);
+}
+
+const sourceVariantIntroducers = new Set([
+  "abbr.",
+  "also",
+  "also or",
+  "often",
+  "or",
+  "sometimes",
+  "symb.",
+  "usually",
+]);
+
+const sourceSemanticLabelTags = new Set(["geo", "gram", "or", "reg", "subj"]);
+
+function cleanSourceSemanticLabel(value: string): string {
+  return value
+    .trim()
+    .replace(/^[,;]\s*/, "")
+    .replace(/^\[/, "")
+    .replace(/\]$/, "")
+    .trim();
+}
+
+function sourceVariantPresentationSignature(items: Record<string, JsonValue>[]): unknown[] {
+  const presentation: unknown[] = [];
+  let hasPronunciation = false;
+  let hasTarget = false;
+  items.forEach((item) => {
+    const tag = sourceText(item.tag).toLocaleLowerCase();
+    const rawText = sourceText(item);
+    const text = normalizeReferenceText(rawText);
+    if (
+      (tag === "v-g" && !/^[,;/\s]+$/.test(rawText) && text) ||
+      (tag === "v" && sourceVariantIntroducers.has(text))
+    ) {
+      presentation.push({ kind: "introducer", text });
+      return;
+    }
+    if ((tag === "v" || tag === "ptl") && !hasTarget) {
+      presentation.push({ kind: "target" });
+      hasTarget = true;
+      return;
+    }
+    if (
+      !hasPronunciation &&
+      (tag === "pron-g" || tag === "phon" || tag === "audio" || tag === "form")
+    ) {
+      presentation.push({ kind: "pronunciation" });
+      hasPronunciation = true;
+      return;
+    }
+    if (!sourceSemanticLabelTags.has(tag)) {
+      return;
+    }
+    const labelText = normalizeReferenceText(cleanSourceSemanticLabel(rawText));
+    if (labelText) {
+      presentation.push({
+        kind: "label",
+        labelKind: tag,
+        text: labelText,
+        separatorBefore: /^\s*([,;])/.exec(rawText)?.[1] ?? "",
+      });
+    }
+  });
+  return presentation;
+}
+
+function variantProjectionSignature(text: string, presentation: unknown[]): string {
+  return JSON.stringify({ text: normalizeReferenceText(text), presentation });
+}
+
+type SourceVariantStructureCounts = {
+  bracketGroups: number;
+  derivativeTopTextBracketGroups: number;
+  senseBracketGroups: number;
+  topTextBracketGroups: number;
+  targets: number;
+};
+
+function sourceVariantTargetTexts(
+  value: JsonValue,
+  counts = new Map<string, number>(),
+  structureCounts: SourceVariantStructureCounts = {
+    bracketGroups: 0,
+    derivativeTopTextBracketGroups: 0,
+    senseBracketGroups: 0,
+    topTextBracketGroups: 0,
+    targets: 0,
+  },
+  signatures = new Map<string, number>(),
+): {
+  counts: Map<string, number>;
+  signatures: Map<string, number>;
+  structureCounts: SourceVariantStructureCounts;
+} {
+  const addSequenceTargets = (
+    items: JsonValue[],
+    scope: {
+      allowUnwrapped?: boolean;
+      derivativeTopText?: boolean;
+      requireUnwrappedMarker?: boolean;
+      sense?: boolean;
+      topText?: boolean;
+    } = {},
+  ): void => {
+    let current: Record<string, JsonValue>[] | undefined;
+
+    const canStartUnwrappedGroup = (item: Record<string, JsonValue>): boolean => {
+      if (!scope.allowUnwrapped) {
+        return false;
+      }
+      const tag = sourceText(item.tag).toLocaleLowerCase();
+      if (tag === "v-gs") {
+        return !sourceText(item).trim();
+      }
+      if (scope.requireUnwrappedMarker) {
+        return false;
+      }
+      if (tag !== "v" && tag !== "ptl") {
+        return false;
+      }
+      const path = sourceText(item.path).toLocaleLowerCase();
+      const scopes = path.split("/");
+      return !path || (scopes.includes("v-gs") && !scopes.includes("if-gs"));
+    };
+
+    const flush = (): void => {
+      if (!current) {
+        return;
+      }
+      const text = current
+        .filter((item) => {
+          const tag = sourceText(item.tag).toLocaleLowerCase();
+          return (
+            (tag === "v" && !sourceVariantIntroducers.has(normalizeReferenceText(sourceText(item)))) ||
+            tag === "ptl"
+          );
+        })
+        .map(sourceText)
+        .join("")
+        .trim();
+      const target = normalizeReferenceText(text);
+      if (target) {
+        increment(counts, target);
+        increment(
+          signatures,
+          variantProjectionSignature(target, sourceVariantPresentationSignature(current)),
+        );
+        structureCounts.targets += 1;
+      }
+      current = undefined;
+    };
+
+    for (const item of items) {
+      if (!isRecord(item)) {
+        continue;
+      }
+      const tag = sourceText(item.tag).toLocaleLowerCase();
+      if (tag === "v-gs") {
+        const marker = sourceText(item);
+        if (marker.includes("(")) {
+          flush();
+          current = [];
+          structureCounts.bracketGroups += 1;
+          if (scope.topText) {
+            structureCounts.topTextBracketGroups += 1;
+          }
+          if (scope.derivativeTopText) {
+            structureCounts.derivativeTopTextBracketGroups += 1;
+          }
+          if (scope.sense) {
+            structureCounts.senseBracketGroups += 1;
+          }
+        }
+        if (marker.includes(")")) {
+          flush();
+        } else if (!current && canStartUnwrappedGroup(item)) {
+          current = [item];
+        }
+      } else if (current && tag === "v-g" && /^[,;/\s]+$/.test(sourceText(item))) {
+        flush();
+        current = [];
+      } else if (current) {
+        current.push(item);
+      } else if (canStartUnwrappedGroup(item)) {
+        current = [item];
+      }
+    }
+    flush();
+  };
+
+  const visit = (current: JsonValue): void => {
+    if (Array.isArray(current)) {
+      current.forEach(visit);
+      return;
+    }
+    if (!isRecord(current)) {
+      return;
+    }
+    if (isRecord(current.top_data)) {
+      const topData = current.top_data;
+      if (Array.isArray(topData.top_text)) {
+        addSequenceTargets(topData.top_text, { topText: true });
+      }
+      if (Array.isArray(topData["v-gs"])) {
+        addSequenceTargets(topData["v-gs"], { allowUnwrapped: true });
+      }
+    }
+    if (isRecord(current.top_g)) {
+      const topData = current.top_g;
+      if (Array.isArray(topData.top_text)) {
+        addSequenceTargets(topData.top_text, { derivativeTopText: true, topText: true });
+      }
+      if (Array.isArray(topData["v-gs"])) {
+        addSequenceTargets(topData["v-gs"], {
+          allowUnwrapped: true,
+          derivativeTopText: true,
+        });
+      }
+    }
+    [current.idm_text, current.pv_text].forEach((field) => {
+      if (Array.isArray(field)) {
+        addSequenceTargets(field);
+      }
+    });
+    if (Array.isArray(current.sng_text)) {
+      addSequenceTargets(current.sng_text, {
+        allowUnwrapped: true,
+        requireUnwrappedMarker: true,
+        sense: true,
+      });
+    }
+    Object.values(current).forEach(visit);
+  };
+
+  visit(value);
+  return { counts, signatures, structureCounts };
+}
+
+function collectCanonicalVariantTargetTexts(
+  entry: CanonicalEntry,
+  counts = new Map<string, number>(),
+  signatures = new Map<string, number>(),
+): { counts: Map<string, number>; signatures: Map<string, number> } {
+  function addForms(forms: CanonicalForm[]): void {
+    forms.forEach((form) => {
+      if (form.kind === "variant") {
+        incrementReferenceText(counts, form.text);
+        const presentation = form.presentation?.length
+          ? form.presentation.map((item) => {
+              if (item.kind === "target" || item.kind === "pronunciation") {
+                return { kind: item.kind };
+              }
+              return item.kind === "introducer"
+                ? { kind: item.kind, text: normalizeReferenceText(item.value.text) }
+                : {
+                    kind: item.kind,
+                    labelKind: item.value.kind ?? "",
+                    text: normalizeReferenceText(item.value.text),
+                    separatorBefore: item.value.separatorBefore ?? "",
+                  };
+            })
+          : [
+              ...(form.introducer?.text.trim()
+                ? [{ kind: "introducer", text: normalizeReferenceText(form.introducer.text) }]
+                : []),
+              ...(form.labels ?? []).map((label) => ({
+                kind: "label",
+                labelKind: label.kind ?? "",
+                text: normalizeReferenceText(label.text),
+                separatorBefore: label.separatorBefore ?? "",
+              })),
+              { kind: "target" },
+              ...((form.pronunciations ?? []).length ? [{ kind: "pronunciation" }] : []),
+            ];
+        increment(signatures, variantProjectionSignature(form.text, presentation));
+      }
+      addForms(form.variants ?? []);
+      addForms(form.inflectedForms ?? []);
+      addSenses(form.senses ?? []);
+    });
+  }
+
+  function addSenses(senses: CanonicalSense[]): void {
+    senses.forEach((sense) => {
+      addForms(sense.variants ?? []);
+      addSenses(sense.subsenses);
+    });
+  }
+
+  addForms(entry.variants ?? []);
+  addForms(entry.derivedForms);
+  addSenses(entry.senses);
+  [...entry.idioms, ...entry.phrasalVerbs].forEach((phrase) => {
+    addForms(phrase.variants);
+    addSenses(phrase.senses);
+  });
+  entry.subentries.forEach((subentry) =>
+    collectCanonicalVariantTargetTexts(subentry, counts, signatures),
+  );
+  return { counts, signatures };
+}
+
+type InflectionAuditForm = {
+  kind: "inflection" | "inflection-constraint";
+  text: string;
+  introducer: string;
+};
+
+function normalizedSemanticListItem(value: string): string {
+  return normalizeReferenceText(value.replace(/^\s*[,;]\s*/, ""));
+}
+
+function sourceInflectionFormsFromSequence(value: JsonValue | undefined): InflectionAuditForm[] {
+  const forms: InflectionAuditForm[] = [];
+  let current: { textItems: Record<string, JsonValue>[]; introducer: string } | undefined;
+  let pendingIntroducer: Record<string, JsonValue>[] = [];
+  let groupDepth = 0;
+
+  const flush = (): void => {
+    if (!current) {
+      return;
+    }
+    const text = normalizeReferenceText(current.textItems.map(sourceText).join(""));
+    if (text) {
+      forms.push({ kind: "inflection", text, introducer: current.introducer });
+    }
+    current = undefined;
+  };
+
+  const flushConstraint = (): void => {
+    const text = normalizedSemanticListItem(pendingIntroducer.map(sourceText).join(""));
+    if (text) {
+      forms.push({ kind: "inflection-constraint", text, introducer: "" });
+    }
+    pendingIntroducer = [];
+  };
+
+  for (const item of Array.isArray(value) ? value.filter(isRecord) : []) {
+    const tag = sourceText(item.tag).toLocaleLowerCase();
+    const path = typeof item.path === "string" ? item.path.toLocaleLowerCase() : "";
+    if (tag === "if-gs") {
+      const marker = sourceText(item);
+      const opens = marker.match(/\(/g)?.length ?? 0;
+      const closes = marker.match(/\)/g)?.length ?? 0;
+      if (opens && groupDepth === 0) {
+        flush();
+        flushConstraint();
+      }
+      groupDepth += opens;
+      groupDepth = Math.max(0, groupDepth - closes);
+      if (closes && groupDepth === 0) {
+        flush();
+        flushConstraint();
+      }
+      continue;
+    }
+    if (tag !== "if" && !path.includes("/if-gs")) {
+      continue;
+    }
+    if (tag === "if") {
+      if (current) {
+        current.textItems.push(item);
+      } else {
+        current = {
+          textItems: [item],
+          introducer: normalizedSemanticListItem(pendingIntroducer.map(sourceText).join("")),
+        };
+        pendingIntroducer = [];
+      }
+      continue;
+    }
+    if (tag === "if-g") {
+      const text = sourceText(item).trim();
+      flush();
+      if (text && !/^[,;/().\s]+$/.test(text)) {
+        pendingIntroducer.push(item);
+      }
+      continue;
+    }
+    if (tag === "ptl" && current) {
+      current.textItems.push(item);
+    }
+  }
+  flush();
+  flushConstraint();
+  return forms;
+}
+
+const sourceSemanticScopeBoundaries = new Set([
+  "dr_gs",
+  "idm_gs",
+  "pv_gs",
+  "sn_g",
+  "unbox",
+  "wfg",
+  "x_gs",
+]);
+
+function isNestedSourceEntry(value: JsonValue): boolean {
+  return isRecord(value) &&
+    ((typeof value.id === "string" && value.id.length > 0) || isRecord(value.top_data));
+}
+
+function collectScopedSourceFields(value: JsonValue, key: string): JsonValue[] {
+  const collected: JsonValue[] = [];
+  const visit = (current: JsonValue): void => {
+    if (Array.isArray(current)) {
+      current.forEach(visit);
+      return;
+    }
+    if (!isRecord(current)) {
+      return;
+    }
+    for (const [currentKey, child] of Object.entries(current)) {
+      if (currentKey === key) {
+        collected.push(child);
+        continue;
+      }
+      if (currentKey === "sngs_data" && Array.isArray(child)) {
+        child.forEach((item) => {
+          if (!isNestedSourceEntry(item)) {
+            visit(item);
+          }
+        });
+        continue;
+      }
+      if (sourceSemanticScopeBoundaries.has(currentKey)) {
+        continue;
+      }
+      visit(child);
+    }
+  };
+  visit(value);
+  return collected;
+}
+
+function sourceOwnedInflectionForms(
+  raw: JsonValue,
+  topData: JsonValue | undefined,
+): InflectionAuditForm[] {
+  const groups = [
+    isRecord(topData) ? topData.top_text : undefined,
+    ...collectScopedSourceFields(raw, "v-gs"),
+  ]
+    .map((group) => sourceInflectionFormsFromSequence(group))
+    .filter((group) => group.length);
+  const seen = new Set<string>();
+  return groups.flatMap((group) => {
+    const signature = JSON.stringify(group);
+    if (seen.has(signature)) {
+      return [];
+    }
+    seen.add(signature);
+    return group;
+  });
+}
+
+function canonicalInflectionForms(forms: CanonicalForm[]): InflectionAuditForm[] {
+  return forms
+    .filter((form) => form.kind === "inflection" || form.kind === "inflection-constraint")
+    .map((form) => ({
+      kind: form.kind as InflectionAuditForm["kind"],
+      text: normalizeReferenceText(form.text),
+      introducer: normalizeReferenceText(form.introducer?.text ?? ""),
+    }));
 }
 
 function sourcePathIncludes(value: Record<string, JsonValue>, segment: string): boolean {
@@ -129,9 +610,9 @@ function sourceInlineUsageTexts(value: JsonValue | undefined): Map<string, numbe
   return counts;
 }
 
-function canonicalInlineUsageTexts(sense: CanonicalSense): Map<string, number> {
+function canonicalTextCounts(values: Array<{ text: string }>): Map<string, number> {
   const counts = new Map<string, number>();
-  (sense.inlineUsage ?? []).forEach((usage) => {
+  values.forEach((usage) => {
     const text = normalizeReferenceText(usage.text);
     if (text) {
       increment(counts, text);
@@ -269,9 +750,12 @@ function sourceBoxStructureCounts(value: JsonValue): BoxStructureCounts {
         counts.examples += 1;
       }
     }
-    if (parentKey === "pron-g" && [current.phon, current.geo, current.audio, current.form].some(
-      (part) => sourceText(part).trim(),
-    )) {
+    if (
+      (tag === "pron-g" && sourceText(current).trim()) ||
+      (parentKey === "pron-g" && [current.phon, current.geo, current.audio, current.form].some(
+        (part) => sourceText(part).trim(),
+      ))
+    ) {
       counts.pronunciations += 1;
     }
     if (Array.isArray(current.xrg)) {
@@ -312,6 +796,8 @@ function canonicalBoxStructureCounts(blocks: CanonicalBoxBlock[]): BoxStructureC
         counts.termsWithPartOfSpeech += 1;
       } else if (segment.kind === "cross-references") {
         counts.crossReferences += segment.references.length;
+      } else if (segment.kind === "pronunciations") {
+        counts.pronunciations += segment.items.length;
       }
     }
   };
@@ -341,54 +827,75 @@ function collectSourceAudioKeys(value: JsonValue, keys = new Set<string>()): Set
   if (!isRecord(value)) {
     return keys;
   }
+  const tag = sourceText(value.tag).trim().toLocaleLowerCase();
   if (typeof value.audio === "string" && value.audio.trim()) {
     keys.add(value.audio.trim());
   }
-  if (
-    sourceText(value.tag).toLocaleLowerCase() === "xaudio" &&
-    isRecord(value.value) &&
-    typeof value.value.url === "string" &&
-    value.value.url.trim()
-  ) {
-    keys.add(value.value.url.trim());
+  if (tag === "audio") {
+    const key = sourceText(value.value).trim();
+    if (key) {
+      keys.add(key);
+    }
+  }
+  if (tag === "xaudio" && isRecord(value.value)) {
+    const key = typeof value.value.url === "string"
+      ? value.value.url.trim()
+      : typeof value.value.audio === "string"
+        ? value.value.audio.trim()
+        : "";
+    if (key) {
+      keys.add(key);
+    }
   }
   Object.values(value).forEach((item) => collectSourceAudioKeys(item, keys));
   return keys;
 }
 
-function collectBoxAudioKeys(box: CanonicalGrammarUsageBox, keys: Set<string>): void {
-  const collectSegmentAudio = (
-    segments: CanonicalBoxSegment[],
-  ): void => {
-    segments.forEach((segment) => {
-      if (segment.kind === "example") {
-        segment.value.audio.forEach((audio) => keys.add(audio.key));
-      }
-    });
-  };
+function collectSegmentAudioKeys(
+  segments: CanonicalBoxSegment[],
+  keys: Set<string>,
+): void {
+  segments.forEach((segment) => {
+    if (segment.kind === "example") {
+      segment.value.audio.forEach((audio) => keys.add(audio.key));
+    } else if (segment.kind === "pronunciations") {
+      segment.items.forEach((item) => item.audioKey && keys.add(item.audioKey));
+    }
+  });
+}
 
+function collectBoxAudioKeys(box: CanonicalGrammarUsageBox, keys: Set<string>): void {
   for (const block of box.blocks) {
     if (block.kind === "pronunciations") {
       block.items.forEach((item) => item.audioKey && keys.add(item.audioKey));
     } else if (block.kind === "paragraph") {
-      collectSegmentAudio(block.segments);
+      collectSegmentAudioKeys(block.segments, keys);
     } else if (block.kind === "table") {
-      block.rows.forEach((row) => row.cells.forEach((cell) => collectSegmentAudio(cell.segments)));
+      block.rows.forEach((row) =>
+        row.cells.forEach((cell) => collectSegmentAudioKeys(cell.segments, keys))
+      );
     } else if (block.kind === "list") {
-      block.items.forEach((item) => collectSegmentAudio(item.segments));
+      block.items.forEach((item) => collectSegmentAudioKeys(item.segments, keys));
     }
   }
 }
 
 function collectSenseAudioKeys(sense: CanonicalSense, keys: Set<string>): void {
+  (sense.pronunciations ?? []).forEach((item) => item.audioKey && keys.add(item.audioKey));
   sense.examples.forEach((example) => example.audio.forEach((audio) => keys.add(audio.key)));
-  sense.usageSegments.forEach((segment) => {
-    if (segment.kind === "example") {
-      segment.value.audio.forEach((audio) => keys.add(audio.key));
-    }
-  });
+  (sense.inflectedForms ?? []).forEach((form) => collectFormAudioKeys(form, keys));
+  (sense.variants ?? []).forEach((form) => collectFormAudioKeys(form, keys));
+  collectSegmentAudioKeys(sense.definitionSegments ?? [], keys);
+  collectSegmentAudioKeys(sense.usageSegments, keys);
   sense.grammarUsageBoxes.forEach((box) => collectBoxAudioKeys(box, keys));
   sense.subsenses.forEach((nested) => collectSenseAudioKeys(nested, keys));
+}
+
+function collectFormAudioKeys(form: CanonicalForm, keys: Set<string>): void {
+  (form.pronunciations ?? []).forEach((item) => item.audioKey && keys.add(item.audioKey));
+  (form.inflectedForms ?? []).forEach((nested) => collectFormAudioKeys(nested, keys));
+  (form.variants ?? []).forEach((nested) => collectFormAudioKeys(nested, keys));
+  (form.senses ?? []).forEach((sense) => collectSenseAudioKeys(sense, keys));
 }
 
 function collectEntryAudioKeys(entry: CanonicalEntry, keys = new Set<string>()): Set<string> {
@@ -398,15 +905,10 @@ function collectEntryAudioKeys(entry: CanonicalEntry, keys = new Set<string>()):
     ...entry.inflectedForms,
     ...(entry.variants ?? []),
   ];
-  forms.forEach((form) => {
-    (form.pronunciations ?? []).forEach((item) => item.audioKey && keys.add(item.audioKey));
-    (form.senses ?? []).forEach((sense) => collectSenseAudioKeys(sense, keys));
-  });
+  forms.forEach((form) => collectFormAudioKeys(form, keys));
   entry.senses.forEach((sense) => collectSenseAudioKeys(sense, keys));
   [...entry.idioms, ...entry.phrasalVerbs].forEach((phrase) => {
-    phrase.variants.forEach((form) => {
-      (form.pronunciations ?? []).forEach((item) => item.audioKey && keys.add(item.audioKey));
-    });
+    phrase.variants.forEach((form) => collectFormAudioKeys(form, keys));
     phrase.senses.forEach((sense) => collectSenseAudioKeys(sense, keys));
   });
   entry.grammarUsageBoxes.forEach((box) => collectBoxAudioKeys(box, keys));
@@ -433,16 +935,18 @@ function collectSourceCrossReferenceTexts(
     return counts;
   }
 
-  if (Array.isArray(value.xrg)) {
-    value.xrg.filter(isRecord).forEach((target) => {
-      incrementReferenceText(counts, firstNonEmptySourceText(
-        target.xh,
-        target.xw,
-        target.word,
-        target.text,
-        target.value,
-      ));
-    });
+  const isLinkedTarget =
+    value.target_id !== undefined ||
+    value.word_id !== undefined ||
+    value.entry_id !== undefined;
+  if (isLinkedTarget) {
+    incrementReferenceText(counts, firstNonEmptySourceText(
+      value.xh,
+      value.xw,
+      value.word,
+      value.text,
+      value.value,
+    ));
   }
   Object.values(value).forEach((item) => collectSourceCrossReferenceTexts(item, counts));
   return counts;
@@ -501,6 +1005,8 @@ function collectCanonicalFormReferenceTexts(
   counts: Map<string, number>,
 ): void {
   (form.senses ?? []).forEach((sense) => collectCanonicalSenseReferenceTexts(sense, counts));
+  (form.inflectedForms ?? []).forEach((nested) => collectCanonicalFormReferenceTexts(nested, counts));
+  (form.variants ?? []).forEach((nested) => collectCanonicalFormReferenceTexts(nested, counts));
 }
 
 function collectCanonicalPhraseReferenceTexts(
@@ -571,6 +1077,7 @@ function main(): void {
   const sourceTagCounts = new Map<string, number>();
   const labelKindCounts = new Map<string, number>();
   const formKindCounts = new Map<string, number>();
+  const violationCodeCounts = new Map<string, number>();
   const violations: AuditViolation[] = [];
   let violationCount = 0;
   let sourceEntries = 0;
@@ -580,12 +1087,72 @@ function main(): void {
   let forms = 0;
   let boxes = 0;
   let references = 0;
+  let sourceVariantBracketGroups = 0;
+  let sourceDerivativeTopTextVariantBracketGroups = 0;
+  let sourceSenseVariantBracketGroups = 0;
+  let sourceTopTextVariantBracketGroups = 0;
+  let sourceVariantTargets = 0;
+  let canonicalVariantTargets = 0;
+  let variantTargetComparisons = 0;
+  let variantPresentationComparisons = 0;
+  let inflectionOwnerComparisons = 0;
+  let sourceInflectionForms = 0;
+  let canonicalInflectionFormsCount = 0;
   const auditedBoxes = new Set<string>();
 
   const reportViolation = (code: string, entryId: string, detail: string): void => {
     violationCount += 1;
+    increment(violationCodeCounts, code);
     if (violations.length < 100) {
       violations.push({ code, entryId, detail });
+    }
+  };
+
+  const compareTextMultisets = (
+    code: string,
+    entryId: string,
+    owner: string,
+    source: Map<string, number>,
+    canonical: Map<string, number>,
+  ): void => {
+    source.forEach((count, text) => {
+      const canonicalCount = canonical.get(text) ?? 0;
+      if (canonicalCount < count) {
+        reportViolation(
+          `missing-${code}`,
+          entryId,
+          `${owner}: ${text}: source=${count}, canonical=${canonicalCount}`,
+        );
+      }
+    });
+    canonical.forEach((count, text) => {
+      const sourceCount = source.get(text) ?? 0;
+      if (sourceCount < count) {
+        reportViolation(
+          `unexpected-${code}`,
+          entryId,
+          `${owner}: ${text}: source=${sourceCount}, canonical=${count}`,
+        );
+      }
+    });
+  };
+
+  const compareInflections = (
+    entryId: string,
+    owner: string,
+    source: InflectionAuditForm[],
+    canonicalForms: CanonicalForm[],
+  ): void => {
+    const canonical = canonicalInflectionForms(canonicalForms);
+    inflectionOwnerComparisons += 1;
+    sourceInflectionForms += source.length;
+    canonicalInflectionFormsCount += canonical.length;
+    if (JSON.stringify(source) !== JSON.stringify(canonical)) {
+      reportViolation(
+        "inflection-projection-mismatch",
+        entryId,
+        `${owner}: source=${JSON.stringify(source)}, canonical=${JSON.stringify(canonical)}`,
+      );
     }
   };
 
@@ -595,11 +1162,25 @@ function main(): void {
     if (!allowedLabelKinds.has(kind)) {
       reportViolation("unexpected-label-kind", entryId, `${kind}: ${label.text}`);
     }
+    if (label.text !== label.text.trim()) {
+      reportViolation("label-surrounding-whitespace", entryId, `${kind}: ${JSON.stringify(label.text)}`);
+    }
+    if (isStructuralSeparator(label.text.trim())) {
+      reportViolation("label-leading-structural-separator", entryId, `${kind}: ${label.text}`);
+    }
+    if (isPureStructuralPunctuation(label.text)) {
+      reportViolation("label-pure-structural-punctuation", entryId, `${kind}: ${label.text}`);
+    }
+    if (hasResidualLabelWrapping(label.text)) {
+      reportViolation("label-residual-structural-wrapping", entryId, `${kind}: ${label.text}`);
+    }
   };
 
   const visitSense = (sense: CanonicalSense, entryId: string): void => {
     senses += 1;
     sense.labels.forEach((label) => visitLabel(label, entryId));
+    (sense.variants ?? []).forEach((form) => visitForm(form, entryId));
+    (sense.inflectedForms ?? []).forEach((form) => visitForm(form, entryId));
     sense.subsenses.forEach((nested) => visitSense(nested, entryId));
     sense.grammarUsageBoxes.forEach((box) => visitBox(box, entryId));
     sense.crossReferences.forEach((reference) => visitReference(reference.kind, entryId, reference.text));
@@ -615,17 +1196,20 @@ function main(): void {
       }
     });
     const sourceInlineTexts = sourceInlineUsageTexts(sense.raw.sng_text);
-    const canonicalInlineTexts = canonicalInlineUsageTexts(sense);
-    sourceInlineTexts.forEach((count, text) => {
-      const canonicalCount = canonicalInlineTexts.get(text) ?? 0;
-      if (canonicalCount < count) {
-        reportViolation(
-          "missing-inline-usage-text",
-          entryId,
-          `${sense.id ?? "<sense>"}: ${text}: source=${count}, canonical=${canonicalCount}`,
-        );
-      }
-    });
+    const canonicalInlineTexts = canonicalTextCounts(sense.inlineUsage ?? []);
+    compareTextMultisets(
+      "inline-usage-text",
+      entryId,
+      sense.id ?? "<sense>",
+      sourceInlineTexts,
+      canonicalInlineTexts,
+    );
+    compareInflections(
+      entryId,
+      sense.id ?? "<sense>",
+      sourceOwnedInflectionForms(sense.raw, { top_text: sense.raw.sng_text ?? null }),
+      sense.inflectedForms ?? [],
+    );
   };
 
   const visitReference = (
@@ -636,6 +1220,9 @@ function main(): void {
     references += 1;
     if (!kind || !allowedCrossReferenceKinds.has(kind as typeof CANONICAL_CROSS_REFERENCE_KINDS[number])) {
       reportViolation("unexpected-cross-reference-kind", entryId, `${kind ?? "<missing>"}: ${text}`);
+    }
+    if (kind === "punctuation") {
+      reportViolation("renderable-punctuation-cross-reference", entryId, text);
     }
   };
 
@@ -682,6 +1269,19 @@ function main(): void {
         );
       }
     });
+    const sourceAudioKeys = collectSourceAudioKeys(box.raw);
+    const canonicalAudioKeys = new Set<string>();
+    collectBoxAudioKeys(box, canonicalAudioKeys);
+    sourceAudioKeys.forEach((key) => {
+      if (!canonicalAudioKeys.has(key)) {
+        reportViolation("box-audio-key-loss", entryId, `${box.id ?? box.type ?? "<box>"}: ${key}`);
+      }
+    });
+    canonicalAudioKeys.forEach((key) => {
+      if (!sourceAudioKeys.has(key)) {
+        reportViolation("box-unexpected-audio-key", entryId, `${box.id ?? box.type ?? "<box>"}: ${key}`);
+      }
+    });
     if (
       box.title?.text.trim() &&
       boxReferences.length &&
@@ -701,8 +1301,41 @@ function main(): void {
     if (!form.text.trim()) {
       reportViolation("empty-form", entryId, form.kind);
     }
+    if (form.kind === "inflection" || form.kind === "variant") {
+      const introducer = form.introducer?.text;
+      if (introducer !== undefined) {
+        if (isStructuralSeparator(introducer.trim())) {
+          reportViolation("form-introducer-leading-structural-separator", entryId, `${form.kind}: ${introducer}`);
+        }
+        if (isPureStructuralPunctuation(introducer)) {
+          reportViolation("form-introducer-pure-structural-punctuation", entryId, `${form.kind}: ${introducer}`);
+        }
+      }
+    }
     (form.labels ?? []).forEach((label) => visitLabel(label, entryId));
+    if (form.kind === "derivative" && isRecord(form.raw)) {
+      const topData = isRecord(form.raw.top_g)
+        ? form.raw.top_g
+        : isRecord(form.raw.top_data)
+          ? form.raw.top_data
+          : undefined;
+      compareTextMultisets(
+        "form-inline-usage-text",
+        entryId,
+        form.id ?? form.text,
+        sourceInlineUsageTexts(topData?.top_text),
+        canonicalTextCounts(form.usage ?? []),
+      );
+      compareInflections(
+        entryId,
+        form.id ?? form.text,
+        sourceOwnedInflectionForms(form.raw, topData),
+        form.inflectedForms ?? [],
+      );
+    }
     (form.senses ?? []).forEach((sense) => visitSense(sense, entryId));
+    (form.inflectedForms ?? []).forEach((nested) => visitForm(nested, entryId));
+    (form.variants ?? []).forEach((variant) => visitForm(variant, entryId));
   };
 
   const visitPhrase = (phrase: CanonicalPhrase, entryId: string): void => {
@@ -716,6 +1349,31 @@ function main(): void {
 
   const visitEntry = (entry: CanonicalEntry): void => {
     canonicalEntries += 1;
+    entry.partsOfSpeech.forEach((part) => {
+      if (part.text !== part.text.trim()) {
+        reportViolation("part-of-speech-surrounding-whitespace", entry.id, JSON.stringify(part.text));
+      }
+      if (isStructuralSeparator(part.text)) {
+        reportViolation("part-of-speech-leading-structural-separator", entry.id, part.text);
+      }
+      if (isPureStructuralPunctuation(part.text)) {
+        reportViolation("part-of-speech-pure-structural-punctuation", entry.id, part.text);
+      }
+    });
+    const topData = isRecord(entry.raw.top_data) ? entry.raw.top_data : undefined;
+    compareTextMultisets(
+      "headword-inline-usage-text",
+      entry.id,
+      "headword",
+      sourceInlineUsageTexts(topData?.top_text),
+      canonicalTextCounts(entry.headwordUsage ?? []),
+    );
+    compareInflections(
+      entry.id,
+      "headword",
+      sourceOwnedInflectionForms(entry.raw, topData),
+      entry.inflectedForms,
+    );
     entry.labels.forEach((label) => visitLabel(label, entry.id));
     entry.senses.forEach((sense) => visitSense(sense, entry.id));
     entry.derivedForms.forEach((form) => visitForm(form, entry.id));
@@ -763,15 +1421,69 @@ function main(): void {
             reportViolation("missing-audio-key", row.id, key);
           }
         });
+        canonicalAudioKeys.forEach((key) => {
+          if (!sourceAudioKeys.has(key)) {
+            reportViolation("unexpected-audio-key", row.id, key);
+          }
+        });
         const sourceReferenceTexts = collectSourceCrossReferenceTexts(sourceBody);
         const canonicalReferenceTexts = collectCanonicalEntryCrossReferenceTexts(entry);
-        sourceReferenceTexts.forEach((count, text) => {
-          const canonicalCount = canonicalReferenceTexts.get(text) ?? 0;
+        compareTextMultisets(
+          "cross-reference-text",
+          row.id,
+          "entry",
+          sourceReferenceTexts,
+          canonicalReferenceTexts,
+        );
+        const sourceVariants = sourceVariantTargetTexts(sourceBody);
+        const canonicalVariants = collectCanonicalVariantTargetTexts(entry);
+        sourceVariantBracketGroups += sourceVariants.structureCounts.bracketGroups;
+        sourceDerivativeTopTextVariantBracketGroups +=
+          sourceVariants.structureCounts.derivativeTopTextBracketGroups;
+        sourceSenseVariantBracketGroups += sourceVariants.structureCounts.senseBracketGroups;
+        sourceTopTextVariantBracketGroups += sourceVariants.structureCounts.topTextBracketGroups;
+        sourceVariantTargets += sourceVariants.structureCounts.targets;
+        canonicalVariantTargets += [...canonicalVariants.counts.values()]
+          .reduce((total, count) => total + count, 0);
+        sourceVariants.counts.forEach((count, text) => {
+          variantTargetComparisons += 1;
+          const canonicalCount = canonicalVariants.counts.get(text) ?? 0;
           if (canonicalCount < count) {
             reportViolation(
-              "missing-cross-reference-text",
+              "missing-bracket-variant-form",
               row.id,
               `${text}: source=${count}, canonical=${canonicalCount}`,
+            );
+          }
+        });
+        canonicalVariants.counts.forEach((count, text) => {
+          const sourceCount = sourceVariants.counts.get(text) ?? 0;
+          if (sourceCount < count) {
+            reportViolation(
+              "unexpected-bracket-variant-form",
+              row.id,
+              `${text}: source=${sourceCount}, canonical=${count}`,
+            );
+          }
+        });
+        sourceVariants.signatures.forEach((count, signature) => {
+          variantPresentationComparisons += 1;
+          const canonicalCount = canonicalVariants.signatures.get(signature) ?? 0;
+          if (canonicalCount < count) {
+            reportViolation(
+              "missing-ordered-variant-presentation",
+              row.id,
+              `${signature}: source=${count}, canonical=${canonicalCount}`,
+            );
+          }
+        });
+        canonicalVariants.signatures.forEach((count, signature) => {
+          const sourceCount = sourceVariants.signatures.get(signature) ?? 0;
+          if (sourceCount < count) {
+            reportViolation(
+              "unexpected-ordered-variant-presentation",
+              row.id,
+              `${signature}: source=${sourceCount}, canonical=${count}`,
             );
           }
         });
@@ -803,9 +1515,21 @@ function main(): void {
     forms,
     boxes,
     references,
+    sourceVariantBracketGroups,
+    sourceDerivativeTopTextVariantBracketGroups,
+    sourceSenseVariantBracketGroups,
+    sourceTopTextVariantBracketGroups,
+    sourceVariantTargets,
+    canonicalVariantTargets,
+    variantTargetComparisons,
+    variantPresentationComparisons,
+    inflectionOwnerComparisons,
+    sourceInflectionForms,
+    canonicalInflectionForms: canonicalInflectionFormsCount,
     sourceTagCounts: sortedCounts(sourceTagCounts),
     labelKindCounts: sortedCounts(labelKindCounts),
     formKindCounts: sortedCounts(formKindCounts),
+    violationCodeCounts: sortedCounts(violationCodeCounts),
     violationCount,
     violations,
   }, null, 2));

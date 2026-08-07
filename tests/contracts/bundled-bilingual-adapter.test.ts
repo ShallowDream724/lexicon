@@ -243,6 +243,40 @@ test("structures flattened inflection pronunciations without leaking transport t
   assert.equal(verb.inflectedForms[1]?.pronunciations?.[0]?.transcription, "ˈteɪkən");
 });
 
+test("keeps inflection labels while removing source-owned group separators", () => {
+  const entry = adapter.parse({
+    entryId: "entry-round",
+    headword: "round",
+    sourceVersion: "2026.08",
+    body: {
+      top_data: {
+        h: [{ tag: "h", value: "round" }],
+        pos: [{ tag: "pos", value: "adj." }],
+        top_text: [
+          { tag: "if-gs", value: " (", path: "top-g/if-gs" },
+          { tag: "if-g", value: "comparative ", path: "top-g/if-gs/if-g" },
+          { tag: "if", value: "rounder", path: "top-g/if-gs/if-g/if" },
+          { tag: "if-g", value: ", superlative ", path: "top-g/if-gs/if-g" },
+          { tag: "if", value: "roundest", path: "top-g/if-gs/if-g/if" },
+          { tag: "if-gs", value: ")", path: "top-g/if-gs" },
+        ],
+      },
+      sngs_data: [],
+    },
+  });
+
+  assert.deepEqual(entry.inflectedForms.map((form) => ({
+    text: form.text,
+    introducer: form.introducer?.text,
+  })), [
+    { text: "rounder", introducer: "comparative" },
+    { text: "roundest", introducer: "superlative" },
+  ]);
+  assert.deepEqual(entry.inflectedForms[1]?.introducer?.raw, [
+    { tag: "if-g", value: ", superlative ", path: "top-g/if-gs/if-g" },
+  ]);
+});
+
 test("preserves same-spelling inflections inside one source group while deduplicating repeated groups", () => {
   const inflectionGroup = [
     { tag: "if-gs", value: " (", path: "top-g/if-gs" },
@@ -273,6 +307,7 @@ test("preserves same-spelling inflections inside one source group while deduplic
   });
 
   assert.deepEqual(entry.inflectedForms.map((form) => form.text), ["brought", "brought"]);
+  assert.deepEqual(entry.variants, []);
   assert.deepEqual(entry.inflectedForms.map((form) => form.pronunciations?.map((pronunciation) => ({
     region: pronunciation.region,
     transcription: pronunciation.transcription,
@@ -390,6 +425,264 @@ test("structures alternative forms and their audio without treating transport to
   ]);
 });
 
+test("preserves unwrapped entry variants with every attached regional pronunciation", () => {
+  const entry = adapter.parse({
+    entryId: "entry-vanuatuan",
+    headword: "Vanuatuan",
+    sourceVersion: "2026.08",
+    body: {
+      top_data: {
+        h: [{ tag: "h", value: "Vanuatuan" }],
+        pos: [
+          { tag: "pos", value: "noun" },
+          { tag: "pos", value: ", adj." },
+        ],
+        "v-gs": [
+          { tag: "v", value: "ni-Vanuatu" },
+          { tag: "pron-g", value: "BrE" },
+          { tag: "form", value: "" },
+          { tag: "phon", value: "ni ˌvænuːˈɑːtuː" },
+          { tag: "audio", value: "ni_vanuatu#1_gb_1" },
+          { tag: "pron-g", value: "NAmE" },
+          { tag: "form", value: "" },
+          { tag: "phon", value: "ni ˌvænuˈɑːtuː" },
+          { tag: "audio", value: "ni_vanuatu#1_us_1" },
+        ],
+      },
+      sngs_data: {
+        sense_groups: [
+          { pos: [{ tag: "pos", value: "noun" }] },
+          { pos: [{ tag: "pos", value: "adj." }] },
+        ],
+      },
+    },
+  });
+
+  assert.deepEqual(entry.partsOfSpeech.map((part) => part.text), ["noun", "adj."]);
+  assert.deepEqual(entry.variants?.map((form) => ({
+    text: form.text,
+    pronunciations: form.pronunciations?.map((pronunciation) => ({
+      region: pronunciation.region,
+      transcription: pronunciation.transcription,
+      audioKey: pronunciation.audioKey,
+    })),
+  })), [{
+    text: "ni-Vanuatu",
+    pronunciations: [
+      {
+        region: "BrE",
+        transcription: "ni ˌvænuːˈɑːtuː",
+        audioKey: "ni_vanuatu#1_gb_1",
+      },
+      {
+        region: "NAmE",
+        transcription: "ni ˌvænuˈɑːtuː",
+        audioKey: "ni_vanuatu#1_us_1",
+      },
+    ],
+  }]);
+});
+
+test("preserves unwrapped sense variants and pronunciation embedded in a definition", () => {
+  const entry = adapter.parse({
+    entryId: "entry-break-point",
+    headword: "break point",
+    sourceVersion: "2026.08",
+    body: {
+      top_data: {
+        h: [{ tag: "h", value: "break point" }],
+        pos: [{ tag: "pos", value: "noun" }],
+      },
+      sngs_data: [{
+        sngs_data: {
+          sn_g: [{
+            id: "sense-break-point",
+            sng_text: [
+              { tag: "v-gs", value: " ", path: "h-g/sn-gs/sn-g/v-gs" },
+              { tag: "v", value: "ˈbreak point", path: "h-g/sn-gs/sn-g/v-gs/v-g/v" },
+              { tag: "pron-g", value: "BrE", path: "h-g/sn-gs/sn-g/v-gs/v-g/pron-gs/pron-g" },
+              { tag: "phon", value: "ˈbreɪk pɔɪnt", path: "h-g/sn-gs/sn-g/v-gs/v-g/pron-gs/pron-g/phon" },
+              { tag: "audio", value: "break_point#1_gb_1", path: "h-g/sn-gs/sn-g/v-gs/v-g/pron-gs/pron-g/audio" },
+            ],
+            def_eng: [
+              { tag: "eng", value: "called the " },
+              { tag: "ve", value: "foremast", bold: 1 },
+              { tag: "eng", value: " " },
+              { tag: "pron-g", value: "BrE" },
+              { tag: "phon", value: "ˈfɔːmɑːst" },
+              { tag: "audio", value: "foremast#_gb_3" },
+              { tag: "eng", value: ")" },
+            ],
+            def_simp: [{ tag: "simp", value: "称为前桅" }],
+            x_gs: [],
+          }],
+        },
+      }],
+    },
+  });
+
+  const sense = entry.senses[0];
+  assert.deepEqual(sense?.variants?.map((form) => ({
+    text: form.text,
+    audio: form.pronunciations?.map((pronunciation) => pronunciation.audioKey),
+  })), [{
+    text: "ˈbreak point",
+    audio: ["break_point#1_gb_1"],
+  }]);
+  assert.equal(sense?.definition?.text.includes("foremast#_gb_3"), false);
+  assert.deepEqual(sense?.definitionSegments?.map((segment) => segment.kind), [
+    "text",
+    "pronunciations",
+    "text",
+  ]);
+  assert.deepEqual(
+    sense?.definitionSegments
+      ?.filter((segment) => segment.kind === "pronunciations")
+      .flatMap((segment) => segment.items.map((pronunciation) => pronunciation.audioKey)),
+    ["foremast#_gb_3"],
+  );
+});
+
+test("keeps unwrapped and parenthesized variants from the same explicit source field", () => {
+  const entry = adapter.parse({
+    entryId: "entry-oceanfront",
+    headword: "oceanfront",
+    sourceVersion: "2026.08",
+    body: {
+      top_data: {
+        h: [{ tag: "h", value: "oceanfront" }],
+        "v-gs": [
+          { tag: "v-gs", value: " ", path: "top-g/v-gs" },
+          { tag: "v", value: "often", path: "top-g/v-gs/v-g/v" },
+          { tag: "v", value: " the oceanfront", path: "top-g/v-gs/v-g/v" },
+          { tag: "label-g", value: " (", path: "top-g/label-g" },
+          { tag: "geo", value: "NAmE", path: "top-g/label-g/geo" },
+          { tag: "label-g", value: ") ", path: "top-g/label-g/geo" },
+          { tag: "v-gs", value: " (", path: "top-g/v-gs" },
+          { tag: "geo", value: "BrE", path: "top-g/v-gs/v-g/label-g/geo" },
+          { tag: "v", value: "seafront", path: "top-g/v-gs/v-g/v" },
+          { tag: "v-gs", value: ") ", path: "top-g/v-gs/v-g/v" },
+        ],
+      },
+      sngs_data: [],
+    },
+  });
+
+  assert.deepEqual(entry.variants?.map((form) => ({
+    text: form.text,
+    introducer: form.introducer?.text.trim(),
+    labels: form.labels?.map((label) => label.text),
+  })), [
+    { text: "the oceanfront", introducer: "often", labels: ["NAmE"] },
+    { text: "seafront", introducer: undefined, labels: ["BrE"] },
+  ]);
+});
+
+test("splits source-separated variants and keeps embedded top-text variants out of constructions", () => {
+  const entry = adapter.parse({
+    entryId: "entry-air-conditioning",
+    headword: "air conditioning",
+    sourceVersion: "2026.08",
+    body: {
+      top_data: {
+        h: [{ tag: "h", value: "air conditioning" }],
+        top_text: [
+          { tag: "v-gs", value: " ", path: "h-g/top-g/v-gs" },
+          { tag: "v", value: "air conditioning", path: "h-g/top-g/v-gs/v-g/v" },
+          { tag: "v-gs", value: " (", path: "h-g/top-g/v-gs" },
+          { tag: "v", value: "abbr. ", path: "h-g/top-g/v-gs/v-g/v" },
+          { tag: "v", value: " AC", path: "h-g/top-g/v-gs/v-g/v" },
+          { tag: "v-g", value: ", ", path: "h-g/top-g/v-gs/v-g" },
+          { tag: "v", value: "a/c", path: "h-g/top-g/v-gs/v-g/v" },
+          { tag: "v-gs", value: ") ", path: "h-g/top-g/v-gs/v-g/v" },
+        ],
+        "v-gs": [
+          { tag: "v-gs", value: " (", path: "h-g/top-g/v-gs" },
+          { tag: "v", value: "also ", path: "h-g/top-g/v-gs/v-g/v" },
+          { tag: "v", value: " air con", path: "h-g/top-g/v-gs/v-g/v" },
+          { tag: "v-gs", value: ") ", path: "h-g/top-g/v-gs/v-g/v" },
+        ],
+      },
+      sngs_data: [],
+    },
+  });
+
+  assert.deepEqual(entry.headwordPatterns?.map((pattern) => pattern.text.trim()), [
+    "air conditioning",
+  ]);
+  assert.deepEqual(entry.variants?.map((form) => ({
+    text: form.text,
+    introducer: form.introducer?.text.trim(),
+  })), [
+    { text: "AC", introducer: "abbr." },
+    { text: "a/c", introducer: undefined },
+    { text: "air con", introducer: "also" },
+  ]);
+});
+
+test("keeps comma-separated variant labels and pronunciations with the form they qualify", () => {
+  const entry = adapter.parse({
+    entryId: "entry-air-bed",
+    headword: "air bed",
+    sourceVersion: "2026.08",
+    body: {
+      top_data: {
+        h: [{ tag: "h", value: "air bed" }],
+        "v-gs": [
+          { tag: "v-gs", value: " (", path: "h-g/top-g/v-gs" },
+          { tag: "v", value: "also ", path: "h-g/top-g/v-gs/v-g/v" },
+          { tag: "v", value: " airbed", path: "h-g/top-g/v-gs/v-g/v" },
+          { tag: "geo", value: "BrE", path: "h-g/top-g/v-gs/v-g/label-g/geo" },
+          { tag: "v-g", value: ", ", path: "h-g/top-g/v-gs/v-g" },
+          { tag: "v", value: "air mattress", path: "h-g/top-g/v-gs/v-g/v" },
+          { tag: "geo", value: "NAmE", path: "h-g/top-g/v-gs/v-g/label-g/geo" },
+          { tag: "geo", value: ", BrE", path: "h-g/top-g/v-gs/v-g/label-g/geo" },
+          { tag: "pron-g", value: "NAmE", path: "h-g/top-g/v-gs/v-g/pron-gs/pron-g" },
+          { tag: "phon", value: "ˈeə mætrəs", path: "h-g/top-g/v-gs/v-g/pron-gs/pron-g/phon" },
+          { tag: "v-gs", value: ") ", path: "h-g/top-g/v-gs/v-g/pron-gs/pron-g/phon" },
+        ],
+      },
+      sngs_data: [],
+    },
+  });
+
+  assert.deepEqual(entry.variants?.map((form) => ({
+    text: form.text,
+    introducer: form.introducer?.text.trim(),
+    labels: form.labels?.map((label) => ({
+      text: label.text,
+      separatorBefore: label.separatorBefore,
+    })),
+    presentation: form.presentation?.map((item) =>
+      item.kind === "target" || item.kind === "pronunciation"
+        ? item.kind
+        : `${item.kind}:${item.value.text.trim()}`,
+    ),
+    pronunciations: form.pronunciations?.map((pronunciation) => ({
+      region: pronunciation.region,
+      transcription: pronunciation.transcription,
+    })),
+  })), [
+    {
+      text: "airbed",
+      introducer: "also",
+      labels: [{ text: "BrE", separatorBefore: undefined }],
+      presentation: ["introducer:also", "target", "label:BrE"],
+      pronunciations: [],
+    },
+    {
+      text: "air mattress",
+      introducer: undefined,
+      labels: [
+        { text: "NAmE", separatorBefore: undefined },
+        { text: "BrE", separatorBefore: "," },
+      ],
+      presentation: ["target", "label:NAmE", "label:BrE", "pronunciation"],
+      pronunciations: [{ region: "NAmE", transcription: "ˈeə mætrəs" }],
+    },
+  ]);
+});
+
 test("projects headword patterns and inline use blocks without parenthetical label leakage", () => {
   const entry = adapter.parse({
     entryId: "entry-following",
@@ -448,6 +741,127 @@ test("projects headword patterns and inline use blocks without parenthetical lab
     " (used with either a singular or a plural verb 动词可用单数或复数) ",
   );
   assert.deepEqual(sense.usage, []);
+});
+
+test("separates sense-scoped variants from grammatical constructions", () => {
+  const entry = adapter.parse({
+    entryId: "entry-abide",
+    headword: "abide",
+    sourceVersion: "2026.08",
+    body: {
+      top_data: { h: [{ tag: "h", value: "abide" }] },
+      sngs_data: {
+        sn_g: [{
+          id: "abide-sense",
+          sng_text: [
+            { tag: "sn-g", value: "2." },
+            { tag: "v-gs", value: " (", path: "sn-g/v-gs" },
+            { tag: "v", value: "also ", path: "sn-g/v-gs/v-g/v" },
+            { tag: "reg", value: "old use", path: "sn-g/v-gs/v-g/label-g/reg" },
+            { tag: "v", value: "bide", path: "sn-g/v-gs/v-g/v" },
+            { tag: "v-gs", value: ") ", path: "sn-g/v-gs" },
+            { tag: "cf", value: "+ adv./prep.", path: "sn-g/cf" },
+          ],
+          def_eng: [{ tag: "eng", value: "to stay or live somewhere" }],
+          def_simp: [{ tag: "simp", value: "停留；居住" }],
+        }],
+      },
+    },
+  });
+
+  const sense = entry.senses[0];
+  assert.deepEqual(sense?.patterns?.map((pattern) => pattern.text.trim()), [
+    "+ adv./prep.",
+  ]);
+  assert.deepEqual(sense?.variants?.map((variant) => ({
+    text: variant.text,
+    presentation: variant.presentation?.map((item) =>
+      item.kind === "target" || item.kind === "pronunciation"
+        ? { kind: item.kind }
+        : { kind: item.kind, text: item.value.text.trim() },
+    ),
+  })), [{
+    text: "bide",
+    presentation: [
+      { kind: "introducer", text: "also" },
+      { kind: "label", text: "old use" },
+      { kind: "target" },
+    ],
+  }]);
+});
+
+test("keeps direct sense pronunciations separate from variant pronunciations", () => {
+  const entry = adapter.parse({
+    entryId: "entry-old-money",
+    headword: "old money",
+    sourceVersion: "2026.08",
+    body: {
+      top_data: { h: [{ tag: "h", value: "old money" }] },
+      sngs_data: {
+        sn_g: [{
+          id: "old-money-sense",
+          sng_text: [
+            { tag: "sn-g", value: "", path: "h-g/sn-gs/sn-g" },
+            { tag: "pron-g", value: "BrE", path: "h-g/sn-gs/sn-g/pron-gs/pron-g" },
+            { tag: "phon", value: "\u02cc\u0259\u028ald \u02c8m\u028cni", path: "h-g/sn-gs/sn-g/pron-gs/pron-g/phon" },
+            { tag: "audio", value: "old_money#1_gb_1", path: "h-g/sn-gs/sn-g/pron-gs/pron-g/audio" },
+            { tag: "v-gs", value: " (", path: "h-g/sn-gs/sn-g/v-gs" },
+            { tag: "v", value: "also", path: "h-g/sn-gs/sn-g/v-gs/v-g/v" },
+            { tag: "v", value: "old wealth", path: "h-g/sn-gs/sn-g/v-gs/v-g/v" },
+            { tag: "pron-g", value: "NAmE", path: "h-g/sn-gs/sn-g/v-gs/v-g/pron-gs/pron-g" },
+            { tag: "audio", value: "old_wealth#1_us_1", path: "h-g/sn-gs/sn-g/v-gs/v-g/pron-gs/pron-g/audio" },
+            { tag: "v-gs", value: ")", path: "h-g/sn-gs/sn-g/v-gs" },
+          ],
+          def_eng: [{ tag: "eng", value: "wealth inherited through a family" }],
+        }],
+      },
+    },
+  });
+
+  const sense = entry.senses[0];
+  assert.deepEqual(sense?.pronunciations?.map((pronunciation) => ({
+    region: pronunciation.region,
+    transcription: pronunciation.transcription,
+    audioKey: pronunciation.audioKey,
+  })), [{
+    region: "BrE",
+    transcription: "\u02cc\u0259\u028ald \u02c8m\u028cni",
+    audioKey: "old_money#1_gb_1",
+  }]);
+  assert.deepEqual(sense?.variants?.[0]?.pronunciations?.map((pronunciation) =>
+    pronunciation.audioKey
+  ), ["old_wealth#1_us_1"]);
+});
+
+test("retains source separators between alternative construction patterns", () => {
+  const entry = adapter.parse({
+    entryId: "entry-absolutely",
+    headword: "absolutely",
+    sourceVersion: "2026.08",
+    body: {
+      top_data: { h: [{ tag: "h", value: "absolutely" }] },
+      sngs_data: {
+        sn_g: [{
+          id: "absolutely-sense",
+          sng_text: [
+            { tag: "sn-g", value: "1.[CEFR_B1_S]" },
+            { tag: "v-gs", value: " ", path: "h-g/sn-gs/sn-g/v-gs" },
+            { tag: "v", value: "absolutely no…", path: "h-g/sn-gs/sn-g/v-gs/v-g/v" },
+            { tag: "v-g", value: ", ", path: "h-g/sn-gs/sn-g/v-gs/v-g" },
+            { tag: "v", value: "absolutely nothing", path: "h-g/sn-gs/sn-g/v-gs/v-g/v" },
+          ],
+          def_eng: [{ tag: "eng", value: "used for emphasis" }],
+          def_simp: [{ tag: "simp", value: "用于强调" }],
+        }],
+      },
+    },
+  });
+
+  assert.deepEqual(entry.senses[0]?.patterns?.map((pattern) => pattern.text.trim()), [
+    "absolutely no\u2026,",
+    "absolutely nothing",
+  ]);
+  assert.equal(entry.senses[0]?.patterns?.[0]?.tokens.at(-1)?.tag, "v-g");
 });
 
 test("preserves bilingual display qualifiers that precede sense definitions", () => {
@@ -529,6 +943,127 @@ test("combines split inflection tokens once and never exposes their source fragm
   );
 });
 
+test("keeps structural separators out of POS text and preserves scoped usage and inflection constraints", () => {
+  const entry = adapter.parse({
+    entryId: "entry-structured-inflections",
+    headword: "slow",
+    sourceVersion: "2026.08",
+    body: {
+      top_data: {
+        h: [{ tag: "h", value: "slow" }],
+        pos: [
+          { tag: "pos", value: "adj." },
+          { tag: "pos", value: ", adv." },
+        ],
+        top_text: [
+          { tag: "use", value: " (", path: "h-g/top-g/use" },
+          { tag: "eng", value: "not usually used before a noun", path: "h-g/top-g/use/eng" },
+          { tag: "use_end", value: ") ", path: "h-g/top-g/use/eng" },
+          { tag: "if-gs", value: " (", path: "h-g/top-g/if-gs" },
+          { tag: "if-g", value: "comparative ", path: "h-g/top-g/if-gs/if-g" },
+          { tag: "if", value: "slo", path: "h-g/top-g/if-gs/if-g/if" },
+          { tag: "ptl", value: "w", path: "h-g/top-g/if-gs/if-g/if/ptl" },
+          { tag: "if", value: "er", path: "h-g/top-g/if-gs/if-g/if/ptl" },
+          { tag: "if-g", value: ", no superlative", path: "h-g/top-g/if-gs/if-g" },
+          { tag: "if-gs", value: ") ", path: "h-g/top-g/if-gs/if-g/nil" },
+        ],
+      },
+      sngs_data: [{
+        sngs_data: {
+          sn_g: [{
+            id: "sense-slow",
+            sng_text: [
+              { tag: "sn-g", value: "1." },
+              { tag: "if-gs", value: " (", path: "h-g/sn-gs/sn-g/if-gs" },
+              { tag: "if-g", value: "plural ", path: "h-g/sn-gs/sn-g/if-gs/if-g" },
+              { tag: "if", value: "exam", path: "h-g/sn-gs/sn-g/if-gs/if-g/if" },
+              { tag: "ptl", value: "ples", path: "h-g/sn-gs/sn-g/if-gs/if-g/if/ptl" },
+              { tag: "if-gs", value: ") ", path: "h-g/sn-gs/sn-g/if-gs/if-g/nil" },
+            ],
+            def_eng: [{ tag: "eng", value: "moving at a low speed" }],
+            def_simp: [{ tag: "simp", value: "缓慢的" }],
+          }],
+        },
+      }],
+    },
+  });
+
+  assert.deepEqual(entry.partsOfSpeech.map((part) => part.text), ["adj.", "adv."]);
+  assert.equal(entry.partsOfSpeech[1]?.tokens[0]?.text, ", adv.");
+  assert.deepEqual(entry.headwordUsage?.map((usage) => usage.text.trim()), [
+    "(not usually used before a noun)",
+  ]);
+  assert.deepEqual(entry.inflectedForms.map((form) => ({
+    kind: form.kind,
+    introducer: form.introducer?.text,
+    text: form.text,
+  })), [
+    { kind: "inflection", introducer: "comparative", text: "slower" },
+    { kind: "inflection-constraint", introducer: undefined, text: "no superlative" },
+  ]);
+  assert.deepEqual(entry.senses[0]?.inflectedForms?.map((form) => ({
+    kind: form.kind,
+    introducer: form.introducer?.text,
+    text: form.text,
+  })), [
+    { kind: "inflection", introducer: "plural", text: "examples" },
+  ]);
+});
+
+test("retains derivative-level usage and inflections at their original owners", () => {
+  const entry = adapter.parse({
+    entryId: "entry-derived-inflections",
+    headword: "airdrop",
+    sourceVersion: "2026.08",
+    body: {
+      top_data: { h: [{ tag: "h", value: "airdrop" }] },
+      dr_gs: [{
+        id: "derivative-airdrop",
+        top_g: {
+          h: [{ tag: "dr", value: "air·drop" }],
+          top_text: [
+            { tag: "use", value: " (", path: "h-g/dr-gs/dr-g/top-g/use" },
+            { tag: "eng", value: "also used as a noun", path: "h-g/dr-gs/dr-g/top-g/use/eng" },
+            { tag: "use_end", value: ") ", path: "h-g/dr-gs/dr-g/top-g/use/eng" },
+            { tag: "if-gs", value: " (", path: "h-g/dr-gs/dr-g/top-g/if-gs" },
+            { tag: "if", value: "airdropping", path: "h-g/dr-gs/dr-g/top-g/if-gs/if-g/if" },
+            { tag: "if-g", value: ", ", path: "h-g/dr-gs/dr-g/top-g/if-gs/if-g" },
+            { tag: "if", value: "airdropped", path: "h-g/dr-gs/dr-g/top-g/if-gs/if-g/if" },
+            { tag: "if-gs", value: ") ", path: "h-g/dr-gs/dr-g/top-g/if-gs/if-g/nil" },
+          ],
+        },
+        sn_gs: {
+          sn_g: [{
+            id: "derivative-airdrop-sense",
+            sng_text: [
+              { tag: "sn-g", value: "1." },
+              { tag: "if-gs", value: " (", path: "h-g/dr-gs/dr-g/sn-gs/sn-g/if-gs" },
+              { tag: "if-g", value: "plural ", path: "h-g/dr-gs/dr-g/sn-gs/sn-g/if-gs/if-g" },
+              { tag: "if", value: "airdrops", path: "h-g/dr-gs/dr-g/sn-gs/sn-g/if-gs/if-g/if" },
+              { tag: "if-gs", value: ") ", path: "h-g/dr-gs/dr-g/sn-gs/sn-g/if-gs/if-g/nil" },
+            ],
+            def_eng: [{ tag: "eng", value: "a delivery made by air" }],
+          }],
+        },
+      }],
+      sngs_data: [],
+    },
+  });
+
+  const derivative = entry.derivedForms[0];
+  assert.deepEqual(derivative?.usage?.map((usage) => usage.text.trim()), [
+    "(also used as a noun)",
+  ]);
+  assert.deepEqual(derivative?.inflectedForms?.map((form) => form.text), [
+    "airdropping",
+    "airdropped",
+  ]);
+  assert.deepEqual(derivative?.senses?.[0]?.inflectedForms?.map((form) => ({
+    introducer: form.introducer?.text,
+    text: form.text,
+  })), [{ introducer: "plural", text: "airdrops" }]);
+});
+
 test("adapts structured derivatives with pronunciation, labels, senses, and examples", () => {
   const entry = adapter.parse({
     entryId: "entry-swift",
@@ -602,6 +1137,63 @@ test("adapts structured derivatives with pronunciation, labels, senses, and exam
     ["uncountable", "gram"],
   ]);
   assert.equal(entry.derivedForms.some((form) => form.text === "dr_gs"), false);
+});
+
+test("preserves derivative variants, qualifier order, and variant pronunciation", () => {
+  const entry = adapter.parse({
+    entryId: "entry-anarchy",
+    headword: "anarchy",
+    sourceVersion: "2026.08",
+    body: {
+      top_data: { h: [{ tag: "h", value: "anarchy" }] },
+      dr_gs: [{
+        id: "derivative-anarchic",
+        top_g: {
+          h: [{ tag: "dr", value: "an·arch·ic" }],
+          pos: [{ tag: "pos", value: "adj." }],
+          prongs: [],
+          top_text: [
+            { tag: "v-gs", value: " (", path: "top-g/v-gs" },
+            { tag: "v-g", value: "also ", path: "top-g/v-gs/v-g" },
+            { tag: "reg", value: "less frequent", path: "top-g/v-gs/v-g/label-g/reg" },
+            { tag: "v", value: "anarchical", path: "top-g/v-gs/v-g/v" },
+            { tag: "pron-g", value: "BrE", path: "top-g/v-gs/v-g/pron-gs/pron-g" },
+            { tag: "phon", value: "əˈnɑːkɪkl", path: "top-g/v-gs/v-g/pron-gs/pron-g/phon" },
+            { tag: "audio", value: "anarchical#_gb_1", path: "top-g/v-gs/v-g/pron-gs/pron-g/audio" },
+            { tag: "v-gs", value: ") ", path: "top-g/v-gs" },
+          ],
+        },
+        sn_gs: { sn_g: [] },
+      }],
+    },
+  });
+
+  const derivative = entry.derivedForms[0];
+  const variant = derivative?.variants?.[0];
+  assert.deepEqual(derivative?.labels, []);
+  assert.equal(variant?.text, "anarchical");
+  assert.deepEqual(variant?.presentation?.map((item) =>
+    item.kind === "target" || item.kind === "pronunciation"
+      ? { kind: item.kind }
+      : { kind: item.kind, text: item.value.text.trim() },
+  ), [
+    { kind: "introducer", text: "also" },
+    { kind: "label", text: "less frequent" },
+    { kind: "target" },
+    { kind: "pronunciation" },
+  ]);
+  assert.deepEqual(variant?.labels?.map((label) => [label.kind, label.text]), [
+    ["reg", "less frequent"],
+  ]);
+  assert.deepEqual(variant?.pronunciations?.map((pronunciation) => ({
+    region: pronunciation.region,
+    transcription: pronunciation.transcription,
+    audioKey: pronunciation.audioKey,
+  })), [{
+    region: "BrE",
+    transcription: "əˈnɑːkɪkl",
+    audioKey: "anarchical#_gb_1",
+  }]);
 });
 
 test("maps word-family forms and structured wordfinder references without duplicate title text", () => {
@@ -905,6 +1497,89 @@ test("retains grammar and usage boxes without flattening their bodies", () => {
   });
 });
 
+test("preserves ordered pronunciation runs inside a top-level help note", () => {
+  const entry = adapter.parse({
+    entryId: "entry-abide-help",
+    headword: "abide",
+    sourceVersion: "2026.08",
+    body: {
+      top_data: {
+        h: [{ tag: "h", value: "abide" }],
+        top_un: [
+          { tag: "un", value: "[HELP]" },
+          { tag: "eng", value: " In sense 2 " },
+          { tag: "eb", value: "abode" },
+          { tag: "pron-g", value: "BrE" },
+          { tag: "form", value: "" },
+          { tag: "phon", value: "əˈbəʊd" },
+          { tag: "audio", value: "abode#_gb_1" },
+          { tag: "pron-g", value: "NAmE" },
+          { tag: "form", value: "" },
+          { tag: "phon", value: "əˈbəʊd" },
+          { tag: "audio", value: "abode#_us_1" },
+          { tag: "pron-gs", value: "/" },
+          { tag: "eng", value: "is also used for the past tense and past participle." },
+          { tag: "simp", value: " 作第 2 义时过去式和过去分词也用 abode。" },
+          { tag: "un_end", value: "" },
+        ],
+      },
+      sngs_data: [],
+    },
+  });
+
+  const box = entry.grammarUsageBoxes[0];
+  assert.equal(box?.type, "HELP 语法说明");
+  assert.equal(box?.blocks[0]?.kind, "paragraph");
+  if (box?.blocks[0]?.kind !== "paragraph") {
+    assert.fail("expected a paragraph help box");
+  }
+  assert.equal(box.blocks[0].layout, "flow");
+  assert.deepEqual(box.blocks[0].segments.map((segment) => segment.kind), [
+    "text",
+    "pronunciations",
+    "text",
+  ]);
+  assert.equal(
+    box.blocks[0].segments[0]?.kind === "text"
+      ? box.blocks[0].segments[0].value.text.trim()
+      : undefined,
+    "In sense 2 abode",
+  );
+  assert.deepEqual(
+    box.blocks[0].segments[1]?.kind === "pronunciations"
+      ? box.blocks[0].segments[1].items.map((pronunciation) => pronunciation.audioKey)
+      : [],
+    ["abode#_gb_1", "abode#_us_1"],
+  );
+  assert.doesNotMatch(box.blocks[0].value.text, /\[HELP\]|abode#_(?:gb|us)_1/);
+});
+
+test("maps top-level origin notes without exposing their transport marker", () => {
+  const entry = adapter.parse({
+    entryId: "entry-origin-note",
+    headword: "origin",
+    sourceVersion: "2026.08",
+    body: {
+      top_data: {
+        h: [{ tag: "h", value: "origin" }],
+        top_un: [
+          { tag: "un", value: "[ORIGIN]" },
+          { tag: "eng", value: "From Latin." },
+        ],
+      },
+      sngs_data: [],
+    },
+  });
+
+  assert.equal(entry.grammarUsageBoxes[0]?.type, "ORIGIN 词源说明");
+  assert.doesNotMatch(
+    entry.grammarUsageBoxes[0]?.blocks[0]?.kind === "paragraph"
+      ? entry.grammarUsageBoxes[0].blocks[0].value.text
+      : "",
+    /\[ORIGIN\]/,
+  );
+});
+
 test("keeps illustrations attached to their own semantic level", () => {
   const entry = adapter.parse({
     entryId: "entry-abdomen",
@@ -1157,6 +1832,40 @@ test("classifies every observed cross-reference label and normalizes display lab
   assert.equal(entry.crossReferences[2]?.qualifier, "(5)");
 });
 
+test("folds source comma groups into the preceding cross-reference relation", () => {
+  const entry = adapter.parse({
+    entryId: "entry-capitulate",
+    headword: "capitulate",
+    sourceVersion: "2026.08",
+    body: {
+      top_data: { h: [{ tag: "h", value: "capitulate" }] },
+      xrgs: [
+        {
+          xrgs_text: "[SYN]",
+          xrg: [{ xh: "give in (to sb/sth)", word_id: "entry-give-in" }],
+        },
+        {
+          xrgs_text: ", ",
+          xrg: [{ xh: "yield", word_id: "entry-yield" }],
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(entry.crossReferences.map((reference) => ({
+    kind: reference.kind,
+    label: reference.label,
+    text: reference.text,
+  })), [
+    { kind: "synonym", label: "[SYN]", text: "give in (to sb/sth)" },
+    { kind: "synonym", label: "[SYN]", text: "yield" },
+  ]);
+  assert.deepEqual(entry.crossReferences[1]?.raw, {
+    xrgs_text: ", ",
+    xrg: [{ xh: "yield", word_id: "entry-yield" }],
+  });
+});
+
 test("uses first non-empty semantic candidates without dropping reference targets", () => {
   const entry = adapter.parse({
     entryId: "entry-empty-candidates",
@@ -1337,9 +2046,10 @@ test("preserves POS context, sense nesting, source order, and empty sense fields
   });
 
   assert.deepEqual(entry.partsOfSpeech.map((part) => part.text), [
-    " Verb ",
+    "Verb",
     "Noun",
   ]);
+  assert.equal(entry.partsOfSpeech[0]?.tokens[0]?.text, " Verb ");
   assert.equal(entry.partsOfSpeech[0]?.tokens[0]?.raw.retained_pos_property, true);
   assert.deepEqual(entry.senses.map((sense) => sense.id), [
     "verb-parent",
