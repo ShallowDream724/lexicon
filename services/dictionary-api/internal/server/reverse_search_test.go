@@ -59,6 +59,52 @@ func TestChineseSearchIsEmptyWhenOptionalSidecarIsAbsent(t *testing.T) {
 	}
 }
 
+func TestChineseSearchReturnsIncrementalResultPages(t *testing.T) {
+	service := newFixtureServiceWithReverseSearch(t)
+	firstResponse := get(t, service, "/api/v1/search?q=%E9%87%8A%E4%B9%89&limit=1")
+	if firstResponse.Code != http.StatusOK {
+		t.Fatalf("first page: %d %s", firstResponse.Code, firstResponse.Body.String())
+	}
+	var first struct {
+		Items []struct {
+			ID string `json:"id"`
+		} `json:"items"`
+		NextOffset *int `json:"nextOffset"`
+	}
+	if err := json.Unmarshal(firstResponse.Body.Bytes(), &first); err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Items) != 1 || first.NextOffset == nil || *first.NextOffset != 1 {
+		t.Fatalf("unexpected first page: %#v", first)
+	}
+
+	secondResponse := get(t, service, "/api/v1/search?q=%E9%87%8A%E4%B9%89&limit=1&offset=1")
+	var second struct {
+		Items []struct {
+			ID string `json:"id"`
+		} `json:"items"`
+		NextOffset *int `json:"nextOffset"`
+	}
+	if err := json.Unmarshal(secondResponse.Body.Bytes(), &second); err != nil {
+		t.Fatal(err)
+	}
+	if secondResponse.Code != http.StatusOK || len(second.Items) != 1 || second.NextOffset != nil || second.Items[0].ID == first.Items[0].ID {
+		t.Fatalf("unexpected second page: %d %#v", secondResponse.Code, second)
+	}
+}
+
+func TestChineseSearchRejectsUnboundedWindows(t *testing.T) {
+	service := newFixtureServiceWithReverseSearch(t)
+	for _, target := range []string{
+		"/api/v1/search?q=%E9%87%8A%E4%B9%89&limit=257",
+		"/api/v1/search?q=%E9%87%8A%E4%B9%89&offset=512",
+	} {
+		if response := get(t, service, target); response.Code != http.StatusBadRequest {
+			t.Errorf("%s: got %d", target, response.Code)
+		}
+	}
+}
+
 func newFixtureServiceWithReverseSearch(t testing.TB) *server.Service {
 	t.Helper()
 	directory := t.TempDir()
@@ -79,7 +125,7 @@ func newFixtureServiceWithReverseSearch(t testing.TB) *server.Service {
 		},
 		{
 			DictionaryID: "fixture", EntryID: "one", Scope: reversesearch.ScopePhrase,
-			Headword: "Alpha able", EnglishText: "useful phrase", ChineseText: "另一个短语",
+			Headword: "Alpha able", EnglishText: "useful phrase", ChineseText: "另一个释义",
 			Location: reversesearch.Location{Section: reversesearch.SectionIdioms, OwnerID: "phrase-one", Path: []string{"idioms", "0"}}, Weight: 100,
 		},
 	}

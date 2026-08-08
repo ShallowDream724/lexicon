@@ -1,3 +1,5 @@
+import { ChevronDown } from "lucide-react";
+
 import type {
   DictionarySearchMatch,
   SearchTarget,
@@ -9,7 +11,12 @@ type SearchResultsProps = {
   items: readonly SearchTarget[];
   pending: boolean;
   error?: string | null;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  loadMoreError?: string | null;
+  nextResultCount?: number;
   onSelect: (target: SearchTarget, match?: DictionarySearchMatch) => void;
+  onLoadMore?: () => void;
   onRetry?: () => void;
 };
 
@@ -26,7 +33,12 @@ export function SearchResults({
   items,
   pending,
   error,
+  hasMore = false,
+  loadingMore = false,
+  loadMoreError,
+  nextResultCount,
   onSelect,
+  onLoadMore,
   onRetry,
 }: SearchResultsProps) {
   const reverseLookup = isChineseSearchQuery(query);
@@ -100,6 +112,16 @@ export function SearchResults({
 
       {!pending && !error && !items.length ? (
         <p className="search-results-empty">没有找到与“{query}”匹配的词条</p>
+      ) : null}
+
+      {!pending && !error && hasMore && onLoadMore ? (
+        <div className="search-results-more">
+          {loadMoreError ? <p role="alert">{loadMoreError}</p> : null}
+          <button disabled={loadingMore} type="button" onClick={onLoadMore}>
+            <span>{loadingMore ? "正在加载" : nextResultCount ? `继续显示至 ${nextResultCount} 条` : "显示更多结果"}</span>
+            <ChevronDown aria-hidden="true" />
+          </button>
+        </div>
       ) : null}
     </section>
   );

@@ -39,3 +39,18 @@ test("renders grouped Chinese evidence without repeating the generic preview", (
   assert.doesNotMatch(html, /generic-preview-should-not-repeat/);
   assert.equal((html.match(/<button/g) ?? []).length, 2);
 });
+
+test("renders one bounded continuation control for incremental Chinese results", () => {
+  const html = renderToStaticMarkup(createElement(SearchResults, {
+    query: "休息",
+    items: [],
+    pending: false,
+    hasMore: true,
+    nextResultCount: 64,
+    onLoadMore: () => undefined,
+    onSelect: () => undefined,
+  }));
+
+  assert.match(html, /继续显示至 64 条/);
+  assert.equal((html.match(/<button/g) ?? []).length, 1);
+});

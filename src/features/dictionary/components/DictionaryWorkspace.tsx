@@ -13,6 +13,7 @@ import {
   dictionaryClient,
   type SearchTarget,
 } from "../../../lib/dictionary-client/client";
+import { searchTargetKey } from "../../../lib/dictionary-client/search-target";
 import {
   learningData,
   type FavoriteRecord,
@@ -23,6 +24,7 @@ import { demoEntry } from "../demo-entry";
 import { entryPartIndexFor, projectEntryPart } from "../entry-sections";
 import {
   fallbackSearchQueries,
+  isChineseSearchQuery,
   normalizeSearchQuery,
   resolveSearchMatches,
 } from "../search-matches";
@@ -59,14 +61,27 @@ type SearchResultsState = {
   items: SearchTarget[];
   pending: boolean;
   error: string | null;
+  nextOffset: number | null;
+  loadingMore: boolean;
+  loadMoreError: string | null;
   articleTarget?: EtymologyRoute;
 };
+
+const initialReverseResultCount = 32;
+const maximumReverseResultCount = 512;
+
+function nextReverseResultCount(offset: number): number {
+  return Math.min(Math.max(offset, initialReverseResultCount) * 2, maximumReverseResultCount);
+}
 
 const emptySearchResults: SearchResultsState = {
   query: "",
   items: [],
   pending: false,
   error: null,
+  nextOffset: null,
+  loadingMore: false,
+  loadMoreError: null,
 };
 
 function updateRoute(url: string, mode: "push" | "replace"): void {
@@ -109,7 +124,15 @@ export function DictionaryWorkspace({
   );
   const [searchResults, setSearchResults] = useState<SearchResultsState>(
     initialRoute.kind === "query"
-      ? { query: initialRoute.query, items: [], pending: true, error: null }
+      ? {
+          query: initialRoute.query,
+          items: [],
+          pending: true,
+          error: null,
+          nextOffset: null,
+          loadingMore: false,
+          loadMoreError: null,
+        }
       : emptySearchResults,
   );
   const [suggestions, setSuggestions] = useState<SearchTarget[]>([]);
@@ -133,6 +156,7 @@ export function DictionaryWorkspace({
   const wordPageRef = useRef<HTMLElement>(null);
   const suggestionRequest = useRef<AbortController | null>(null);
   const submittedSearchRequest = useRef<AbortController | null>(null);
+  const resultPageRequest = useRef<AbortController | null>(null);
   const submittedSearchQuery = useRef<string | null>(null);
   const entryRequest = useRef<AbortController | null>(null);
   const etymologyNavigationRequest = useRef<AbortController | null>(null);
@@ -186,6 +210,8 @@ export function DictionaryWorkspace({
       etymologyNavigationRequest.current = null;
       submittedSearchRequest.current?.abort();
       submittedSearchRequest.current = null;
+      resultPageRequest.current?.abort();
+      resultPageRequest.current = null;
       entryRequest.current?.abort();
       const controller = new AbortController();
       entryRequest.current = controller;
@@ -274,6 +300,8 @@ export function DictionaryWorkspace({
       etymologyNavigationRequest.current = null;
       submittedSearchRequest.current?.abort();
       submittedSearchRequest.current = null;
+      resultPageRequest.current?.abort();
+      resultPageRequest.current = null;
       entryRequest.current?.abort();
       entryRequest.current = null;
       setEtymology(nextEtymology);
@@ -334,6 +362,8 @@ export function DictionaryWorkspace({
     suggestionRequest.current = null;
     submittedSearchRequest.current?.abort();
     submittedSearchRequest.current = null;
+    resultPageRequest.current?.abort();
+    resultPageRequest.current = null;
     submittedSearchQuery.current = null;
     entryRequest.current?.abort();
     entryRequest.current = null;
@@ -392,6 +422,8 @@ export function DictionaryWorkspace({
       etymologyNavigationRequest.current?.abort();
       etymologyNavigationRequest.current = null;
       submittedSearchRequest.current?.abort();
+      resultPageRequest.current?.abort();
+      resultPageRequest.current = null;
       entryRequest.current?.abort();
       entryRequest.current = null;
       const controller = new AbortController();
@@ -413,18 +445,30 @@ export function DictionaryWorkspace({
         items: [],
         pending: true,
         error: null,
+        nextOffset: null,
+        loadingMore: false,
+        loadMoreError: null,
       });
 
       try {
-        const primaryItems = await dictionaryClient.search(requestedQuery, {
-          limit: 20,
-          signal: controller.signal,
-        });
+        const reverseLookup = isChineseSearchQuery(requestedQuery);
+        const primaryPage = reverseLookup
+          ? await dictionaryClient.searchPage(requestedQuery, {
+              limit: initialReverseResultCount,
+              signal: controller.signal,
+            })
+          : {
+              items: await dictionaryClient.search(requestedQuery, {
+                limit: 20,
+                signal: controller.signal,
+              }),
+              nextOffset: null,
+            };
         if (submittedSearchRequest.current !== controller || controller.signal.aborted) {
           return null;
         }
 
-        let resolution = resolveSearchMatches(requestedQuery, primaryItems);
+        let resolution = resolveSearchMatches(requestedQuery, primaryPage.items);
         if (resolution.kind === "candidates" && resolution.items.length === 0) {
           for (const fallbackQuery of fallbackSearchQueries(requestedQuery)) {
             const fallbackItems = await dictionaryClient.search(fallbackQuery, {
@@ -454,6 +498,9 @@ export function DictionaryWorkspace({
           items: resolution.items,
           pending: false,
           error: null,
+          nextOffset: reverseLookup ? primaryPage.nextOffset : null,
+          loadingMore: false,
+          loadMoreError: null,
           articleTarget: options.targetArticleId
             ? { term: requestedQuery, articleId: options.targetArticleId }
             : undefined,
@@ -480,6 +527,9 @@ export function DictionaryWorkspace({
           items: [],
           pending: false,
           error: "词典服务暂不可用",
+          nextOffset: null,
+          loadingMore: false,
+          loadMoreError: null,
         });
         setView("search-results");
         const route = options.route ?? "push";
@@ -501,6 +551,77 @@ export function DictionaryWorkspace({
   },
     [selectSearchTarget, showHome],
   );
+
+  const loadMoreSearchResults = useCallback(async (): Promise<void> => {
+    const requestedQuery = searchResults.query;
+    const offset = searchResults.nextOffset;
+    if (
+      offset === null ||
+      searchResults.pending ||
+      searchResults.loadingMore ||
+      !isChineseSearchQuery(requestedQuery)
+    ) {
+      return;
+    }
+
+    resultPageRequest.current?.abort();
+    const controller = new AbortController();
+    resultPageRequest.current = controller;
+    const targetCount = nextReverseResultCount(offset);
+    setSearchResults((current) =>
+      current.query === requestedQuery
+        ? { ...current, loadingMore: true, loadMoreError: null }
+        : current,
+    );
+
+    try {
+      const page = await dictionaryClient.searchPage(requestedQuery, {
+        limit: targetCount - offset,
+        offset,
+        signal: controller.signal,
+      });
+      if (resultPageRequest.current !== controller || controller.signal.aborted) {
+        return;
+      }
+      setSearchResults((current) => {
+        if (current.query !== requestedQuery || current.nextOffset !== offset) {
+          return current;
+        }
+        const seen = new Set(current.items.map(searchTargetKey));
+        const additions = page.items.filter((item) => {
+          const key = searchTargetKey(item);
+          if (seen.has(key)) {
+            return false;
+          }
+          seen.add(key);
+          return true;
+        });
+        return {
+          ...current,
+          items: [...current.items, ...additions],
+          nextOffset: page.nextOffset,
+          loadMoreError: null,
+        };
+      });
+    } catch (error) {
+      if (!isAbortError(error) && resultPageRequest.current === controller) {
+        setSearchResults((current) =>
+          current.query === requestedQuery
+            ? { ...current, loadMoreError: "更多结果暂时无法加载" }
+            : current,
+        );
+      }
+    } finally {
+      if (resultPageRequest.current === controller) {
+        resultPageRequest.current = null;
+        setSearchResults((current) =>
+          current.query === requestedQuery
+            ? { ...current, loadingMore: false }
+            : current,
+        );
+      }
+    }
+  }, [searchResults]);
 
   const navigateEtymologyLink = useCallback((term: string, articleId?: string) => {
     if (!articleId) {
@@ -566,6 +687,7 @@ export function DictionaryWorkspace({
       window.removeEventListener("popstate", syncLocation);
       suggestionRequest.current?.abort();
       submittedSearchRequest.current?.abort();
+      resultPageRequest.current?.abort();
       entryRequest.current?.abort();
       etymologyNavigationRequest.current?.abort();
     };
@@ -639,6 +761,8 @@ export function DictionaryWorkspace({
     suggestionRequest.current = null;
     submittedSearchRequest.current?.abort();
     submittedSearchRequest.current = null;
+    resultPageRequest.current?.abort();
+    resultPageRequest.current = null;
     submittedSearchQuery.current = null;
     setQuery(value);
     setSuggestions([]);
@@ -654,6 +778,8 @@ export function DictionaryWorkspace({
     suggestionRequest.current = null;
     submittedSearchRequest.current?.abort();
     submittedSearchRequest.current = null;
+    resultPageRequest.current?.abort();
+    resultPageRequest.current = null;
     submittedSearchQuery.current = null;
     setQuery("");
     setSuggestions([]);
@@ -816,7 +942,14 @@ export function DictionaryWorkspace({
         <div className="search-results-shell">
           <SearchResults
             error={searchResults.error}
+            hasMore={searchResults.nextOffset !== null}
             items={searchResults.items}
+            loadingMore={searchResults.loadingMore}
+            loadMoreError={searchResults.loadMoreError}
+            nextResultCount={searchResults.nextOffset === null
+              ? undefined
+              : nextReverseResultCount(searchResults.nextOffset)}
+            onLoadMore={() => void loadMoreSearchResults()}
             onRetry={() => void runSearch(searchResults.query, { route: "none" })}
             onSelect={(target, match) => void selectSearchTarget(target, {
               route: "push",

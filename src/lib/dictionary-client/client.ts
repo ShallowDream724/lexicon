@@ -74,10 +74,21 @@ const searchItemSchema = z.discriminatedUnion("kind", [
 const searchResponseSchema = z.object({
   query: z.string().optional(),
   items: z.array(searchItemSchema),
+  nextOffset: z.number().int().min(1).max(511).optional(),
 });
 
 export function parseSearchTargets(payload: unknown): SearchTarget[] {
   return searchResponseSchema.parse(payload).items;
+}
+
+export type DictionarySearchPage = {
+  items: SearchTarget[];
+  nextOffset: number | null;
+};
+
+export function parseSearchPage(payload: unknown): DictionarySearchPage {
+  const result = searchResponseSchema.parse(payload);
+  return { items: result.items, nextOffset: result.nextOffset ?? null };
 }
 
 const errorResponseSchema = z.object({
@@ -169,6 +180,25 @@ export const dictionaryClient = {
     url.searchParams.set("limit", String(Math.min(Math.max(options.limit ?? 10, 1), 20)));
     const payload = await getJson(url, options.signal);
     return parseSearchTargets(payload);
+  },
+
+  async searchPage(
+    query: string,
+    options: { limit?: number; offset?: number; signal?: AbortSignal } = {},
+  ): Promise<DictionarySearchPage> {
+    const normalized = query.trim();
+    if (!normalized) {
+      return { items: [], nextOffset: null };
+    }
+
+    const url = apiUrl("search");
+    url.searchParams.set("q", normalized);
+    url.searchParams.set("limit", String(Math.min(Math.max(options.limit ?? 32, 1), 256)));
+    const offset = Math.min(Math.max(options.offset ?? 0, 0), 511);
+    if (offset > 0) {
+      url.searchParams.set("offset", String(offset));
+    }
+    return parseSearchPage(await getJson(url, options.signal));
   },
 
   async entry(entryId: string, signal?: AbortSignal): Promise<DictionaryEntryResponse> {

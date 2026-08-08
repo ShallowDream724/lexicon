@@ -27,9 +27,12 @@ import (
 )
 
 const (
-	defaultLimit   = 20
-	maxLimit       = 50
-	maxTypoMatches = 128
+	defaultLimit        = 20
+	maxLimit            = 50
+	defaultReverseLimit = 32
+	maxReversePageSize  = 256
+	maxReverseOffset    = 511
+	maxTypoMatches      = 128
 )
 
 type requestIDContextKey struct{}
@@ -137,23 +140,38 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, http.StatusBadRequest, "invalid_query", "q must be 200 characters or fewer")
 		return
 	}
-	limit, err := parseLimit(r.URL.Query().Get("limit"))
-	if err != nil {
-		s.writeError(w, r, http.StatusBadRequest, "invalid_limit", err.Error())
-		return
-	}
-
 	if reversesearch.ContainsCJK(query) {
-		results, err := s.queryReverseSuggestions(r.Context(), query, limit)
+		limit, err := parseReverseLimit(r.URL.Query().Get("limit"))
+		if err != nil {
+			s.writeError(w, r, http.StatusBadRequest, "invalid_limit", err.Error())
+			return
+		}
+		offset, err := parseReverseOffset(r.URL.Query().Get("offset"))
+		if err != nil {
+			s.writeError(w, r, http.StatusBadRequest, "invalid_offset", err.Error())
+			return
+		}
+		page, err := s.queryReverseSuggestions(r.Context(), query, offset, limit)
 		if err != nil {
 			s.logger.Error("Chinese reverse search failed", "error", err)
 			s.writeError(w, r, http.StatusInternalServerError, "search_failed", "search could not be completed")
 			return
 		}
+		var nextOffset *int
+		if page.hasMore {
+			nextOffset = &page.nextOffset
+		}
 		s.writeJSON(w, http.StatusOK, struct {
-			Query string       `json:"query"`
-			Items []suggestion `json:"items"`
-		}{Query: query, Items: results})
+			Query      string       `json:"query"`
+			Items      []suggestion `json:"items"`
+			NextOffset *int         `json:"nextOffset,omitempty"`
+		}{Query: query, Items: page.items, NextOffset: nextOffset})
+		return
+	}
+
+	limit, err := parseLimit(r.URL.Query().Get("limit"))
+	if err != nil {
+		s.writeError(w, r, http.StatusBadRequest, "invalid_limit", err.Error())
 		return
 	}
 
@@ -189,20 +207,26 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) {
 	}{Query: query, Items: results})
 }
 
-func (s *Service) queryReverseSuggestions(ctx context.Context, query string, limit int) ([]suggestion, error) {
+type reverseSuggestionPage struct {
+	items      []suggestion
+	nextOffset int
+	hasMore    bool
+}
+
+func (s *Service) queryReverseSuggestions(ctx context.Context, query string, offset, limit int) (reverseSuggestionPage, error) {
 	if s.reverseSearch == nil {
-		return []suggestion{}, nil
+		return reverseSuggestionPage{items: []suggestion{}}, nil
 	}
-	groups, err := s.reverseSearch.Search(ctx, query, limit)
-	if err != nil || len(groups) == 0 {
-		return []suggestion{}, err
+	page, err := s.reverseSearch.SearchPage(ctx, query, offset, limit)
+	if err != nil || len(page.Groups) == 0 {
+		return reverseSuggestionPage{items: []suggestion{}}, err
 	}
 
 	var statement strings.Builder
 	statement.WriteString("WITH candidates(entry_id, result_rank) AS (VALUES ")
-	arguments := make([]any, 0, len(groups)*2)
-	groupByID := make(map[string]reversesearch.Group, len(groups))
-	for index, group := range groups {
+	arguments := make([]any, 0, len(page.Groups)*2)
+	groupByID := make(map[string]reversesearch.Group, len(page.Groups))
+	for index, group := range page.Groups {
 		if index > 0 {
 			statement.WriteByte(',')
 		}
@@ -217,18 +241,18 @@ func (s *Service) queryReverseSuggestions(ctx context.Context, query string, lim
 		ORDER BY c.result_rank`)
 	rows, err := s.db.QueryContext(ctx, statement.String(), arguments...)
 	if err != nil {
-		return nil, err
+		return reverseSuggestionPage{}, err
 	}
 	defer rows.Close()
-	results := make([]suggestion, 0, len(groups))
+	results := make([]suggestion, 0, len(page.Groups))
 	for rows.Next() {
 		var item suggestion
 		var partsOfSpeech string
 		if err := rows.Scan(&item.ID, &item.Headword, &partsOfSpeech, &item.TranslationPreview, &item.rank); err != nil {
-			return nil, err
+			return reverseSuggestionPage{}, err
 		}
 		if err := json.Unmarshal([]byte(partsOfSpeech), &item.PartsOfSpeech); err != nil || item.PartsOfSpeech == nil {
-			return nil, errors.New("dictionary search projection is malformed")
+			return reverseSuggestionPage{}, errors.New("dictionary search projection is malformed")
 		}
 		item.Kind = "dictionary"
 		group := groupByID[item.ID]
@@ -241,7 +265,10 @@ func (s *Service) queryReverseSuggestions(ctx context.Context, query string, lim
 		}
 		results = append(results, item)
 	}
-	return results, rows.Err()
+	if err := rows.Err(); err != nil {
+		return reverseSuggestionPage{}, err
+	}
+	return reverseSuggestionPage{items: results, nextOffset: page.NextOffset, hasMore: page.HasMore}, nil
 }
 
 func (s *Service) queryPrefixSuggestions(ctx context.Context, canonical string, limit int) ([]suggestion, error) {
@@ -750,12 +777,31 @@ func newRequestID() string {
 }
 
 func parseLimit(value string) (int, error) {
+	return parseBoundedLimit(value, defaultLimit, maxLimit)
+}
+
+func parseReverseLimit(value string) (int, error) {
+	return parseBoundedLimit(value, defaultReverseLimit, maxReversePageSize)
+}
+
+func parseBoundedLimit(value string, fallback, maximum int) (int, error) {
 	if value == "" {
-		return defaultLimit, nil
+		return fallback, nil
 	}
 	limit, err := strconv.Atoi(value)
-	if err != nil || limit < 1 || limit > maxLimit {
-		return 0, fmt.Errorf("limit must be an integer between 1 and %d", maxLimit)
+	if err != nil || limit < 1 || limit > maximum {
+		return 0, fmt.Errorf("limit must be an integer between 1 and %d", maximum)
 	}
 	return limit, nil
+}
+
+func parseReverseOffset(value string) (int, error) {
+	if value == "" {
+		return 0, nil
+	}
+	offset, err := strconv.Atoi(value)
+	if err != nil || offset < 0 || offset > maxReverseOffset {
+		return 0, fmt.Errorf("offset must be an integer between 0 and %d", maxReverseOffset)
+	}
+	return offset, nil
 }
