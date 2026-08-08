@@ -28,9 +28,9 @@ Chinese searches return grouped English entries with the matching definition, ph
 
 中文反查会把英文词条按词头分组，并直接展示命中的释义、短语、用法、词形或例句。选择某条命中依据后，会打开正确词性并定位到对应内容。
 
-British and North American headword audio is read directly from the local archive. Sentence audio and illustrations can be connected separately. Recent searches, favorites, notes, and preferences remain in the current browser profile, with no account required.
+British and North American headword audio is read directly from the local archive. Sentence audio and illustrations can be connected separately. Browsing history, search history, favorites, notes, and preferences remain in the current browser profile, with no account required.
 
-英式与北美词头发音直接从本地压缩包读取；例句音频与图解可以单独接入。最近查询、收藏、笔记与偏好保存在当前浏览器中，无需账号。
+英式与北美词头发音直接从本地压缩包读取；例句音频与图解可以单独接入。浏览记录、查询历史、收藏、笔记与偏好保存在当前浏览器中，无需账号。
 
 ## Made for every screen
 

@@ -99,7 +99,7 @@ test("server-renders the anonymous dictionary workspace", async () => {
   assert.match(html, /LEXICON/);
   assert.match(html, /输入要查询的单词或短语/);
   assert.match(html, /词典首页/);
-  assert.match(html, /最近查询/);
+  assert.match(html, /最近浏览/);
   assert.match(html, /收藏词条/);
   assert.doesNotMatch(html, /com·ple·tion/);
   assert.doesNotMatch(html, /the act or process of finishing something/);

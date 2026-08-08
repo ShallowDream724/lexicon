@@ -80,8 +80,8 @@ export function DictionaryHome({
     <section className="dictionary-home" aria-label="词典首页">
       <h1 className="visually-hidden">词典首页</h1>
       <HomeCollection
-        title="最近查询"
-        emptyLabel="暂无查询记录"
+        title="最近浏览"
+        emptyLabel="暂无浏览记录"
         icon="history"
         items={historyPreview.map((record) => ({
           key: record.key,
