@@ -1,0 +1,296 @@
+package reversesearch
+
+import (
+	"bufio"
+	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+
+	_ "modernc.org/sqlite"
+)
+
+// Import streams an already ordered NDJSON projection into a new immutable sidecar.
+func Import(ctx context.Context, config ImportConfig) error {
+	if config.Documents == nil || strings.TrimSpace(config.DictionaryPath) == "" || strings.TrimSpace(config.TargetPath) == "" || strings.TrimSpace(config.SourceVersion) == "" || strings.TrimSpace(config.ProjectionVersion) == "" {
+		return errors.New("documents, dictionary path, target path, source version, and projection version are required")
+	}
+	if config.ProjectionVersion != ProjectionVersion {
+		return fmt.Errorf("unsupported reverse-search projection version %q", config.ProjectionVersion)
+	}
+	if err := validatePageSize(config.PageSize); err != nil {
+		return err
+	}
+	if _, err := os.Stat(config.TargetPath); err == nil && !config.Replace {
+		return fmt.Errorf("target database already exists: %s", config.TargetPath)
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	primarySHA, err := fileSHA256(config.DictionaryPath)
+	if err != nil {
+		return fmt.Errorf("fingerprint primary dictionary: %w", err)
+	}
+
+	temporary, err := os.CreateTemp(filepath.Dir(config.TargetPath), ".reverse-search-*.db")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	if err := os.Remove(temporaryPath); err != nil {
+		return err
+	}
+	defer os.Remove(temporaryPath)
+
+	db, err := sql.Open("sqlite", temporaryPath)
+	if err != nil {
+		return err
+	}
+	closed := false
+	defer func() {
+		if !closed {
+			_ = db.Close()
+		}
+	}()
+	if config.PageSize == 0 {
+		config.PageSize = defaultPageSize
+	}
+	if _, err := db.ExecContext(ctx, "PRAGMA page_size = "+strconv.Itoa(config.PageSize)); err != nil {
+		return fmt.Errorf("set SQLite page size: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, "PRAGMA journal_mode = OFF"); err != nil {
+		return fmt.Errorf("disable temporary SQLite journal: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, "PRAGMA synchronous = OFF"); err != nil {
+		return fmt.Errorf("configure temporary SQLite synchronization: %w", err)
+	}
+	if err := applySchema(ctx, db); err != nil {
+		return err
+	}
+	count, err := streamDocuments(ctx, db, config.Documents)
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return errors.New("reverse-search projection contains no documents")
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO documents_fts(documents_fts) VALUES('optimize')`); err != nil {
+		return fmt.Errorf("optimize reverse-search index: %w", err)
+	}
+	if err := writeMetadata(ctx, db, config, primarySHA, count); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, "VACUUM"); err != nil {
+		return fmt.Errorf("compact reverse-search sidecar: %w", err)
+	}
+	if err := db.Close(); err != nil {
+		return err
+	}
+	closed = true
+	return replaceAtomically(temporaryPath, config.TargetPath, config.Replace)
+}
+
+func validatePageSize(pageSize int) error {
+	if pageSize == 0 {
+		return nil
+	}
+	if pageSize < 512 || pageSize > 65536 || pageSize&(pageSize-1) != 0 {
+		return fmt.Errorf("SQLite page size %d must be a power of two from 512 through 65536", pageSize)
+	}
+	return nil
+}
+
+func applySchema(ctx context.Context, db *sql.DB) error {
+	statements := []string{
+		`CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL) WITHOUT ROWID`,
+		`CREATE TABLE documents (
+			id INTEGER PRIMARY KEY,
+			dictionary_id TEXT NOT NULL CHECK(length(dictionary_id) BETWEEN 1 AND 256),
+			entry_id TEXT NOT NULL CHECK(length(entry_id) BETWEEN 1 AND 256),
+			scope TEXT NOT NULL CHECK(scope IN ('sense','phrase','example','usage','form')),
+			headword TEXT NOT NULL CHECK(length(headword) <= 32768),
+			english_text TEXT NOT NULL CHECK(length(english_text) <= 32768),
+			chinese_text TEXT NOT NULL CHECK(length(chinese_text) <= 32768),
+			section TEXT NOT NULL CHECK(section IN ('definitions','idioms','phrasal-verbs','derived-forms','grammar-usage')),
+			part TEXT NOT NULL CHECK(length(part) <= 1024),
+			owner_id TEXT NOT NULL CHECK(length(owner_id) <= 256),
+			path_json TEXT NOT NULL CHECK(length(path_json) <= 8192),
+			weight INTEGER NOT NULL CHECK(weight BETWEEN -1000000 AND 1000000)
+		)`,
+		`CREATE INDEX documents_by_entry ON documents(entry_id, id)`,
+		`CREATE VIRTUAL TABLE documents_fts USING fts5(tokens, content='', detail=none)`,
+	}
+	for _, statement := range statements {
+		if _, err := db.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("create reverse-search schema: %w", err)
+		}
+	}
+	return nil
+}
+
+func streamDocuments(ctx context.Context, db *sql.DB, source io.Reader) (int, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	insertDocument, err := tx.PrepareContext(ctx, `INSERT INTO documents (dictionary_id, entry_id, scope, headword, english_text, chinese_text, section, part, owner_id, path_json, weight) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return 0, err
+	}
+	defer insertDocument.Close()
+	insertFTS, err := tx.PrepareContext(ctx, `INSERT INTO documents_fts(rowid, tokens) VALUES (?, ?)`)
+	if err != nil {
+		return 0, err
+	}
+	defer insertFTS.Close()
+
+	reader := bufio.NewReaderSize(source, maxLineBytes+1)
+	count := 0
+	lastEntry := ""
+	for lineNumber := 1; ; lineNumber++ {
+		line, readErr := reader.ReadBytes('\n')
+		if len(line) > maxLineBytes {
+			return 0, fmt.Errorf("projection line %d exceeds %d bytes", lineNumber, maxLineBytes)
+		}
+		if len(line) > 0 {
+			line = bytesTrimSpace(line)
+			if len(line) > 0 {
+				document, err := decodeDocument(line)
+				if err != nil {
+					return 0, fmt.Errorf("projection line %d: %w", lineNumber, err)
+				}
+				if document.EntryID < lastEntry {
+					return 0, fmt.Errorf("projection line %d is out of order by entryId", lineNumber)
+				}
+				lastEntry = document.EntryID
+				pathJSON, _ := json.Marshal(document.Location.Path)
+				result, err := insertDocument.ExecContext(ctx, document.DictionaryID, document.EntryID, document.Scope, document.Headword, document.EnglishText, document.ChineseText, document.Location.Section, document.Location.Part, document.Location.OwnerID, string(pathJSON), document.Weight)
+				if err != nil {
+					return 0, err
+				}
+				id, err := result.LastInsertId()
+				if err != nil {
+					return 0, err
+				}
+				if _, err := insertFTS.ExecContext(ctx, id, strings.Join(tokens(document.ChineseText), " ")); err != nil {
+					return 0, err
+				}
+				count++
+			}
+		}
+		if errors.Is(readErr, io.EOF) {
+			break
+		}
+		if readErr != nil {
+			return 0, readErr
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func decodeDocument(line []byte) (SearchDocument, error) {
+	decoder := json.NewDecoder(strings.NewReader(string(line)))
+	decoder.DisallowUnknownFields()
+	var document SearchDocument
+	if err := decoder.Decode(&document); err != nil {
+		return SearchDocument{}, fmt.Errorf("invalid JSON: %w", err)
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return SearchDocument{}, errors.New("multiple JSON values")
+	}
+	if err := validateDocument(document); err != nil {
+		return SearchDocument{}, err
+	}
+	return document, nil
+}
+
+func validateDocument(document SearchDocument) error {
+	if !validLimited(document.DictionaryID, maxIDBytes) || !validLimited(document.EntryID, maxIDBytes) {
+		return errors.New("dictionaryId and entryId are required and bounded")
+	}
+	if !validLimited(document.Headword, maxTextBytes) || !validOptional(document.EnglishText, maxTextBytes) || !validLimited(document.ChineseText, maxTextBytes) {
+		return errors.New("headword and chineseText are required; all text fields must be bounded")
+	}
+	if len(cjkRunes(document.ChineseText)) == 0 {
+		return errors.New("chineseText contains no CJK characters")
+	}
+	if !validScope(document.Scope) || !validSection(document.Location.Section) {
+		return errors.New("unknown scope or section")
+	}
+	if !validOptional(document.Location.Part, 1024) || !validOptional(document.Location.OwnerID, maxIDBytes) || len(document.Location.Path) > maxPathParts {
+		return errors.New("location is invalid or exceeds bounds")
+	}
+	for _, segment := range document.Location.Path {
+		if !validLimited(segment, maxIDBytes) {
+			return errors.New("location path contains an invalid segment")
+		}
+	}
+	if document.Weight < -1000000 || document.Weight > 1000000 {
+		return errors.New("weight exceeds bounds")
+	}
+	return nil
+}
+
+func validLimited(value string, maximum int) bool {
+	return strings.TrimSpace(value) != "" && len(value) <= maximum
+}
+func validOptional(value string, maximum int) bool { return len(value) <= maximum }
+func validScope(value Scope) bool {
+	return value == ScopeSense || value == ScopePhrase || value == ScopeExample || value == ScopeUsage || value == ScopeForm
+}
+func validSection(value Section) bool {
+	return value == SectionDefinitions || value == SectionIdioms || value == SectionPhrasalVerbs || value == SectionDerivedForms || value == SectionGrammarUsage
+}
+
+func writeMetadata(ctx context.Context, db *sql.DB, config ImportConfig, primarySHA string, count int) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	values := map[string]string{
+		"schema_version": strconv.Itoa(SchemaVersion), "projection_version": config.ProjectionVersion,
+		"normalizer_version": NormalizerVersion, "primary_sha256": primarySHA,
+		"source_version": config.SourceVersion, "document_count": strconv.Itoa(count),
+	}
+	for _, key := range []string{"schema_version", "projection_version", "normalizer_version", "primary_sha256", "source_version", "document_count"} {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO metadata(key, value) VALUES (?, ?)`, key, values[key]); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func FileSHA256(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	digest := sha256.New()
+	if _, err := io.Copy(digest, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(digest.Sum(nil)), nil
+}
+
+func fileSHA256(path string) (string, error) { return FileSHA256(path) }
+
+func bytesTrimSpace(value []byte) []byte {
+	return []byte(strings.TrimSpace(string(value)))
+}

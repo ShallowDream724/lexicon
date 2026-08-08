@@ -12,6 +12,8 @@
     "start": "next start",
     "dictionary:import": "go -C services/dictionary-api run ./cmd/dictionary-import",
     "etymology:import": "go -C services/dictionary-api run ./cmd/etymology-import",
+    "reverse-search:build": "tsx scripts/build-reverse-search.ts",
+    "reverse-search:benchmark": "go -C services/dictionary-api run ./cmd/reverse-search-benchmark",
     "data:download": "node scripts/runtime-data.mjs download",
     "data:verify": "node scripts/runtime-data.mjs verify",
     "dictionary:benchmark": "go -C services/dictionary-api run ./cmd/dictionary-storage-benchmark",
