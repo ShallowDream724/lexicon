@@ -228,6 +228,7 @@ function projectSegments(
   for (const [index, segment] of segments.entries()) {
     const segmentPath = stablePath(path, collection, index);
     if (segment.kind === "text") {
+      indexLocation(context, segment, { section, path: segmentPath, part, ownerId });
       addBilingualDocument(context, {
         scope: "usage",
         section,
@@ -239,6 +240,7 @@ function projectSegments(
     } else if (segment.kind === "example") {
       projectExample(context, segment.value, section, segmentPath, part);
     } else if (segment.kind === "term") {
+      indexLocation(context, segment, { section, path: segmentPath, part, ownerId });
       addBilingualDocument(context, {
         scope: "usage",
         section,
@@ -294,6 +296,12 @@ function projectGrammarUsageBlock(
   part?: string,
 ): void {
   if (block.kind === "heading" || block.kind === "unknown") {
+    indexLocation(context, block, {
+      section: "grammar-usage",
+      path: [...path, "value"],
+      part,
+      ownerId,
+    });
     addBilingualDocument(context, {
       scope: "usage",
       section: "grammar-usage",
@@ -306,6 +314,12 @@ function projectGrammarUsageBlock(
   }
 
   if (block.kind === "paragraph") {
+    indexLocation(context, block, {
+      section: "grammar-usage",
+      path: [...path, "value"],
+      part,
+      ownerId,
+    });
     addBilingualDocument(context, {
       scope: "usage",
       section: "grammar-usage",
@@ -379,20 +393,24 @@ function projectSense(
   });
 
   for (const [index, usage] of (sense.inlineUsage ?? []).entries()) {
+    const usagePath = stablePath(path, "inlineUsage", index);
+    indexLocation(context, usage, { section, path: usagePath, part, ownerId: sense.id });
     addBilingualDocument(context, {
       scope: "usage",
       section,
-      path: stablePath(path, "inlineUsage", index),
+      path: usagePath,
       part,
       ownerId: sense.id,
       englishText: usage.text,
     });
   }
   for (const [index, usage] of sense.usage.entries()) {
+    const usagePath = stablePath(path, "usage", index);
+    indexLocation(context, usage, { section, path: usagePath, part, ownerId: sense.id });
     addBilingualDocument(context, {
       scope: "usage",
       section,
-      path: stablePath(path, "usage", index),
+      path: usagePath,
       part,
       ownerId: sense.id,
       englishText: usage.text,
@@ -436,10 +454,17 @@ function projectPhrase(
     ownerId: phrase.id,
   });
   for (const [index, usage] of phrase.leadingUsage.entries()) {
+    const usagePath = stablePath(path, "leadingUsage", index);
+    indexLocation(context, usage, {
+      section,
+      path: usagePath,
+      part: inheritedPart,
+      ownerId: phrase.id,
+    });
     addBilingualDocument(context, {
       scope: "usage",
       section,
-      path: stablePath(path, "leadingUsage", index),
+      path: usagePath,
       ownerId: phrase.id,
       englishText: usage.text,
     });
@@ -483,10 +508,17 @@ function projectForms(
       englishText: joinText(form.text, textValue(form.note)),
     });
     for (const [usageIndex, usage] of (form.usage ?? []).entries()) {
+      const usagePath = stablePath(formPath, "usage", usageIndex);
+      indexLocation(context, usage, {
+        section,
+        path: usagePath,
+        part,
+        ownerId: form.id,
+      });
       addBilingualDocument(context, {
         scope: "usage",
         section,
-        path: stablePath(formPath, "usage", usageIndex),
+        path: usagePath,
         part,
         ownerId: form.id,
         englishText: usage.text,
@@ -514,10 +546,16 @@ function projectEntry(
 ): void {
 	  const part = entryPart(entry, inheritedPart);
   for (const [index, usage] of (entry.headwordUsage ?? []).entries()) {
+    const usagePath = stablePath(path, "headwordUsage", index);
+    indexLocation(context, usage, {
+      section: "definitions",
+      path: usagePath,
+      part,
+    });
     addBilingualDocument(context, {
       scope: "usage",
       section: "definitions",
-      path: stablePath(path, "headwordUsage", index),
+      path: usagePath,
 	      part,
       englishText: usage.text,
     });

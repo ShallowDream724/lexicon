@@ -22,6 +22,31 @@ export function searchLocationAttributes(
   };
 }
 
+export function searchLocationPathAttributes(
+  location: SearchDocumentLocation | undefined,
+): SearchLocationAttributes {
+  return location?.path.length
+    ? { "data-search-path": searchLocationPathKey(location.path) }
+    : {};
+}
+
+export function searchLocationContains(
+  container: SearchDocumentLocation | undefined,
+  target: SearchDocumentLocation,
+): boolean {
+  if (!container || container.section !== target.section) {
+    return false;
+  }
+  if (container.ownerId && target.ownerId && container.ownerId !== target.ownerId) {
+    return false;
+  }
+  const containerPath = searchLocationPathKey(container.path);
+  const targetPath = searchLocationPathKey(target.path);
+  return containerPath === targetPath || Boolean(
+    containerPath && targetPath.startsWith(`${containerPath}/`),
+  );
+}
+
 function elementsWithAttribute(root: ParentNode, attribute: string): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>(`[${attribute}]`));
 }
@@ -36,6 +61,22 @@ export function findSearchLocationElement(
   location: SearchDocumentLocation,
   root: ParentNode = document,
 ): HTMLElement | null {
+  const targetPath = searchLocationPathKey(location.path);
+  if (targetPath) {
+    const candidates = elementsWithAttribute(root, "data-search-path");
+    const exactCandidates = candidates.filter(
+      (element) => element.dataset.searchPath === targetPath,
+    );
+    const exact = location.ownerId
+      ? exactCandidates.find(
+          (element) => element.dataset.searchOwnerId === location.ownerId,
+        ) ?? exactCandidates.find((element) => !element.dataset.searchOwnerId)
+      : exactCandidates[0];
+    if (exact) {
+      return exact;
+    }
+  }
+
   if (location.ownerId) {
     const owner = elementsWithAttribute(root, "data-search-owner-id").find(
       (element) => element.dataset.searchOwnerId === location.ownerId,
@@ -45,13 +86,8 @@ export function findSearchLocationElement(
     }
   }
 
-  const targetPath = searchLocationPathKey(location.path);
   if (targetPath) {
     const candidates = elementsWithAttribute(root, "data-search-path");
-    const exact = candidates.find((element) => element.dataset.searchPath === targetPath);
-    if (exact) {
-      return exact;
-    }
     const ancestor = candidates
       .filter((element) => {
         const candidate = element.dataset.searchPath;

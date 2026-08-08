@@ -2937,7 +2937,7 @@
 }
 
 .search-results {
-  max-width: 20rem;
+  max-width: 24rem;
 }
 
 .search-results h1 {
@@ -2951,11 +2951,17 @@
   border-top: .02667rem solid #d9dde6;
   list-style: none;
   margin: 0;
-  padding: .42667rem 0 0;
+  padding: .26667rem 0 0;
 }
 
-.search-results-list li {
+.search-results-list li,
+.search-result-evidence-list li {
   margin: 0;
+}
+
+.search-result {
+  border-bottom: .02667rem solid #e2e4ea;
+  padding: .10667rem 0 .26667rem;
 }
 
 .search-result-item {
@@ -2967,7 +2973,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: .10667rem .26667rem;
-  min-height: 1.44rem;
+  min-height: 1.17333rem;
   padding: .26667rem .21333rem;
   text-align: left;
   width: 100%;
@@ -2976,6 +2982,10 @@
 .search-result-item:hover,
 .search-result-item:focus-visible {
   background: #f5f7fb;
+}
+
+.search-result.has-evidence .search-result-item {
+  padding-bottom: .16rem;
 }
 
 .search-result-item strong {
@@ -2994,6 +3004,69 @@
   color: #8b919e;
   font-size: .34667rem;
   overflow-wrap: anywhere;
+}
+
+.search-result-evidence-list {
+  display: grid;
+  gap: .05333rem;
+  list-style: none;
+  margin: 0;
+  padding: 0 .10667rem;
+}
+
+.search-result-evidence-list button {
+  align-items: start;
+  background: transparent;
+  border: 0;
+  color: #242942;
+  cursor: pointer;
+  display: grid;
+  gap: .26667rem;
+  grid-template-columns: .93333rem minmax(0, 1fr);
+  padding: .16rem .10667rem;
+  text-align: left;
+  width: 100%;
+}
+
+.search-result-evidence-list button:hover,
+.search-result-evidence-list button:focus-visible {
+  background: #f5f7fb;
+}
+
+.search-result-scope {
+  border: .02667rem solid #c8ccd5;
+  color: #697180;
+  font-size: .26667rem;
+  line-height: 1.35;
+  margin-top: .05333rem;
+  padding: .02667rem .10667rem;
+  text-align: center;
+}
+
+.search-result-evidence-copy {
+  display: grid;
+  gap: .05333rem;
+  min-width: 0;
+}
+
+.search-result-english {
+  color: #20242d;
+  font-family: "Times New Roman", Times, serif;
+  font-size: .42667rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.search-result-chinese {
+  color: #737b89;
+  font-size: .32rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+[data-search-owner-id],
+[data-search-path] {
+  scroll-margin-top: 2.4rem;
 }
 
 .search-results-status,
@@ -3800,6 +3873,11 @@
 
   .search-results h1 {
     margin-bottom: .64rem;
+  }
+
+  .search-result-evidence-list button {
+    gap: .21333rem;
+    grid-template-columns: .8rem minmax(0, 1fr);
   }
 
   .part-of-speech-tabs a,

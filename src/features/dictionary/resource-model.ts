@@ -21,6 +21,7 @@ type ResourceDefinition = {
   quickFindLabel: (resource: EntryResource) => string;
   quickFindAction: "open-resource";
   size: "feature" | "native";
+  searchLocationTarget: (resource: EntryResource) => object | undefined;
 };
 
 export const entryResourceRegistry: Record<EntryResourceKind, ResourceDefinition> = {
@@ -29,12 +30,14 @@ export const entryResourceRegistry: Record<EntryResourceKind, ResourceDefinition
     quickFindLabel: () => "词源",
     quickFindAction: "open-resource",
     size: "feature",
+    searchLocationTarget: () => undefined,
   },
   illustration: {
     order: 20,
     quickFindLabel: () => "图解词汇",
     quickFindAction: "open-resource",
     size: "native",
+    searchLocationTarget: () => undefined,
   },
   box: {
     order: 30,
@@ -42,6 +45,7 @@ export const entryResourceRegistry: Record<EntryResourceKind, ResourceDefinition
       resource.kind === "box" ? grammarUsageBoxLabels(resource.box).primary : "词条资料",
     quickFindAction: "open-resource",
     size: "native",
+    searchLocationTarget: (resource) => resource.kind === "box" ? resource.box : undefined,
   },
 };
 
@@ -55,6 +59,10 @@ export function entryResourceSize(resource: EntryResource): "feature" | "native"
 
 export function entryResourceQuickFindAction(resource: EntryResource): "open-resource" {
   return entryResourceRegistry[resource.kind].quickFindAction;
+}
+
+export function entryResourceSearchLocationTarget(resource: EntryResource): object | undefined {
+  return entryResourceRegistry[resource.kind].searchLocationTarget(resource);
 }
 
 export function etymologyArticleLabel(

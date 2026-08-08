@@ -198,6 +198,63 @@ func TestNormalizationAndBoundedCandidateFiltering(t *testing.T) {
 	}
 }
 
+func TestSearchPrefersACompleteTranslationSegmentOverIncidentalContainment(t *testing.T) {
+	root := t.TempDir()
+	dictionary := filepath.Join(root, "dictionary.db")
+	if err := os.WriteFile(dictionary, []byte("primary"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "reverse.db")
+	importSidecar(t, dictionary, target, []SearchDocument{
+		doc("1", ScopeSense, "snow day", "大雪休息日，大雪假"),
+		doc("2", ScopeSense, "rest", "休息；歇息"),
+		doc("3", ScopeSense, "break", "间歇；休息"),
+	}, false)
+	store, err := Open(target, digest(t, dictionary))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	got, err := store.Search(context.Background(), "休息", 10)
+	if err != nil || len(got) != 3 {
+		t.Fatalf("translation ranking got %#v, %v", got, err)
+	}
+	if got[0].Headword == "snow day" || got[1].Headword == "snow day" {
+		t.Fatalf("incidental containment outranked complete segments: %#v", got)
+	}
+}
+
+func TestSearchDoesNotMatchAcrossTranslationBoundaries(t *testing.T) {
+	root := t.TempDir()
+	dictionary := filepath.Join(root, "dictionary.db")
+	if err := os.WriteFile(dictionary, []byte("primary"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "reverse.db")
+	importSidecar(t, dictionary, target, []SearchDocument{
+		doc("1", ScopeSense, "volcano lung disease", "火山；肺病"),
+		doc("2", ScopeSense, "mountain lung", "山肺"),
+	}, false)
+	store, err := Open(target, digest(t, dictionary))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	got, err := store.Search(context.Background(), "山肺", 10)
+	if err != nil || len(got) != 1 || got[0].EntryID != "2" {
+		t.Fatalf("cross-boundary match got %#v, %v", got, err)
+	}
+}
+
+func TestSearchRejectsOversizedDirectQueries(t *testing.T) {
+	store := &Store{db: &sql.DB{}}
+	if _, err := store.Search(context.Background(), strings.Repeat("中", maxQueryRunes+1), 10); err == nil {
+		t.Fatal("oversized direct query was accepted")
+	}
+}
+
 func doc(entryID string, scope Scope, headword, chinese string) SearchDocument {
 	weights := map[Scope]int{ScopeSense: 100, ScopePhrase: 100, ScopeUsage: 60, ScopeForm: 60, ScopeExample: 30}
 	return SearchDocument{DictionaryID: "oalecd", EntryID: entryID, Scope: scope, Headword: headword, EnglishText: headword + " English", ChineseText: chinese, Location: Location{Section: SectionDefinitions, Path: []string{"sense", entryID}}, Weight: weights[scope]}

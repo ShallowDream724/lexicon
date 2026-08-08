@@ -346,12 +346,12 @@ test("renders usage and inflection groups at headword, sense, and derivative sco
     }),
   );
 
-  assert.match(html, /entry-headword-usage">\(not usually before a noun\)<\/span>/);
+  assert.match(html, /class="entry-headword-usage"[^>]*>\(not usually before a noun\)<\/span>/);
   assert.match(html, /comparative <\/em><strong>slower<\/strong>/);
   assert.match(html, /entry-inflection-constraint">no superlative<\/em>/);
   assert.doesNotMatch(html, /<strong>no superlative<\/strong>/);
   assert.match(html, /sense-pronunciation[^]*BrE[^]*\/sl\u0259\u028a\/[^]*播放该词义BrE发音/);
   assert.match(html, /sense-inflected-forms[^]*plural <\/em><strong>examples<\/strong>/);
   assert.match(html, /derived-form-inflected-forms[^]*plural <\/em><strong>slownesses<\/strong>/);
-  assert.match(html, /derived-form-usage">\(in nouns\)<\/p>/);
+  assert.match(html, /class="derived-form-usage"[^>]*>\(in nouns\)<\/p>/);
 });

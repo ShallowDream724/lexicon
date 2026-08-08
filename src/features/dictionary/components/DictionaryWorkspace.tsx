@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp } from "lucide-react";
 
 import type { CanonicalEntry } from "../../../../packages/dictionary-schema/src/index";
+import type { SearchDocumentLocation } from "../../../../packages/dictionary-search/src/index";
 import type {
   EtymologyArticleResponse,
   EtymologyResourceSummary,
@@ -19,7 +20,7 @@ import {
   type NoteRecord,
 } from "../../../lib/storage/learning-data";
 import { demoEntry } from "../demo-entry";
-import { projectEntryPart } from "../entry-sections";
+import { entryPartIndexFor, projectEntryPart } from "../entry-sections";
 import {
   fallbackSearchQueries,
   normalizeSearchQuery,
@@ -124,6 +125,9 @@ export function DictionaryWorkspace({
   const [entryPending, setEntryPending] = useState(initialRoute.kind === "entry");
   const [activePartIndex, setActivePartIndex] = useState(0);
   const [activeSectionId, setActiveSectionId] = useState("definitions");
+  const [pendingSearchLocation, setPendingSearchLocation] = useState<
+    SearchDocumentLocation | undefined
+  >();
   const [drawer, setDrawer] = useState<DrawerState>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const wordPageRef = useRef<HTMLElement>(null);
@@ -170,7 +174,11 @@ export function DictionaryWorkspace({
   const selectEntry = useCallback(
     async (
       entryId: string,
-      options: { route?: "none" | "push" | "replace"; etymology?: EtymologyRoute } = {},
+      options: {
+        route?: "none" | "push" | "replace";
+        etymology?: EtymologyRoute;
+        searchLocation?: SearchDocumentLocation;
+      } = {},
     ): Promise<boolean | null> => {
       suggestionRequest.current?.abort();
       suggestionRequest.current = null;
@@ -189,6 +197,7 @@ export function DictionaryWorkspace({
       setSearchOpen(false);
       setSearchPending(false);
       setSuggestions([]);
+      setPendingSearchLocation(undefined);
 
       try {
         const loadedEntry = await dictionaryClient.entry(entryId, controller.signal);
@@ -201,8 +210,14 @@ export function DictionaryWorkspace({
         setEnhancements(loadedEntry.enhancements);
         setFavorite(false);
         setNote("");
-        setActivePartIndex(0);
-        setActiveSectionId("definitions");
+        const searchLocation = options.searchLocation;
+        setActivePartIndex(entryPartIndexFor(loadedEntry.entry, searchLocation?.part));
+        setActiveSectionId(
+          searchLocation && searchLocation.section !== "grammar-usage"
+            ? searchLocation.section
+            : "definitions",
+        );
+        setPendingSearchLocation(searchLocation);
         setQuery(loadedEntry.entry.headword);
         const route = options.route ?? "push";
         if (route !== "none") {
@@ -215,7 +230,9 @@ export function DictionaryWorkspace({
             route,
           );
         }
-        window.scrollTo({ top: 0, behavior: "smooth" });
+        if (!searchLocation) {
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }
         const learningState = await loadEntryLearningState(loadedEntry.entry);
         if (entryRequest.current !== controller || controller.signal.aborted) {
           return null;
@@ -231,6 +248,7 @@ export function DictionaryWorkspace({
           return null;
         }
         if (entryRequest.current === controller) {
+          setPendingSearchLocation(undefined);
           setSearchError("词典服务暂不可用");
           inputRef.current?.focus();
         }
@@ -267,6 +285,7 @@ export function DictionaryWorkspace({
       setSearchOpen(false);
       setSearchPending(false);
       setSuggestions([]);
+      setPendingSearchLocation(undefined);
       setSearchError(null);
       setView("etymology");
       setQuery(nextEtymology.term);
@@ -288,7 +307,11 @@ export function DictionaryWorkspace({
   const selectSearchTarget = useCallback(
     (
       target: SearchTarget,
-      options: { route?: "none" | "push" | "replace"; articleTarget?: EtymologyRoute } = {},
+      options: {
+        route?: "none" | "push" | "replace";
+        articleTarget?: EtymologyRoute;
+        searchLocation?: SearchDocumentLocation;
+      } = {},
     ): Promise<boolean | null> => {
       if (target.kind === "etymology") {
         selectEtymology(
@@ -300,6 +323,7 @@ export function DictionaryWorkspace({
       return selectEntry(target.id, {
         route: options.route,
         etymology: options.articleTarget,
+        searchLocation: options.searchLocation ?? target.matches?.[0]?.location,
       });
     },
     [selectEntry, selectEtymology],
@@ -330,6 +354,7 @@ export function DictionaryWorkspace({
     setAudioError(null);
     setActivePartIndex(0);
     setActiveSectionId("definitions");
+    setPendingSearchLocation(undefined);
     setDrawer(null);
     setQuery("");
     if (shouldUpdateRoute) {
@@ -381,6 +406,7 @@ export function DictionaryWorkspace({
       setSearchPending(false);
       setSearchError(null);
       setEntryPending(false);
+      setPendingSearchLocation(undefined);
       setView("loading");
       setSearchResults({
         query: requestedQuery,
@@ -706,6 +732,7 @@ export function DictionaryWorkspace({
   }, []);
 
   const changePart = (index: number) => {
+    setPendingSearchLocation(undefined);
     setActivePartIndex(index);
     setActiveSectionId("definitions");
     window.requestAnimationFrame(() => scrollToSection("definitions"));
@@ -791,9 +818,10 @@ export function DictionaryWorkspace({
             error={searchResults.error}
             items={searchResults.items}
             onRetry={() => void runSearch(searchResults.query, { route: "none" })}
-            onSelect={(target) => void selectSearchTarget(target, {
+            onSelect={(target, match) => void selectSearchTarget(target, {
               route: "push",
               articleTarget: searchResults.articleTarget,
+              searchLocation: match?.location,
             })}
             pending={searchResults.pending}
             query={searchResults.query}
@@ -872,6 +900,10 @@ export function DictionaryWorkspace({
               );
             }}
             onNavigateEtymology={navigateEtymologyLink}
+            searchLocation={pendingSearchLocation}
+            onSearchLocationSettled={(location) => {
+              setPendingSearchLocation((current) => current === location ? undefined : current);
+            }}
             onToggleFavorite={() => void toggleFavorite()}
             onOpenNote={() => setDrawer({ mode: "note" })}
             onPlayAudio={playAudio}

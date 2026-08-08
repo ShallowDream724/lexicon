@@ -149,6 +149,20 @@ export function entryPartOptions(entry: CanonicalEntry): CanonicalPartOfSpeech[]
   });
 }
 
+export function entryPartIndexFor(entry: CanonicalEntry, requestedPart?: string): number {
+  if (!requestedPart?.trim()) {
+    return 0;
+  }
+  const requested = normalizedPart(requestedPart);
+  const requestedLabel = normalizedPart(partOfSpeechTabLabel(requestedPart));
+  const index = entryPartOptions(entry).findIndex((part) => {
+    const value = normalizedPart(part.text);
+    const label = normalizedPart(partOfSpeechTabLabel(part.text));
+    return value === requested || label === requested || value === requestedLabel || label === requestedLabel;
+  });
+  return Math.max(index, 0);
+}
+
 function dedupeBy<T>(items: T[], keyFor: (item: T) => string | undefined): T[] {
   const seen = new Set<string>();
   return items.filter((item) => {

@@ -98,6 +98,9 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]Group, e
 	if s == nil || s.db == nil || limit < 1 {
 		return []Group{}, nil
 	}
+	if len([]rune(query)) > maxQueryRunes {
+		return nil, fmt.Errorf("reverse-search query exceeds %d characters", maxQueryRunes)
+	}
 	if limit > maxResults {
 		limit = maxResults
 	}
@@ -144,32 +147,90 @@ func scoreCandidate(
 	document SearchDocument,
 	bm25 float64,
 ) (float64, bool, float64, int) {
-	target := cjkRunes(document.ChineseText)
-	if len(target) == 0 {
+	sequences := cjkSequences(document.ChineseText)
+	if len(sequences) == 0 {
 		return math.Inf(-1), false, 0, 0
 	}
-	exact := strings.Contains(string(target), string(queryRunes))
-	bigramCoverage := coverage(queryRunes, target)
-	longest := matcher.longest(target)
+	exact := false
+	longest := 0
+	for _, sequence := range sequences {
+		if strings.Contains(string(sequence), string(queryRunes)) {
+			exact = true
+		}
+		if matched := matcher.longest(sequence); matched > longest {
+			longest = matched
+		}
+	}
+	bigramCoverage := coverageSequences(queryRunes, sequences)
+	segmentExact, segmentBoundary, compactness := segmentMatchQuality(queryRunes, sequences)
 	score := float64(document.Weight) - bm25
 	if exact {
 		score += 100
 	}
+	if segmentExact {
+		score += 90
+	} else if segmentBoundary {
+		score += 25
+	}
+	score += compactness * 40
 	score += bigramCoverage * 30
 	score += float64(longest) * 3
 	return score, exact, bigramCoverage, longest
 }
 
-func coverage(query, target []rune) float64 {
+func segmentMatchQuality(query []rune, sequences [][]rune) (exact, boundary bool, compactness float64) {
+	for _, sequence := range sequences {
+		start := runeSliceIndex(sequence, query)
+		if start < 0 {
+			continue
+		}
+		ratio := float64(len(query)) / float64(len(sequence))
+		if ratio > compactness {
+			compactness = ratio
+		}
+		if len(sequence) == len(query) {
+			exact = true
+		}
+		if start == 0 || start+len(query) == len(sequence) {
+			boundary = true
+		}
+	}
+	return exact, boundary, compactness
+}
+
+func runeSliceIndex(target, query []rune) int {
+	if len(query) == 0 || len(query) > len(target) {
+		return -1
+	}
+	for start := 0; start <= len(target)-len(query); start++ {
+		matched := true
+		for offset := range query {
+			if target[start+offset] != query[offset] {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return start
+		}
+	}
+	return -1
+}
+
+func coverageSequences(query []rune, targets [][]rune) float64 {
 	if len(query) < 2 {
-		if containsRune(target, query[0]) {
-			return 1
+		for _, target := range targets {
+			if containsRune(target, query[0]) {
+				return 1
+			}
 		}
 		return 0
 	}
-	present := make(map[[2]rune]struct{}, len(target))
-	for index := 1; index < len(target); index++ {
-		present[[2]rune{target[index-1], target[index]}] = struct{}{}
+	present := make(map[[2]rune]struct{})
+	for _, target := range targets {
+		for index := 1; index < len(target); index++ {
+			present[[2]rune{target[index-1], target[index]}] = struct{}{}
+		}
 	}
 	hits := 0
 	for index := 1; index < len(query); index++ {

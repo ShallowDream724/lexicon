@@ -10,7 +10,7 @@ import {
   X,
 } from "lucide-react";
 import Image from "next/image";
-import { Fragment, type ReactNode, useEffect, useMemo, useState } from "react";
+import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
   CanonicalBoxBlock,
@@ -31,6 +31,11 @@ import type {
   EtymologyArticleResponse,
   EtymologyResourceSummary,
 } from "../../../../packages/enhancement-schema/src/index";
+import {
+  indexCanonicalEntrySearchLocations,
+  type CanonicalSearchLocationIndex,
+  type SearchDocumentLocation,
+} from "../../../../packages/dictionary-search/src/index";
 import type { EntryPartProjection } from "../entry-sections";
 import { partOfSpeechTabLabel } from "../entry-sections";
 import { grammarUsageBoxLabels, projectGrammarUsageBox } from "../box-presentation";
@@ -45,7 +50,17 @@ import {
   senseReferencePlacement,
 } from "../sense-presentation";
 import { useViewportScrollLock } from "../use-viewport-scroll-lock";
-import { buildEntryResources, type EntryResource } from "../resource-model";
+import {
+  buildEntryResources,
+  entryResourceSearchLocationTarget,
+  type EntryResource,
+} from "../resource-model";
+import {
+  scrollToSearchLocation,
+  searchLocationAttributes,
+  searchLocationContains,
+  searchLocationPathAttributes,
+} from "../search-location";
 import type { EtymologyRoute } from "../workspace-route";
 import { CanonicalTextContent } from "./CanonicalTextContent";
 import { DialogPortal } from "./DialogPortal";
@@ -72,7 +87,11 @@ type EntryViewProps = {
   prefetchedEtymologyArticle?: EtymologyArticleResponse;
   onEtymologyChange?: (etymology: EtymologyRoute | null) => void;
   onNavigateEtymology?: (term: string, articleId?: string) => void;
+  searchLocation?: SearchDocumentLocation;
+  onSearchLocationSettled?: (location: SearchDocumentLocation) => void;
 };
+
+type LocationIndex = CanonicalSearchLocationIndex;
 
 function audioRegionClass(region: string | undefined): string {
   return region?.toLocaleLowerCase().includes("am") ||
@@ -317,14 +336,19 @@ function CrossReferenceList({
 function ExampleView({
   example,
   onPlayAudio,
+  locationIndex,
   compact = false,
 }: {
   example: CanonicalExample;
   onPlayAudio: EntryViewProps["onPlayAudio"];
+  locationIndex: LocationIndex;
   compact?: boolean;
 }) {
   return (
-    <div className={`example${compact ? " is-compact" : ""}`}>
+    <div
+      className={`example${compact ? " is-compact" : ""}`}
+      {...searchLocationAttributes(locationIndex.get(example), example.id)}
+    >
       {example.pattern?.text.trim() ? (
         <p className="example-pattern">
           <CanonicalTextContent value={example.pattern} />
@@ -365,12 +389,14 @@ function ContentSegmentsView({
   segments,
   onPlayAudio,
   onSelectEntry,
+  locationIndex,
   textClassName = "box-text",
   flow = false,
 }: {
   segments: CanonicalBoxSegment[];
   onPlayAudio: EntryViewProps["onPlayAudio"];
   onSelectEntry: EntryViewProps["onSelectEntry"];
+  locationIndex: LocationIndex;
   textClassName?: string;
   flow?: boolean;
 }) {
@@ -381,13 +407,18 @@ function ContentSegmentsView({
           compact
           example={segment.value}
           key={`example-${segmentIndex}`}
+          locationIndex={locationIndex}
           onPlayAudio={onPlayAudio}
         />
       );
     }
     if (segment.kind === "term") {
       return (
-        <div className="box-term" key={`term-${segmentIndex}`}>
+        <div
+          className="box-term"
+          key={`term-${segmentIndex}`}
+          {...searchLocationPathAttributes(locationIndex.get(segment))}
+        >
           <span className="box-term-headword">
             <CanonicalTextContent value={segment.headword} />
           </span>
@@ -433,11 +464,19 @@ function ContentSegmentsView({
       );
     }
     return flow ? (
-      <span className={`${textClassName} is-inline`} key={`text-${segmentIndex}`}>
+      <span
+        className={`${textClassName} is-inline`}
+        key={`text-${segmentIndex}`}
+        {...searchLocationPathAttributes(locationIndex.get(segment))}
+      >
         <CanonicalTextContent value={segment.value} />
       </span>
     ) : (
-      <div className={textClassName} key={`text-${segmentIndex}`}>
+      <div
+        className={textClassName}
+        key={`text-${segmentIndex}`}
+        {...searchLocationPathAttributes(locationIndex.get(segment))}
+      >
         <CanonicalTextContent value={segment.value} />
       </div>
     );
@@ -448,33 +487,53 @@ function BoxBlockView({
   block,
   onPlayAudio,
   onSelectEntry,
+  locationIndex,
 }: {
   block: CanonicalBoxBlock;
   onPlayAudio: EntryViewProps["onPlayAudio"];
   onSelectEntry: EntryViewProps["onSelectEntry"];
+  locationIndex: LocationIndex;
 }) {
   if (block.kind === "heading") {
     if (block.level === 1) {
-      return <h2><CanonicalTextContent value={block.value} /></h2>;
+      return (
+        <h2 {...searchLocationPathAttributes(locationIndex.get(block))}>
+          <CanonicalTextContent value={block.value} />
+        </h2>
+      );
     }
-    return <h3><CanonicalTextContent value={block.value} /></h3>;
+    return (
+      <h3 {...searchLocationPathAttributes(locationIndex.get(block))}>
+        <CanonicalTextContent value={block.value} />
+      </h3>
+    );
   }
   if (block.kind === "paragraph") {
     return block.segments.length ? (
-      <div className="box-paragraph">
+      <div
+        className="box-paragraph"
+        {...searchLocationPathAttributes(locationIndex.get(block))}
+      >
         <ContentSegmentsView
           segments={block.segments}
+          locationIndex={locationIndex}
           onPlayAudio={onPlayAudio}
           onSelectEntry={onSelectEntry}
           flow={block.layout === "flow"}
         />
       </div>
     ) : (
-      <p><CanonicalTextContent value={block.value} /></p>
+      <p {...searchLocationPathAttributes(locationIndex.get(block))}>
+        <CanonicalTextContent value={block.value} />
+      </p>
     );
   }
   if (block.kind === "unknown") {
-    return <p><CanonicalTextContent value={block.value} /></p>;
+    return (
+      <p {...searchLocationPathAttributes(locationIndex.get(block))}>
+        <CanonicalTextContent value={block.value} />
+      </p>
+    );
   }
 
   if (block.kind === "pronunciations") {
@@ -509,6 +568,7 @@ function BoxBlockView({
                   const content = cell.segments.length ? (
                     <ContentSegmentsView
                       segments={cell.segments}
+                      locationIndex={locationIndex}
                       onPlayAudio={onPlayAudio}
                       onSelectEntry={onSelectEntry}
                     />
@@ -544,6 +604,7 @@ function BoxBlockView({
         <li key={itemIndex}>
           <ContentSegmentsView
             segments={item.segments}
+            locationIndex={locationIndex}
             onPlayAudio={onPlayAudio}
             onSelectEntry={onSelectEntry}
           />
@@ -590,6 +651,7 @@ function ResourceDialog({
   onPlayAudio,
   onSelectEntry,
   resolveIllustration,
+  locationIndex,
 }: {
   box: CanonicalGrammarUsageBox | null;
   illustration: CanonicalIllustration | null;
@@ -597,6 +659,7 @@ function ResourceDialog({
   onPlayAudio: EntryViewProps["onPlayAudio"];
   onSelectEntry: EntryViewProps["onSelectEntry"];
   resolveIllustration: EntryViewProps["resolveIllustration"];
+  locationIndex: LocationIndex;
 }) {
   const open = Boolean(box || illustration);
   useViewportScrollLock(open);
@@ -624,6 +687,7 @@ function ResourceDialog({
       <div className="resource-dialog-layer" role="presentation" onMouseDown={onClose}>
         <section
           className="resource-dialog"
+          {...(box ? searchLocationAttributes(locationIndex.get(box), box.id) : {})}
           role="dialog"
           aria-modal="true"
           aria-label={labels?.primary ?? "图解词汇"}
@@ -666,6 +730,7 @@ function ResourceDialog({
                   <BoxBlockView
                     block={block}
                     key={index}
+                    locationIndex={locationIndex}
                     onPlayAudio={onPlayAudio}
                     onSelectEntry={onSelectEntry}
                   />
@@ -691,9 +756,11 @@ function ResourceDialog({
 function SenseVariantsView({
   forms,
   onPlayAudio,
+  locationIndex,
 }: {
   forms: CanonicalForm[];
   onPlayAudio: EntryViewProps["onPlayAudio"];
+  locationIndex: LocationIndex;
 }) {
   if (!forms.length) {
     return null;
@@ -701,7 +768,11 @@ function SenseVariantsView({
   return (
     <span className="sense-variants">
       {forms.map((form, index) => (
-        <span className="sense-variant" key={`${form.text}-${index}`}>
+        <span
+          className="sense-variant"
+          key={`${form.text}-${index}`}
+          {...searchLocationAttributes(locationIndex.get(form), form.id)}
+        >
           {index > 0 ? <span className="sense-variant-separator">, </span> : null}
           <span aria-hidden="true">(</span>
           <VariantFormContent classPrefix="sense" form={form} onPlayAudio={onPlayAudio} />
@@ -718,6 +789,7 @@ function SenseView({
   anchorPath,
   onPlayAudio,
   onSelectEntry,
+  locationIndex,
   showGroupHeading,
   showNumber = true,
 }: {
@@ -726,6 +798,7 @@ function SenseView({
   anchorPath: QuickFindSensePath;
   onPlayAudio: EntryViewProps["onPlayAudio"];
   onSelectEntry: EntryViewProps["onSelectEntry"];
+  locationIndex: LocationIndex;
   showGroupHeading: boolean;
   showNumber?: boolean;
 }) {
@@ -754,7 +827,11 @@ function SenseView({
     sense.usage.length === 0 &&
     sense.subsenses.length === 0;
   return (
-    <li className="sense" id={senseQuickFindAnchor(sense, anchorPath)}>
+    <li
+      className="sense"
+      id={senseQuickFindAnchor(sense, anchorPath)}
+      {...searchLocationAttributes(locationIndex.get(sense), sense.id)}
+    >
       {showGroupHeading && sense.groupHeading?.text.trim() ? (
         <h3 className="sense-group-heading">
           <span className="sense-group-marker" aria-hidden="true" />
@@ -779,13 +856,22 @@ function SenseView({
           <InflectedFormsView
             classPrefix="sense"
             forms={sense.inflectedForms ?? []}
+            locationIndex={locationIndex}
             onPlayAudio={onPlayAudio}
           />
           {sense.labels.length ? <SenseLabels labels={sense.labels} /> : null}
-          <SenseVariantsView forms={sense.variants ?? []} onPlayAudio={onPlayAudio} />
+          <SenseVariantsView
+            forms={sense.variants ?? []}
+            locationIndex={locationIndex}
+            onPlayAudio={onPlayAudio}
+          />
           <EntryPatterns className="sense-patterns" patterns={sense.patterns} />
           {sense.inlineUsage?.map((usage, index) => (
-            <span className="sense-inline-usage" key={`${usage.text}-${index}`}>
+            <span
+              className="sense-inline-usage"
+              key={`${usage.text}-${index}`}
+              {...searchLocationPathAttributes(locationIndex.get(usage))}
+            >
               <CanonicalTextContent value={usage} />{" "}
             </span>
           ))}
@@ -796,6 +882,7 @@ function SenseView({
                   {hasStructuredDefinition ? (
                     <ContentSegmentsView
                       flow
+                      locationIndex={locationIndex}
                       onPlayAudio={onPlayAudio}
                       onSelectEntry={onSelectEntry}
                       segments={definitionSegments}
@@ -823,7 +910,11 @@ function SenseView({
             <ul className="example-list">
               {sense.examples.map((example, index) => (
                 <li key={example.id ?? `${example.text.text}-${index}`}>
-                  <ExampleView example={example} onPlayAudio={onPlayAudio} />
+                  <ExampleView
+                    example={example}
+                    locationIndex={locationIndex}
+                    onPlayAudio={onPlayAudio}
+                  />
                 </li>
               ))}
             </ul>
@@ -834,13 +925,18 @@ function SenseView({
               <ContentSegmentsView
                 onPlayAudio={onPlayAudio}
                 onSelectEntry={onSelectEntry}
+                locationIndex={locationIndex}
                 segments={sense.usageSegments}
                 textClassName="sense-usage"
               />
             </div>
           ) : (
             sense.usage.map((usage, index) => (
-              <p className="sense-usage" key={`${usage.text}-${index}`}>
+              <p
+                className="sense-usage"
+                key={`${usage.text}-${index}`}
+                {...searchLocationPathAttributes(locationIndex.get(usage))}
+              >
                 <CanonicalTextContent value={usage} />
               </p>
             ))
@@ -857,6 +953,7 @@ function SenseView({
               className="subsense-list"
               onPlayAudio={onPlayAudio}
               onSelectEntry={onSelectEntry}
+              locationIndex={locationIndex}
               pathPrefix={path}
               anchorPathPrefix={anchorPath}
               senses={sense.subsenses}
@@ -872,6 +969,7 @@ function SenseList({
   senses,
   onPlayAudio,
   onSelectEntry,
+  locationIndex,
   pathPrefix = [],
   anchorPathPrefix = ["root"],
   showNumbers = true,
@@ -880,6 +978,7 @@ function SenseList({
   senses: CanonicalSense[];
   onPlayAudio: EntryViewProps["onPlayAudio"];
   onSelectEntry: EntryViewProps["onSelectEntry"];
+  locationIndex: LocationIndex;
   pathPrefix?: number[];
   anchorPathPrefix?: QuickFindSensePath;
   showNumbers?: boolean;
@@ -898,6 +997,7 @@ function SenseList({
             anchorPath={[...anchorPathPrefix, index]}
             onPlayAudio={onPlayAudio}
             onSelectEntry={onSelectEntry}
+            locationIndex={locationIndex}
             showGroupHeading={Boolean(currentHeading && currentHeading !== previousHeading)}
             showNumber={showNumbers}
           />
@@ -914,6 +1014,7 @@ function PhraseSection({
   phrases,
   onPlayAudio,
   onSelectEntry,
+  locationIndex,
 }: {
   id: string;
   collection: "idioms" | "phrasalVerbs";
@@ -921,6 +1022,7 @@ function PhraseSection({
   phrases: CanonicalPhrase[];
   onPlayAudio: EntryViewProps["onPlayAudio"];
   onSelectEntry: EntryViewProps["onSelectEntry"];
+  locationIndex: LocationIndex;
 }) {
   if (!phrases.length) {
     return null;
@@ -936,9 +1038,14 @@ function PhraseSection({
           className="phrase-entry"
           id={phraseQuickFindAnchor(collection, phrase, phraseIndex)}
           key={phrase.id ?? `${phrase.display.text}-${phraseIndex}`}
+          {...searchLocationAttributes(locationIndex.get(phrase), phrase.id)}
         >
           {phrase.leadingUsage.map((usage, usageIndex) => (
-            <p className="phrase-leading-usage" key={`${usage.text}-${usageIndex}`}>
+            <p
+              className="phrase-leading-usage"
+              key={`${usage.text}-${usageIndex}`}
+              {...searchLocationPathAttributes(locationIndex.get(usage))}
+            >
               <CanonicalTextContent value={usage} />
             </p>
           ))}
@@ -946,12 +1053,14 @@ function PhraseSection({
           <PhraseVariantsView
             forms={phrase.variants}
             primaryLabels={phrase.labels}
+            locationIndex={locationIndex}
             onPlayAudio={onPlayAudio}
           />
           <SenseList
             senses={phrase.senses}
             onPlayAudio={onPlayAudio}
             onSelectEntry={onSelectEntry}
+            locationIndex={locationIndex}
             showNumbers={phrase.senses.length > 1}
             anchorPathPrefix={["phrase", collection, phraseIndex]}
           />
@@ -1016,10 +1125,12 @@ function InflectedFormsView({
   classPrefix,
   forms,
   onPlayAudio,
+  locationIndex,
 }: {
   classPrefix: "derived-form" | "entry" | "sense";
   forms: CanonicalForm[];
   onPlayAudio: EntryViewProps["onPlayAudio"];
+  locationIndex: LocationIndex;
 }) {
   const visible = forms.filter((form) => form.text.trim());
   if (!visible.length) {
@@ -1033,6 +1144,7 @@ function InflectedFormsView({
         <span
           className={`${classPrefix}-inflected-form`}
           key={`${form.kind}-${form.text}-${formIndex}`}
+          {...searchLocationAttributes(locationIndex.get(form), form.id)}
         >
           {formIndex > 0 ? <span className={`${classPrefix}-inflected-separator`}>, </span> : null}
           {form.kind === "inflection-constraint" ? (
@@ -1152,10 +1264,12 @@ function PhraseVariantsView({
   forms,
   primaryLabels,
   onPlayAudio,
+  locationIndex,
 }: {
   forms: CanonicalForm[];
   primaryLabels: CanonicalLabel[];
   onPlayAudio: EntryViewProps["onPlayAudio"];
+  locationIndex: LocationIndex;
 }) {
   const labels = primaryLabels.filter((label) => label.text.trim());
   if (!forms.length && !labels.length) {
@@ -1171,6 +1285,7 @@ function PhraseVariantsView({
         <span
           className={`phrase-variant is-${form.relation === "equivalent" ? "equivalent" : "alternative"}`}
           key={`${form.text}-${formIndex}`}
+          {...searchLocationAttributes(locationIndex.get(form), form.id)}
         >
           <span aria-hidden="true">(</span>
           <VariantFormContent
@@ -1188,9 +1303,11 @@ function PhraseVariantsView({
 function VariantFormsView({
   forms,
   onPlayAudio,
+  locationIndex,
 }: {
   forms: CanonicalForm[];
   onPlayAudio: EntryViewProps["onPlayAudio"];
+  locationIndex: LocationIndex;
 }) {
   if (!forms.length) {
     return null;
@@ -1200,7 +1317,11 @@ function VariantFormsView({
     <p className="entry-variants">
       <span aria-hidden="true">(</span>
       {forms.map((form, formIndex) => (
-        <span className="entry-variant" key={`${form.text}-${formIndex}`}>
+        <span
+          className="entry-variant"
+          key={`${form.text}-${formIndex}`}
+          {...searchLocationAttributes(locationIndex.get(form), form.id)}
+        >
           {formIndex > 0 ? <span className="entry-variant-separator">, </span> : null}
           <VariantFormContent
             classPrefix="entry"
@@ -1219,11 +1340,13 @@ function HeadwordFormsView({
   patterns,
   forms,
   onPlayAudio,
+  locationIndex,
 }: {
   usage: CanonicalEntry["headwordUsage"];
   patterns: CanonicalEntry["headwordPatterns"];
   forms: CanonicalForm[];
   onPlayAudio: EntryViewProps["onPlayAudio"];
+  locationIndex: LocationIndex;
 }) {
   const visibleUsage = (usage ?? []).filter((item) => item.text.trim());
   const visiblePatterns = (patterns ?? []).filter((pattern) => pattern.text.trim());
@@ -1234,7 +1357,11 @@ function HeadwordFormsView({
   return (
     <p className="entry-headword-forms">
       {visibleUsage.map((item, index) => (
-        <span className="entry-headword-usage" key={`${item.text}-${index}`}>
+        <span
+          className="entry-headword-usage"
+          key={`${item.text}-${index}`}
+          {...searchLocationPathAttributes(locationIndex.get(item))}
+        >
           {index > 0 ? " " : null}
           <CanonicalTextContent value={item} />
         </span>
@@ -1247,7 +1374,12 @@ function HeadwordFormsView({
         </span>
       ))}
       {(visibleUsage.length || visiblePatterns.length) && forms.length ? " " : null}
-      <InflectedFormsView classPrefix="entry" forms={forms} onPlayAudio={onPlayAudio} />
+      <InflectedFormsView
+        classPrefix="entry"
+        forms={forms}
+        locationIndex={locationIndex}
+        onPlayAudio={onPlayAudio}
+      />
     </p>
   );
 }
@@ -1256,10 +1388,12 @@ function DerivedFormsView({
   forms,
   onPlayAudio,
   onSelectEntry,
+  locationIndex,
 }: {
   forms: CanonicalForm[];
   onPlayAudio: EntryViewProps["onPlayAudio"];
   onSelectEntry: EntryViewProps["onSelectEntry"];
+  locationIndex: LocationIndex;
 }) {
   if (!forms.length) {
     return null;
@@ -1273,7 +1407,11 @@ function DerivedFormsView({
       </h2>
       <div className="derived-form-list">
         {forms.map((form, index) => (
-          <article className="derived-form" key={form.id ?? `${form.kind}-${form.text}-${index}`}>
+          <article
+            className="derived-form"
+            key={form.id ?? `${form.kind}-${form.text}-${index}`}
+            {...searchLocationAttributes(locationIndex.get(form), form.id)}
+          >
             <div className="derived-form-heading">
               <h3>
                 <CanonicalTextContent
@@ -1286,6 +1424,7 @@ function DerivedFormsView({
                       <span
                         className="derived-form-variant"
                         key={`${variant.text}-${variantIndex}`}
+                        {...searchLocationAttributes(locationIndex.get(variant), variant.id)}
                       >
                         {variantIndex > 0 ? (
                           <span className="derived-form-variant-separator">, </span>
@@ -1306,6 +1445,7 @@ function DerivedFormsView({
                     <InflectedFormsView
                       classPrefix="derived-form"
                       forms={form.inflectedForms ?? []}
+                      locationIndex={locationIndex}
                       onPlayAudio={onPlayAudio}
                     />
                   </>
@@ -1318,7 +1458,11 @@ function DerivedFormsView({
               ) : null}
             </div>
             {(form.usage ?? []).map((usage, usageIndex) => (
-              <p className="derived-form-usage" key={`${usage.text}-${usageIndex}`}>
+              <p
+                className="derived-form-usage"
+                key={`${usage.text}-${usageIndex}`}
+                {...searchLocationPathAttributes(locationIndex.get(usage))}
+              >
                 <CanonicalTextContent value={usage} />
               </p>
             ))}
@@ -1347,6 +1491,7 @@ function DerivedFormsView({
                 anchorPathPrefix={["derived", index]}
                 onPlayAudio={onPlayAudio}
                 onSelectEntry={onSelectEntry}
+                locationIndex={locationIndex}
                 senses={form.senses ?? []}
                 showNumbers={(form.senses ?? []).length > 1}
               />
@@ -1377,8 +1522,14 @@ export function EntryView({
   prefetchedEtymologyArticle,
   onEtymologyChange,
   onNavigateEtymology,
+  searchLocation,
+  onSearchLocationSettled,
 }: EntryViewProps) {
   const resourceScope = `${entry.id}:${projection.activeIndex}`;
+  const locationIndex = useMemo(
+    () => indexCanonicalEntrySearchLocations(entry),
+    [entry],
+  );
   const resources = useMemo(
     () => buildEntryResources(projection, enhancements ?? []),
     [enhancements, projection],
@@ -1405,10 +1556,10 @@ export function EntryView({
       )?.summary ?? null
     : null;
 
-  const closeResource = () => {
+  const closeResource = useCallback(() => {
     setActiveResource(null);
-  };
-  const openResource = (resource: EntryResource, articleId?: string) => {
+  }, []);
+  const openResource = useCallback((resource: EntryResource, articleId?: string) => {
     if (resource.kind === "etymology") {
       onEtymologyChange?.({
         term: resource.summary.term,
@@ -1421,7 +1572,48 @@ export function EntryView({
         ? { scope: resourceScope, box: resource.box }
         : { scope: resourceScope, illustration: resource.illustration },
     );
-  };
+  }, [onEtymologyChange, resourceScope]);
+
+  useEffect(() => {
+    if (!searchLocation) {
+      return;
+    }
+    const targetResource = resources.find((resource) => {
+      const target = entryResourceSearchLocationTarget(resource);
+      if (!target) {
+        return false;
+      }
+      const location = locationIndex.get(target);
+      return Boolean(
+        location &&
+        location.section === searchLocation.section &&
+        ((searchLocation.ownerId && location.ownerId === searchLocation.ownerId) ||
+          searchLocationContains(location, searchLocation)),
+      );
+    });
+    if (targetResource) {
+      const target = entryResourceSearchLocationTarget(targetResource);
+      const activeTarget = activeBox ?? activeIllustration;
+      if (target && target !== activeTarget) {
+        const frame = window.requestAnimationFrame(() => openResource(targetResource));
+        return () => window.cancelAnimationFrame(frame);
+      }
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      scrollToSearchLocation(searchLocation);
+      onSearchLocationSettled?.(searchLocation);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [
+    activeBox,
+    activeIllustration,
+    locationIndex,
+    onSearchLocationSettled,
+    openResource,
+    resources,
+    searchLocation,
+  ]);
 
   return (
     <article className={`entry-view${entryPending ? " is-pending" : ""}`}>
@@ -1462,7 +1654,11 @@ export function EntryView({
                 ))}
               </div>
             ) : null}
-            <VariantFormsView forms={projection.variants} onPlayAudio={onPlayAudio} />
+            <VariantFormsView
+              forms={projection.variants}
+              locationIndex={locationIndex}
+              onPlayAudio={onPlayAudio}
+            />
             {audioError ? <p className="media-error" role="status">{audioError}</p> : null}
           </div>
 
@@ -1522,6 +1718,7 @@ export function EntryView({
 
               <HeadwordFormsView
                 forms={projection.inflectedForms}
+                locationIndex={locationIndex}
                 onPlayAudio={onPlayAudio}
                 patterns={entry.headwordPatterns}
                 usage={entry.headwordUsage}
@@ -1538,6 +1735,7 @@ export function EntryView({
               ) : null}
 
               <SenseList
+                locationIndex={locationIndex}
                 senses={projection.senses}
                 onPlayAudio={onPlayAudio}
                 onSelectEntry={onSelectEntry}
@@ -1564,7 +1762,10 @@ export function EntryView({
                     <EntryQualifierLine labels={subentry.labels} />
                     {(subentry.headwordUsage ?? []).map((usage, usageIndex) => (
                       <p className="entry-headword-forms" key={`${usage.text}-${usageIndex}`}>
-                        <span className="entry-headword-usage">
+                        <span
+                          className="entry-headword-usage"
+                          {...searchLocationPathAttributes(locationIndex.get(usage))}
+                        >
                           <CanonicalTextContent value={usage} />
                         </span>
                       </p>
@@ -1576,6 +1777,7 @@ export function EntryView({
                     <SenseList
                       anchorPathPrefix={["subentry", subentryIndex]}
                       senses={subentry.senses}
+                      locationIndex={locationIndex}
                       onPlayAudio={onPlayAudio}
                       onSelectEntry={onSelectEntry}
                     />
@@ -1590,6 +1792,7 @@ export function EntryView({
             id="idioms"
             label="习语"
             phrases={projection.idioms}
+            locationIndex={locationIndex}
             onPlayAudio={onPlayAudio}
             onSelectEntry={onSelectEntry}
           />
@@ -1598,12 +1801,14 @@ export function EntryView({
             id="phrasal-verbs"
             label="短语动词"
             phrases={projection.phrasalVerbs}
+            locationIndex={locationIndex}
             onPlayAudio={onPlayAudio}
             onSelectEntry={onSelectEntry}
           />
 
           <DerivedFormsView
             forms={projection.derivedForms}
+            locationIndex={locationIndex}
             onPlayAudio={onPlayAudio}
             onSelectEntry={onSelectEntry}
           />
@@ -1619,6 +1824,7 @@ export function EntryView({
       <ResourceDialog
         box={activeBox}
         illustration={activeIllustration}
+        locationIndex={locationIndex}
         onClose={closeResource}
         onPlayAudio={onPlayAudio}
         onSelectEntry={onSelectEntry}

@@ -8,6 +8,7 @@ import type {
 import {
   buildEntryNavigation,
   collectEntryPhrases,
+  entryPartIndexFor,
   entryPartOptions,
   partOfSpeechTabLabel,
   projectEntryPart,
@@ -30,6 +31,20 @@ test("uses compact dictionary abbreviations for sticky part-of-speech tabs", () 
   assert.equal(partOfSpeechTabLabel("adjective"), "adj.");
   assert.equal(partOfSpeechTabLabel("phrasal verb"), "phr. v.");
   assert.equal(partOfSpeechTabLabel("modal verb"), "modal verb");
+});
+
+test("resolves reverse-search parts from canonical names or display abbreviations", () => {
+  const root = entry({
+    partsOfSpeech: [
+      { text: "noun", tokens: [], raw: "noun" },
+      { text: "verb", tokens: [], raw: "verb" },
+    ],
+  });
+  assert.equal(entryPartIndexFor(root, "noun"), 0);
+  assert.equal(entryPartIndexFor(root, "n."), 0);
+  assert.equal(entryPartIndexFor(root, "verb"), 1);
+  assert.equal(entryPartIndexFor(root, "v."), 1);
+  assert.equal(entryPartIndexFor(root, "unknown"), 0);
 });
 
 const entry = (overrides: Partial<CanonicalEntry> = {}): CanonicalEntry => ({
