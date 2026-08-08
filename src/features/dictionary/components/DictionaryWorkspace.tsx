@@ -23,6 +23,7 @@ import {
   learningData,
   type FavoriteRecord,
   type HistoryRecord,
+  type LearningPreferences,
   type NoteRecord,
   type QueryHistoryRecord,
 } from "../../../lib/storage/learning-data";
@@ -44,6 +45,7 @@ import {
 } from "../workspace-route";
 import { DictionaryHeader } from "./DictionaryHeader";
 import { DictionaryHome } from "./DictionaryHome";
+import { DialogPortalProvider } from "./DialogPortal";
 import { EntryView } from "./EntryView";
 import { EtymologyOnlyView } from "./EtymologyOnlyView";
 import { InlineLookup } from "./InlineLookup";
@@ -154,6 +156,7 @@ export function DictionaryWorkspace({
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [favorites, setFavorites] = useState<FavoriteRecord[]>([]);
   const [notes, setNotes] = useState<NoteRecord[]>([]);
+  const [fontScale, setFontScale] = useState<LearningPreferences["fontScale"]>("default");
   const [favorite, setFavorite] = useState(false);
   const [note, setNote] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -174,6 +177,8 @@ export function DictionaryWorkspace({
   const resultPageRequest = useRef<AbortController | null>(null);
   const submittedSearchKey = useRef<string | null>(null);
   const queryHistoryMutationRevision = useRef(0);
+  const fontScaleMutationRevision = useRef(0);
+  const fontScaleWrite = useRef<Promise<void>>(Promise.resolve());
   const entryRequest = useRef<AbortController | null>(null);
   const etymologyNavigationRequest = useRef<AbortController | null>(null);
   const activeAudio = useRef<HTMLAudioElement | null>(null);
@@ -280,6 +285,30 @@ export function DictionaryWorkspace({
     setHistory(nextHistory);
     setFavorites(nextFavorites);
     setNotes(nextNotes);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const revision = fontScaleMutationRevision.current;
+    void learningData.getPreferences().then((preferences) => {
+      if (!cancelled && fontScaleMutationRevision.current === revision) {
+        setFontScale(preferences.fontScale);
+      }
+    }).catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const updateFontScale = useCallback((nextFontScale: LearningPreferences["fontScale"]): void => {
+    fontScaleMutationRevision.current += 1;
+    setFontScale(nextFontScale);
+    fontScaleWrite.current = fontScaleWrite.current
+      .catch(() => undefined)
+      .then(async () => {
+        await learningData.updatePreferences({ fontScale: nextFontScale });
+      });
   }, []);
 
   const resyncQueryHistory = useCallback(async (revision: number): Promise<void> => {
@@ -1116,204 +1145,208 @@ export function DictionaryWorkspace({
   }, [entry.id, sidebarItems]);
 
   return (
-    <main className="dictionary-app" id="dictionary-top">
-      <DictionaryHeader
-        homeMode={view === "home"}
-        query={query}
-        suggestions={suggestions}
-        queryHistory={queryHistory}
-        searchPending={searchPending}
-        searchOpen={searchOpen}
-        searchError={searchError}
-        inputRef={inputRef}
-        onQueryChange={updateQuery}
-        onClearQuery={clearQuery}
-        onSearchFocus={() => setSearchOpen(true)}
-        onSearchBlur={() => window.setTimeout(() => {
-          setSearchOpen(false);
-          setSearchPending(false);
-        }, 100)}
-        onDismissSearch={() => {
-          setSearchOpen(false);
-          setSearchPending(false);
-        }}
-        onSubmit={submitSearch}
-        onHome={() => showHome(true)}
-        onSelect={(target) => {
-          recordExplicitQuery(query || target.headword);
-          void selectSearchTarget(target, { route: "push" });
-        }}
-        onSelectQueryHistory={(historicalQuery) => {
-          setQuery(historicalQuery);
-          recordExplicitQuery(historicalQuery);
-          void runSearch(historicalQuery, { route: "push" });
-        }}
-        onDeleteQueryHistory={deleteQueryHistory}
-        onOpenLibrary={(tab) => void openLibrary(tab)}
-      />
-
-      {view === "home" ? (
-        <DictionaryHome
-          history={history}
-          favorites={favorites}
-          onSelect={(entryId) => void selectEntry(entryId, { route: "push" })}
+    <DialogPortalProvider fontScale={fontScale}>
+      <main className="dictionary-app" data-font-scale={fontScale} id="dictionary-top">
+        <DictionaryHeader
+          homeMode={view === "home"}
+          query={query}
+          suggestions={suggestions}
+          queryHistory={queryHistory}
+          searchPending={searchPending}
+          searchOpen={searchOpen}
+          searchError={searchError}
+          fontScale={fontScale}
+          inputRef={inputRef}
+          onQueryChange={updateQuery}
+          onClearQuery={clearQuery}
+          onSearchFocus={() => setSearchOpen(true)}
+          onSearchBlur={() => window.setTimeout(() => {
+            setSearchOpen(false);
+            setSearchPending(false);
+          }, 100)}
+          onDismissSearch={() => {
+            setSearchOpen(false);
+            setSearchPending(false);
+          }}
+          onSubmit={submitSearch}
+          onHome={() => showHome(true)}
+          onSelect={(target) => {
+            recordExplicitQuery(query || target.headword);
+            void selectSearchTarget(target, { route: "push" });
+          }}
+          onSelectQueryHistory={(historicalQuery) => {
+            setQuery(historicalQuery);
+            recordExplicitQuery(historicalQuery);
+            void runSearch(historicalQuery, { route: "push" });
+          }}
+          onDeleteQueryHistory={deleteQueryHistory}
+          onFontScaleChange={updateFontScale}
           onOpenLibrary={(tab) => void openLibrary(tab)}
         />
-      ) : view === "loading" ? (
-        <div className="entry-loading-shell" role="status" aria-label="正在加载词条">
-          <span aria-hidden="true" />
-        </div>
-      ) : view === "search-results" ? (
-        <div className="search-results-shell">
-          <SearchResults
-            error={searchResults.error}
-            hasMore={searchResults.nextOffset !== null}
-            items={searchResults.items}
-            loadingMore={searchResults.loadingMore}
-            loadMoreError={searchResults.loadMoreError}
-            nextResultCount={searchResults.nextOffset === null
-              ? undefined
-              : nextReverseResultCount(searchResults.nextOffset)}
-            onLoadMore={() => void loadMoreSearchResults()}
-            onRetry={() => void runSearch(searchResults.query, {
-              route: "none",
-              scope: searchResults.scope,
-            })}
-            onScopeChange={(scope) => void runSearch(searchResults.query, {
-              route: "push",
-              scope,
-            })}
-            onSelect={(target, match) => void selectSearchTarget(target, {
-              route: "push",
-              articleTarget: searchResults.articleTarget,
-              searchLocation: match?.location,
-            })}
-            pending={searchResults.pending}
-            query={searchResults.query}
-            scope={searchResults.scope}
-          />
-        </div>
-      ) : view === "etymology" && etymology ? (
-        <div className="etymology-only-shell">
-          <EtymologyOnlyView
-            articleId={etymology.articleId}
-            autoOpen={autoOpenEtymology}
-            prefetchedArticle={prefetchedEtymologyArticle}
-            onArticleChange={(articleId) => {
-              const next = { term: etymology.term, articleId };
-              setEtymology(next);
-              updateRoute(
-                workspaceRouteUrl(window.location.pathname, { kind: "etymology", etymology: next }),
-                "push",
-              );
-            }}
-            onNavigate={navigateEtymologyLink}
-            term={etymology.term}
-          />
-        </div>
-      ) : <div className="dictionary-shell">
-        <aside className="entry-sidebar" aria-label="词条目录">
-          <h2>目录</h2>
-          <nav>
-            {sidebarItems.map((item, index) => (
-              <button
-                className={item.id === activeSectionId ? "is-active" : ""}
-                key={`${item.id}-${index}`}
-                type="button"
-                onClick={() => {
-                  setActiveSectionId(item.id);
-                  scrollToSection(item.id);
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
-          </nav>
-          <button
-            className="entry-back-to-top"
-            type="button"
-            title="回到顶部"
-            aria-label="回到顶部"
-            onClick={() => scrollToSection("dictionary-top")}
-          >
-            <ArrowUp aria-hidden="true" />
-          </button>
-        </aside>
 
-        <section className="word-page" ref={wordPageRef}>
-          <EntryView
-            activeSectionId={activeSectionId}
-            entry={entry}
-            enhancements={enhancements}
-            projection={projection}
-            favorite={favorite}
-            entryPending={entryPending}
-            audioError={audioError}
-            resolveIllustration={dictionaryClient.illustrationUrl}
-            onPartChange={changePart}
-            onSelectEntry={(entryId) => void selectEntry(entryId, { route: "push" })}
-            etymology={etymology}
-            prefetchedEtymologyArticle={prefetchedEtymologyArticle}
-            onEtymologyChange={(nextEtymology) => {
-              setEtymology(nextEtymology ?? undefined);
-              updateRoute(
-                workspaceRouteUrl(window.location.pathname, {
-                  kind: "entry",
-                  entryId: entry.id,
-                  ...(nextEtymology ? { etymology: nextEtymology } : {}),
-                }),
-                "push",
-              );
-            }}
-            onNavigateEtymology={navigateEtymologyLink}
-            searchLocation={pendingSearchLocation}
-            onSearchLocationSettled={(location) => {
-              setPendingSearchLocation((current) => current === location ? undefined : current);
-            }}
-            onToggleFavorite={() => void toggleFavorite()}
-            onOpenNote={() => setDrawer({ mode: "note" })}
-            onPlayAudio={playAudio}
-            onJump={scrollToSection}
+        {view === "home" ? (
+          <DictionaryHome
+            history={history}
+            favorites={favorites}
+            onSelect={(entryId) => void selectEntry(entryId, { route: "push" })}
+            onOpenLibrary={(tab) => void openLibrary(tab)}
           />
-          <InlineLookup
-            onLookup={(lookupQuery) => {
-              recordExplicitQuery(lookupQuery);
-              return runSearch(lookupQuery, { route: "push" });
-            }}
-            rootRef={wordPageRef}
-          />
-        </section>
-      </div>}
+        ) : view === "loading" ? (
+          <div className="entry-loading-shell" role="status" aria-label="正在加载词条">
+            <span aria-hidden="true" />
+          </div>
+        ) : view === "search-results" ? (
+          <div className="search-results-shell">
+            <SearchResults
+              error={searchResults.error}
+              hasMore={searchResults.nextOffset !== null}
+              items={searchResults.items}
+              loadingMore={searchResults.loadingMore}
+              loadMoreError={searchResults.loadMoreError}
+              nextResultCount={searchResults.nextOffset === null
+                ? undefined
+                : nextReverseResultCount(searchResults.nextOffset)}
+              onLoadMore={() => void loadMoreSearchResults()}
+              onRetry={() => void runSearch(searchResults.query, {
+                route: "none",
+                scope: searchResults.scope,
+              })}
+              onScopeChange={(scope) => void runSearch(searchResults.query, {
+                route: "push",
+                scope,
+              })}
+              onSelect={(target, match) => void selectSearchTarget(target, {
+                route: "push",
+                articleTarget: searchResults.articleTarget,
+                searchLocation: match?.location,
+              })}
+              pending={searchResults.pending}
+              query={searchResults.query}
+              scope={searchResults.scope}
+            />
+          </div>
+        ) : view === "etymology" && etymology ? (
+          <div className="etymology-only-shell">
+            <EtymologyOnlyView
+              articleId={etymology.articleId}
+              autoOpen={autoOpenEtymology}
+              prefetchedArticle={prefetchedEtymologyArticle}
+              onArticleChange={(articleId) => {
+                const next = { term: etymology.term, articleId };
+                setEtymology(next);
+                updateRoute(
+                  workspaceRouteUrl(window.location.pathname, { kind: "etymology", etymology: next }),
+                  "push",
+                );
+              }}
+              onNavigate={navigateEtymologyLink}
+              term={etymology.term}
+            />
+          </div>
+        ) : <div className="dictionary-shell">
+          <aside className="entry-sidebar" aria-label="词条目录">
+            <h2>目录</h2>
+            <nav>
+              {sidebarItems.map((item, index) => (
+                <button
+                  className={item.id === activeSectionId ? "is-active" : ""}
+                  key={`${item.id}-${index}`}
+                  type="button"
+                  onClick={() => {
+                    setActiveSectionId(item.id);
+                    scrollToSection(item.id);
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+            <button
+              className="entry-back-to-top"
+              type="button"
+              title="回到顶部"
+              aria-label="回到顶部"
+              onClick={() => scrollToSection("dictionary-top")}
+            >
+              <ArrowUp aria-hidden="true" />
+            </button>
+          </aside>
 
-      <WorkspaceDrawer
-        {...(drawer?.mode === "note"
-          ? {
-              open: true as const,
-              mode: "note" as const,
-              headword: entry.headword,
-              note,
-              onNoteChange: setNote,
-              onSaveNote: () => void saveNote(),
-              onClose: () => setDrawer(null),
-            }
-          : drawer?.mode === "library"
+          <section className="word-page" ref={wordPageRef}>
+            <EntryView
+              activeSectionId={activeSectionId}
+              entry={entry}
+              enhancements={enhancements}
+              projection={projection}
+              favorite={favorite}
+              entryPending={entryPending}
+              audioError={audioError}
+              resolveIllustration={dictionaryClient.illustrationUrl}
+              onPartChange={changePart}
+              onSelectEntry={(entryId) => void selectEntry(entryId, { route: "push" })}
+              etymology={etymology}
+              prefetchedEtymologyArticle={prefetchedEtymologyArticle}
+              onEtymologyChange={(nextEtymology) => {
+                setEtymology(nextEtymology ?? undefined);
+                updateRoute(
+                  workspaceRouteUrl(window.location.pathname, {
+                    kind: "entry",
+                    entryId: entry.id,
+                    ...(nextEtymology ? { etymology: nextEtymology } : {}),
+                  }),
+                  "push",
+                );
+              }}
+              onNavigateEtymology={navigateEtymologyLink}
+              searchLocation={pendingSearchLocation}
+              onSearchLocationSettled={(location) => {
+                setPendingSearchLocation((current) => current === location ? undefined : current);
+              }}
+              onToggleFavorite={() => void toggleFavorite()}
+              onOpenNote={() => setDrawer({ mode: "note" })}
+              onPlayAudio={playAudio}
+              onJump={scrollToSection}
+            />
+            <InlineLookup
+              onLookup={(lookupQuery) => {
+                recordExplicitQuery(lookupQuery);
+                return runSearch(lookupQuery, { route: "push" });
+              }}
+              rootRef={wordPageRef}
+            />
+          </section>
+        </div>}
+
+        <WorkspaceDrawer
+          {...(drawer?.mode === "note"
             ? {
                 open: true as const,
-                mode: "library" as const,
-                tab: drawer.tab,
-                history,
-                favorites,
-                notes,
-                onTabChange: (tab: LibraryTab) => setDrawer({ mode: "library", tab }),
-                onBulkAction: runLibraryBulkAction,
-                onSelect: (entryId: string) => {
-                  setDrawer(null);
-                  void selectEntry(entryId, { route: "push" });
-                },
+                mode: "note" as const,
+                headword: entry.headword,
+                note,
+                onNoteChange: setNote,
+                onSaveNote: () => void saveNote(),
                 onClose: () => setDrawer(null),
               }
-            : { open: false as const, onClose: () => setDrawer(null) })}
-      />
-    </main>
+            : drawer?.mode === "library"
+              ? {
+                  open: true as const,
+                  mode: "library" as const,
+                  tab: drawer.tab,
+                  history,
+                  favorites,
+                  notes,
+                  onTabChange: (tab: LibraryTab) => setDrawer({ mode: "library", tab }),
+                  onBulkAction: runLibraryBulkAction,
+                  onSelect: (entryId: string) => {
+                    setDrawer(null);
+                    void selectEntry(entryId, { route: "push" });
+                  },
+                  onClose: () => setDrawer(null),
+                }
+              : { open: false as const, onClose: () => setDrawer(null) })}
+        />
+      </main>
+    </DialogPortalProvider>
   );
 }

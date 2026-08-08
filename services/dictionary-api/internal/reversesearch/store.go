@@ -18,6 +18,8 @@ import (
 
 type Store struct{ db *sql.DB }
 
+const highestScopeMatchTier = 3
+
 type candidate struct {
 	id               int64
 	document         SearchDocument
@@ -157,8 +159,10 @@ func (s *Store) SearchPage(ctx context.Context, query string, options Options) (
 			return empty, err
 		}
 	}
+	preciseCandidates := []candidate{}
+	fallbackScopes := scopes
 	if len(searchTokens) > 1 {
-		candidates, err := s.searchCandidates(
+		preciseCandidates, err = s.searchCandidates(
 			ctx,
 			conjunctiveMatchExpression(searchTokens),
 			queryRunes,
@@ -169,16 +173,22 @@ func (s *Store) SearchPage(ctx context.Context, query string, options Options) (
 		if err != nil {
 			return empty, err
 		}
-		candidates = filterCandidatesByASCII(mergeCandidates(candidates, exactCandidates), asciiTerms)
-		if groups := groupCandidates(queryRunes, candidates, groupLimit); len(groups) > 0 {
-			return paginateGroups(groups, offset, limit), nil
+		preciseCandidates = filterCandidatesByASCII(mergeCandidates(preciseCandidates, exactCandidates), asciiTerms)
+		preciseCandidates = filterCandidatesForQuery(queryRunes, preciseCandidates)
+		fallbackScopes = scopesWithoutCandidateTiers(scopes, preciseCandidates)
+		if len(fallbackScopes) == 0 {
+			return paginateGroups(groupCandidates(queryRunes, preciseCandidates, groupLimit), offset, limit), nil
 		}
 	}
-	candidates, err := s.searchCandidates(ctx, matchExpression(searchTokens), queryRunes, matcher, scopes, asciiTerms)
+	candidates, err := s.searchCandidates(ctx, matchExpression(searchTokens), queryRunes, matcher, fallbackScopes, asciiTerms)
 	if err != nil {
 		return empty, err
 	}
-	candidates = filterCandidatesByASCII(mergeCandidates(candidates, exactCandidates), asciiTerms)
+	candidates = mergeCandidates(candidates, preciseCandidates)
+	if len(searchTokens) == 1 {
+		candidates = mergeCandidates(candidates, exactCandidates)
+	}
+	candidates = filterCandidatesByASCII(candidates, asciiTerms)
 	return paginateGroups(groupCandidates(queryRunes, candidates, groupLimit), offset, limit), nil
 }
 
@@ -206,24 +216,33 @@ func (s *Store) searchCandidates(
 	scopes []Scope,
 	asciiTerms []string,
 ) ([]candidate, error) {
-	predicate, predicateArguments := candidatePredicate(scopes, asciiTerms)
-	statement := fmt.Sprintf(`
-					SELECT d.id, d.entry_id, d.headword, d.scope, d.english_text, d.chinese_text,
-					       d.section, d.part, d.owner_id, d.path_json, d.weight, bm25(documents_fts)
-			FROM documents_fts
-			JOIN documents d ON d.id = documents_fts.rowid
-				WHERE documents_fts MATCH ? AND %s
-					ORDER BY bm25(documents_fts) - (d.weight * 0.01), d.entry_id, d.id
-					LIMIT ?`, predicate)
-	arguments := make([]any, 0, len(predicateArguments)+2)
-	arguments = append(arguments, match)
-	arguments = append(arguments, predicateArguments...)
-	arguments = append(arguments, defaultCandidates)
-	rows, err := s.db.QueryContext(ctx, statement, arguments...)
-	if err != nil {
-		return nil, err
+	partitions := partitionScopesByMatchTier(scopes)
+	var candidates []candidate
+	for _, partition := range partitions {
+		predicate, predicateArguments := candidatePredicate(partition, asciiTerms)
+		statement := fmt.Sprintf(`
+						SELECT d.id, d.entry_id, d.headword, d.scope, d.english_text, d.chinese_text,
+						       d.section, d.part, d.owner_id, d.path_json, d.weight, bm25(documents_fts)
+				FROM documents_fts
+				JOIN documents d ON d.id = documents_fts.rowid
+					WHERE documents_fts MATCH ? AND %s
+						ORDER BY bm25(documents_fts) - (d.weight * 0.01), d.entry_id, d.id
+						LIMIT ?`, predicate)
+		arguments := make([]any, 0, len(predicateArguments)+2)
+		arguments = append(arguments, match)
+		arguments = append(arguments, predicateArguments...)
+		arguments = append(arguments, defaultCandidates)
+		rows, err := s.db.QueryContext(ctx, statement, arguments...)
+		if err != nil {
+			return nil, err
+		}
+		partitionCandidates, err := scanCandidates(ctx, rows, queryRunes, matcher)
+		if err != nil {
+			return nil, err
+		}
+		candidates = append(candidates, partitionCandidates...)
 	}
-	return scanCandidates(ctx, rows, queryRunes, matcher)
+	return candidates, nil
 }
 
 func (s *Store) searchExactCandidates(
@@ -234,24 +253,67 @@ func (s *Store) searchExactCandidates(
 	scopes []Scope,
 	asciiTerms []string,
 ) ([]candidate, error) {
-	predicate, predicateArguments := candidatePredicate(scopes, asciiTerms)
-	statement := fmt.Sprintf(`
-				SELECT d.id, d.entry_id, d.headword, d.scope, d.english_text, d.chinese_text,
-				       d.section, d.part, d.owner_id, d.path_json, d.weight, 0.0
-				FROM exact_segments x
-				JOIN documents d ON d.id = x.document_id
-				WHERE x.normalized = ? AND %s
-				ORDER BY d.weight DESC, d.entry_id, d.id
-				LIMIT ?`, predicate)
-	arguments := make([]any, 0, len(predicateArguments)+2)
-	arguments = append(arguments, normalized)
-	arguments = append(arguments, predicateArguments...)
-	arguments = append(arguments, defaultCandidates)
-	rows, err := s.db.QueryContext(ctx, statement, arguments...)
-	if err != nil {
-		return nil, err
+	partitions := partitionScopesByMatchTier(scopes)
+	var candidates []candidate
+	for _, partition := range partitions {
+		predicate, predicateArguments := candidatePredicate(partition, asciiTerms)
+		statement := fmt.Sprintf(`
+					SELECT d.id, d.entry_id, d.headword, d.scope, d.english_text, d.chinese_text,
+					       d.section, d.part, d.owner_id, d.path_json, d.weight, 0.0
+					FROM exact_segments x
+					JOIN documents d ON d.id = x.document_id
+					WHERE x.normalized = ? AND %s
+					ORDER BY d.weight DESC, d.entry_id, d.id
+					LIMIT ?`, predicate)
+		arguments := make([]any, 0, len(predicateArguments)+2)
+		arguments = append(arguments, normalized)
+		arguments = append(arguments, predicateArguments...)
+		arguments = append(arguments, defaultCandidates)
+		rows, err := s.db.QueryContext(ctx, statement, arguments...)
+		if err != nil {
+			return nil, err
+		}
+		partitionCandidates, err := scanCandidates(ctx, rows, queryRunes, matcher)
+		if err != nil {
+			return nil, err
+		}
+		candidates = append(candidates, partitionCandidates...)
 	}
-	return scanCandidates(ctx, rows, queryRunes, matcher)
+	return candidates, nil
+}
+
+func partitionScopesByMatchTier(scopes []Scope) [][]Scope {
+	byTier := make([][]Scope, highestScopeMatchTier+1)
+	for _, scope := range scopes {
+		tier := scopeMatchTier(scope)
+		if tier < 0 || tier > highestScopeMatchTier {
+			tier = 0
+		}
+		byTier[tier] = append(byTier[tier], scope)
+	}
+	partitions := make([][]Scope, 0, highestScopeMatchTier)
+	for tier := highestScopeMatchTier; tier >= 0; tier-- {
+		if len(byTier[tier]) > 0 {
+			partitions = append(partitions, byTier[tier])
+		}
+	}
+	return partitions
+}
+
+func scopesWithoutCandidateTiers(scopes []Scope, candidates []candidate) []Scope {
+	var matchedTiers [highestScopeMatchTier + 1]bool
+	for _, candidate := range candidates {
+		if candidate.scopeTier >= 0 && candidate.scopeTier <= highestScopeMatchTier {
+			matchedTiers[candidate.scopeTier] = true
+		}
+	}
+	missing := make([]Scope, 0, len(scopes))
+	for _, scope := range scopes {
+		if !matchedTiers[scopeMatchTier(scope)] {
+			missing = append(missing, scope)
+		}
+	}
+	return missing
 }
 
 func scopePredicate(scopes []Scope) (string, []any) {
@@ -511,6 +573,46 @@ func groupCandidates(query []rune, candidates []candidate, limit int) []Group {
 	if len(candidates) == 0 {
 		return []Group{}
 	}
+	candidates = filterCandidatesForQuery(query, candidates)
+	sort.SliceStable(candidates, func(left, right int) bool {
+		if candidates[left].matchTier != candidates[right].matchTier {
+			return candidates[left].matchTier > candidates[right].matchTier
+		}
+		if candidates[left].scopeTier != candidates[right].scopeTier {
+			return candidates[left].scopeTier > candidates[right].scopeTier
+		}
+		if candidates[left].score != candidates[right].score {
+			return candidates[left].score > candidates[right].score
+		}
+		if candidates[left].document.EntryID != candidates[right].document.EntryID {
+			return candidates[left].document.EntryID < candidates[right].document.EntryID
+		}
+		if candidates[left].document.Headword != candidates[right].document.Headword {
+			return candidates[left].document.Headword < candidates[right].document.Headword
+		}
+		return candidates[left].id < candidates[right].id
+	})
+	groups := make([]Group, 0, limit)
+	byEntry := make(map[string]int, limit)
+	for _, candidate := range candidates {
+		index, exists := byEntry[candidate.document.EntryID]
+		if !exists {
+			if len(groups) == limit {
+				continue
+			}
+			index = len(groups)
+			byEntry[candidate.document.EntryID] = index
+			groups = append(groups, Group{EntryID: candidate.document.EntryID, Headword: candidate.document.Headword, Matches: make([]Match, 0, maxMatches)})
+		}
+		if len(groups[index].Matches) == maxMatches {
+			continue
+		}
+		groups[index].Matches = append(groups[index].Matches, Match{Scope: candidate.document.Scope, English: candidate.document.EnglishText, Chinese: candidate.document.ChineseText, Location: candidate.document.Location})
+	}
+	return groups
+}
+
+func filterCandidatesForQuery(query []rune, candidates []candidate) []candidate {
 	// A one-character query is deliberately restricted to canonical definitions/forms.
 	filtered := candidates[:0]
 	for _, candidate := range candidates {
@@ -555,42 +657,7 @@ func groupCandidates(query []rune, candidates []candidate, limit int) []Group {
 			candidates = filtered
 		}
 	}
-	sort.SliceStable(candidates, func(left, right int) bool {
-		if candidates[left].matchTier != candidates[right].matchTier {
-			return candidates[left].matchTier > candidates[right].matchTier
-		}
-		if candidates[left].scopeTier != candidates[right].scopeTier {
-			return candidates[left].scopeTier > candidates[right].scopeTier
-		}
-		if candidates[left].score != candidates[right].score {
-			return candidates[left].score > candidates[right].score
-		}
-		if candidates[left].document.EntryID != candidates[right].document.EntryID {
-			return candidates[left].document.EntryID < candidates[right].document.EntryID
-		}
-		if candidates[left].document.Headword != candidates[right].document.Headword {
-			return candidates[left].document.Headword < candidates[right].document.Headword
-		}
-		return candidates[left].id < candidates[right].id
-	})
-	groups := make([]Group, 0, limit)
-	byEntry := make(map[string]int, limit)
-	for _, candidate := range candidates {
-		index, exists := byEntry[candidate.document.EntryID]
-		if !exists {
-			if len(groups) == limit {
-				continue
-			}
-			index = len(groups)
-			byEntry[candidate.document.EntryID] = index
-			groups = append(groups, Group{EntryID: candidate.document.EntryID, Headword: candidate.document.Headword, Matches: make([]Match, 0, maxMatches)})
-		}
-		if len(groups[index].Matches) == maxMatches {
-			continue
-		}
-		groups[index].Matches = append(groups[index].Matches, Match{Scope: candidate.document.Scope, English: candidate.document.EnglishText, Chinese: candidate.document.ChineseText, Location: candidate.document.Location})
-	}
-	return groups
+	return candidates
 }
 
 func minimumPartialRun(queryLength int) int {

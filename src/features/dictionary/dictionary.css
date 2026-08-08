@@ -1,5 +1,28 @@
+.dictionary-app,
+.dictionary-portal-root {
+  --article-font-delta: 0px;
+  --reading-scale-delta: 0px;
+  --reading-font-delta: var(--reading-scale-delta);
+}
+
 .dictionary-app {
   min-height: 100vh;
+}
+
+.dictionary-portal-root {
+  display: contents;
+}
+
+.dictionary-app[data-font-scale="small"],
+.dictionary-portal-root[data-font-scale="small"] {
+  --article-font-delta: -1px;
+  --reading-scale-delta: -1px;
+}
+
+.dictionary-app[data-font-scale="large"],
+.dictionary-portal-root[data-font-scale="large"] {
+  --article-font-delta: 1px;
+  --reading-scale-delta: 2px;
 }
 
 .dictionary-header {
@@ -98,6 +121,133 @@
   align-items: center;
   display: flex;
   gap: .16rem;
+}
+
+.reading-scale-control {
+  display: flex;
+  position: relative;
+}
+
+.reading-scale-popover {
+  background: #fff;
+  border: .02667rem solid #d5dae4;
+  border-radius: .26667rem;
+  box-shadow: 0 .26667rem .8rem #00132c24;
+  padding: .32rem .4rem .4rem;
+  position: absolute;
+  right: 0;
+  top: calc(100% + .16rem);
+  width: min(4.8rem, calc(100vw - .74667rem));
+  z-index: 40;
+}
+
+.reading-scale-heading {
+  color: #747984;
+  font-size: .42667rem;
+  line-height: 1.4;
+  margin-bottom: .26667rem;
+}
+
+.reading-scale-heading strong {
+  font-weight: 400;
+}
+
+.reading-scale-slider {
+  --reading-scale-progress: 50%;
+  height: .74667rem;
+  position: relative;
+}
+
+.reading-scale-slider.is-small {
+  --reading-scale-progress: .34667rem;
+}
+
+.reading-scale-slider.is-large {
+  --reading-scale-progress: calc(100% - .34667rem);
+}
+
+.reading-scale-track {
+  align-items: center;
+  background: linear-gradient(
+    to right,
+    rgb(0, 106, 255) 0 var(--reading-scale-progress),
+    #e4e5e8 var(--reading-scale-progress) 100%
+  );
+  border: .02667rem solid #d2d6df;
+  border-radius: 999px;
+  display: flex;
+  height: .58667rem;
+  inset: 50% 0 auto;
+  justify-content: space-between;
+  overflow: hidden;
+  padding: 0 .34667rem;
+  pointer-events: none;
+  position: absolute;
+  transform: translateY(-50%);
+  z-index: 1;
+}
+
+.reading-scale-track i {
+  background: #aeb2ba;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  height: .13333rem;
+  width: .13333rem;
+}
+
+.reading-scale-slider input {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  height: .74667rem;
+  bottom: 0;
+  left: 0;
+  margin: 0;
+  padding: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: auto;
+  z-index: 2;
+}
+
+.reading-scale-slider input::-webkit-slider-runnable-track {
+  background: transparent;
+  cursor: pointer;
+  height: .58667rem;
+  width: 100%;
+}
+
+.reading-scale-slider input::-webkit-slider-thumb {
+  appearance: none;
+  background: #fff;
+  border: .02667rem solid #d9dde5;
+  border-radius: 50%;
+  box-shadow: 0 .05333rem .16rem #00132c24;
+  height: .69333rem;
+  margin-top: -.05333rem;
+  width: .69333rem;
+}
+
+.reading-scale-slider input::-moz-range-track {
+  background: transparent;
+  border: 0;
+  height: .58667rem;
+}
+
+.reading-scale-slider input::-moz-range-thumb {
+  background: #fff;
+  border: .02667rem solid #d9dde5;
+  border-radius: 50%;
+  box-shadow: 0 .05333rem .16rem #00132c24;
+  height: .69333rem;
+  width: .69333rem;
+}
+
+.reading-scale-slider input:focus-visible {
+  outline: .05333rem solid #1668e8;
+  outline-offset: .10667rem;
 }
 
 .header-tool,
@@ -428,7 +578,7 @@
   color: #333a4d;
   display: flex;
   flex-wrap: wrap;
-  font-size: .4rem;
+  font-size: calc(.4rem + var(--reading-font-delta));
   gap: .26667rem .53333rem;
   line-height: .58667rem;
   margin: .58667rem 0 0;
@@ -508,7 +658,7 @@
   width: .64rem;
 }
 
-@media (any-hover: hover) and (any-pointer: fine) {
+@media (hover: hover) and (pointer: fine) {
   .search-recent-delete {
     clip-path: none;
     height: .48rem;
@@ -523,8 +673,7 @@
     width: .48rem;
   }
 
-  .search-recent-item:hover .search-recent-delete,
-  .search-recent-item:focus-within .search-recent-delete {
+  .search-recent-item:hover .search-recent-delete {
     opacity: 1;
     pointer-events: auto;
   }
@@ -596,7 +745,7 @@
 
 .home-collection h2 {
   color: #242942;
-  font-size: .48rem;
+  font-size: calc(.48rem + var(--reading-font-delta));
   font-weight: 600;
   line-height: 1.4;
   margin: 0;
@@ -645,13 +794,13 @@
 
 .home-entry-list strong {
   font-family: "Times New Roman", Times, serif;
-  font-size: .48rem;
+  font-size: calc(.48rem + var(--reading-font-delta));
 }
 
 .home-entry-list span,
 .home-empty {
   color: #858c9a;
-  font-size: .32rem;
+  font-size: calc(.32rem + var(--reading-font-delta));
 }
 
 .home-empty {
@@ -754,7 +903,7 @@
 
 .entry-view {
   --entry-part-section-gap: .48rem;
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
   line-height: 1.4;
   opacity: 1;
   transition: opacity .16s ease;
@@ -799,7 +948,7 @@
 .headword-line h1 {
   color: #00225f;
   font-family: "Times New Roman", Times, serif;
-  font-size: 1.44rem;
+  font-size: calc(1.44rem + var(--reading-font-delta));
   font-weight: 700;
   line-height: 1;
   margin: 0 .08rem 0 0;
@@ -813,7 +962,7 @@
   display: inline-flex;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   border-radius: .10667rem;
-  font-size: .32rem;
+  font-size: calc(.32rem + var(--reading-font-delta));
   font-weight: 600;
   height: .64rem;
   justify-content: center;
@@ -905,7 +1054,7 @@
   color: var(--british-geo-color);
   display: inline-flex;
   font-family: "Times New Roman", Times, serif;
-  font-size: .42667rem;
+  font-size: calc(.48rem + var(--reading-font-delta));
   font-style: italic;
   line-height: 1.3;
   margin: 0 .26667rem 0 0;
@@ -915,7 +1064,7 @@
 
 .pronunciation-region {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: .32rem;
+  font-size: calc(.37333rem + var(--reading-font-delta));
   font-style: normal;
   margin-right: .10667rem;
 }
@@ -970,7 +1119,7 @@
 .media-error {
   color: #a22a3d;
   flex-basis: 100%;
-  font-size: .32rem;
+  font-size: calc(.32rem + var(--reading-font-delta));
   margin: 0;
 }
 
@@ -978,7 +1127,7 @@
   background: #fff;
   border-bottom: .02667rem solid #dde0e7;
   display: flex;
-  font-size: .58667rem;
+  font-size: calc(.58667rem + var(--reading-font-delta));
   margin-top: .42667rem;
   position: sticky;
   top: 0;
@@ -1036,7 +1185,7 @@
   color: #687185;
   cursor: pointer;
   display: inline-flex;
-  font-size: .32rem;
+  font-size: calc(.32rem + var(--reading-font-delta));
   gap: .08rem;
   min-height: .69333rem;
   padding: .08rem .21333rem;
@@ -1064,7 +1213,7 @@
   color: #fff;
   display: inline-flex;
   font-family: "Times New Roman", Times, serif;
-  font-size: .74667rem;
+  font-size: calc(.74667rem + var(--reading-font-delta));
   font-style: italic;
   line-height: .74667rem;
   margin: 0 .4rem 0 0;
@@ -1117,7 +1266,7 @@
   color: #00225f;
   display: flex;
   font-family: "Times New Roman", Times, serif;
-  font-size: .45333rem;
+  font-size: calc(.45333rem + var(--reading-font-delta));
   font-weight: 700;
   line-height: 1.4;
   margin: 0 0 .18667rem;
@@ -1141,7 +1290,7 @@
   display: inline-block;
   flex: 0 0 auto;
   font-family: "Times New Roman", Times, serif;
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
   font-weight: 700;
   line-height: 1.4;
   margin: 0 .08rem 0 0;
@@ -1165,7 +1314,7 @@
 
 .sense-labels span {
   color: #6f7787;
-  font-size: .37333rem;
+  font-size: calc(.37333rem + var(--reading-font-delta));
   font-style: italic;
 }
 
@@ -1188,7 +1337,7 @@
   border-radius: .08rem;
   color: #fff;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: .32rem;
+  font-size: calc(.32rem + var(--reading-font-delta));
   font-style: normal;
   font-weight: 700;
   line-height: .42667rem;
@@ -1199,7 +1348,7 @@
 .sense-labels .sense-label-v {
   color: #111318;
   font-family: "Times New Roman", Times, serif;
-  font-size: .48rem;
+  font-size: calc(.48rem + var(--reading-font-delta));
   font-style: normal;
   font-weight: 700;
 }
@@ -1207,13 +1356,13 @@
 .sense-inline-usage {
   color: #3d4454;
   font-family: "Times New Roman", Times, serif;
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
 }
 
 .sense-pronunciation {
   display: inline;
   font-family: "Times New Roman", Times, serif;
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
   margin-right: .16rem;
   white-space: nowrap;
 }
@@ -1232,14 +1381,14 @@
 .sense-inflected-forms {
   display: inline;
   font-family: "Times New Roman", Times, serif;
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
   margin-right: .16rem;
 }
 
 .sense-variants {
   display: inline;
   font-family: "Times New Roman", Times, serif;
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
   margin-right: .16rem;
 }
 
@@ -1273,7 +1422,7 @@
 .sense-patterns {
   display: inline;
   font-family: "Times New Roman", Times, serif;
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
   font-weight: 700;
   margin-right: .16rem;
 }
@@ -1301,14 +1450,14 @@
   color: #111318;
   display: inline;
   font-family: "Times New Roman", Times, serif;
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
   font-weight: 400;
 }
 
 .definition-chinese {
   color: #1e2027;
   display: inline;
-  font-size: .48rem;
+  font-size: calc(.48rem + var(--reading-font-delta));
   font-weight: 400;
 }
 
@@ -1317,7 +1466,7 @@
 }
 
 .example-list {
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
   margin-top: .26667rem;
 }
 
@@ -1334,7 +1483,7 @@
 .example-pattern {
   color: #17191f;
   font-family: "Times New Roman", Times, serif;
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
   font-weight: 700;
   line-height: 1.4;
   margin: 0 0 .10667rem;
@@ -1362,7 +1511,7 @@
 .example-english {
   flex: 0 1 auto;
   font-family: "Times New Roman", Times, serif;
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
   line-height: 1.5;
 }
 
@@ -1380,7 +1529,7 @@
 
 .example-chinese {
   color: #0009;
-  font-size: .42667rem;
+  font-size: calc(.42667rem + var(--reading-font-delta));
   line-height: 1.5;
   margin: .08rem 0 0 .4rem;
   padding-bottom: .08rem;
@@ -1389,14 +1538,14 @@
 .sense-usage {
   color: #3d4454;
   font-family: "Times New Roman", Times, serif;
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
   margin: .21333rem 0;
 }
 
 .entry-headword-forms {
   color: #17191f;
   font-family: "Times New Roman", Times, serif;
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
   line-height: 1.5;
   margin: 0 0 .42667rem;
 }
@@ -1404,7 +1553,7 @@
 .entry-headword-family-notes {
   color: #4f5666;
   font-family: "Times New Roman", Times, serif;
-  font-size: .42667rem;
+  font-size: calc(.42667rem + var(--reading-font-delta));
   font-style: italic;
   margin: 0 0 .32rem;
 }
@@ -1427,7 +1576,7 @@
   display: flex;
   flex-wrap: wrap;
   font-family: "Times New Roman", Times, serif;
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
   font-weight: 700;
   gap: .10667rem .32rem;
   line-height: 1.4;
@@ -1438,7 +1587,7 @@
   color: #17191f;
   flex: 1 0 100%;
   font-family: "Times New Roman", Times, serif;
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
   line-height: 1.5;
   margin: .05333rem 0 0;
   width: 100%;
@@ -1517,7 +1666,7 @@
   color: #fff;
   display: inline-block;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: .29333rem;
+  font-size: calc(.29333rem + var(--reading-font-delta));
   font-weight: 700;
   line-height: .42667rem;
   margin-right: .16rem;
@@ -1581,7 +1730,7 @@
   display: inline-flex;
   font-family: "Times New Roman", Times, serif;
   flex: 0 0 auto;
-  font-size: .48rem;
+  font-size: calc(.48rem + var(--reading-font-delta));
   font-weight: 700;
   gap: .10667rem;
   line-height: 1.4;
@@ -1609,7 +1758,7 @@
   border-radius: .26667rem;
   color: #fff;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: .29333rem;
+  font-size: calc(.29333rem + var(--reading-font-delta));
   font-style: normal;
   font-weight: 700;
   line-height: .48rem;
@@ -1624,7 +1773,7 @@
   cursor: pointer;
   display: inline-flex;
   font-family: "Times New Roman", Times, serif;
-  font-size: .48rem;
+  font-size: calc(.48rem + var(--reading-font-delta));
   line-height: 1.4;
   padding: 0;
 }
@@ -1647,7 +1796,7 @@
 
 .cross-references button small {
   color: #626a7b;
-  font-size: .4rem;
+  font-size: calc(.4rem + var(--reading-font-delta));
   font-style: italic;
   margin-left: .08rem;
 }
@@ -1749,7 +1898,7 @@
 }
 
 .resource-card > strong {
-  font-size: .34667rem;
+  font-size: calc(.34667rem + var(--reading-font-delta));
   font-weight: 500;
   line-height: 1.4;
 }
@@ -1757,7 +1906,7 @@
 .resource-card > span {
   color: #5d6576;
   font-family: "Times New Roman", Times, serif;
-  font-size: .26667rem;
+  font-size: calc(.26667rem + var(--reading-font-delta));
   line-height: 1.4;
   margin-top: .08rem;
 }
@@ -1789,14 +1938,14 @@
 .resource-card.is-featured > strong {
   color: #64202e;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: .42667rem;
+  font-size: calc(.42667rem + var(--reading-font-delta));
   font-weight: 700;
 }
 
 .resource-card.is-featured > span {
   color: #7f5b4d;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: .26667rem;
+  font-size: calc(.26667rem + var(--reading-font-delta));
   margin-top: .16rem;
 }
 
@@ -1839,7 +1988,7 @@
 .etymology-card-spine-label {
   color: #fff7ed;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: .34667rem;
+  font-size: calc(.34667rem + var(--reading-font-delta));
   font-weight: 700;
   letter-spacing: 0;
   line-height: 1;
@@ -1911,7 +2060,7 @@
 .resource-card.is-featured .etymology-card-heading strong {
   color: #970021;
   font-family: STSong, "Songti SC", "Noto Serif SC", "Source Han Serif SC", SimSun, serif;
-  font-size: .48rem;
+  font-size: calc(.48rem + var(--reading-font-delta));
   font-weight: 600;
   line-height: 1.2;
 }
@@ -1919,7 +2068,7 @@
 .etymology-card-paper h3 {
   color: #332b28;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
   font-weight: 400;
   line-height: 1.2;
   margin: .26667rem 0 0;
@@ -1932,7 +2081,7 @@
 }
 
 .etymology-card-paper h3 small {
-  font-size: .34667rem;
+  font-size: calc(.34667rem + var(--reading-font-delta));
 }
 
 .etymology-card-articles {
@@ -1951,7 +2100,7 @@
   color: #6f2432;
   cursor: pointer;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: .26667rem;
+  font-size: calc(.26667rem + var(--reading-font-delta));
   line-height: 1.2;
   min-height: .56rem;
   padding: .05333rem .16rem;
@@ -1977,7 +2126,7 @@
   color: #493d37;
   display: -webkit-box;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: .34667rem;
+  font-size: calc(.34667rem + var(--reading-font-delta));
   -webkit-box-orient: vertical;
   -webkit-line-clamp: var(--etymology-preview-lines);
   line-height: 1.42;
@@ -2010,7 +2159,7 @@
   color: #6f2432;
   display: flex;
   font-family: STSong, "Songti SC", "Noto Serif SC", "Source Han Serif SC", SimSun, serif;
-  font-size: .26667rem;
+  font-size: calc(.26667rem + var(--reading-font-delta));
   font-weight: 400;
   gap: .08rem;
   grid-row: 3;
@@ -2071,7 +2220,7 @@
 
 .resource-dialog > header strong {
   color: #111827;
-  font-size: .37333rem;
+  font-size: calc(.37333rem + var(--reading-font-delta));
   text-align: center;
 }
 
@@ -2097,7 +2246,7 @@
 .resource-dialog-body {
   color: #17191f;
   font-family: "Times New Roman", Times, serif;
-  font-size: .48rem;
+  font-size: calc(.48rem + var(--reading-font-delta));
   line-height: 1.5;
   padding: .53333rem .42667rem .8rem;
 }
@@ -2110,17 +2259,17 @@
 }
 
 .resource-dialog-body > h1 {
-  font-size: .74667rem;
+  font-size: calc(.74667rem + var(--reading-font-delta));
   margin: 0 0 .53333rem;
 }
 
 .resource-dialog-body > h2 {
-  font-size: .64rem;
+  font-size: calc(.64rem + var(--reading-font-delta));
   margin: .42667rem 0 .26667rem;
 }
 
 .resource-dialog-body > h3 {
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
   margin: .53333rem 0 .26667rem;
 }
 
@@ -2141,7 +2290,7 @@
   color: #dd2238;
   cursor: pointer;
   font-family: "Times New Roman", Times, serif;
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
   line-height: 1.4;
   padding: 0;
   text-align: left;
@@ -2189,7 +2338,7 @@
   align-items: baseline;
   display: flex;
   flex-wrap: wrap;
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
   gap: .16rem;
   line-height: 1.4;
   margin: .10667rem 0;
@@ -2348,7 +2497,7 @@
 .etymology-paper {
   color: #2e2925;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: .48rem;
+  font-size: calc(.48rem + var(--article-font-delta));
   line-height: 1.65;
   min-width: 0;
   overflow: hidden;
@@ -2375,7 +2524,7 @@
 .etymology-paper h1 {
   color: #64202e;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: 1.06667rem;
+  font-size: calc(1.06667rem + var(--article-font-delta));
   line-height: 1.1;
   margin: 0 0 .53333rem;
   overflow-wrap: anywhere;
@@ -2397,7 +2546,7 @@
   color: #6a3b40;
   cursor: pointer;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: .37333rem;
+  font-size: calc(.37333rem + var(--article-font-delta));
   line-height: 1.3;
   min-height: .72rem;
   padding: .08rem .18667rem;
@@ -2438,7 +2587,7 @@
   align-items: center;
   color: #6d5548;
   display: flex;
-  font-size: .37333rem;
+  font-size: calc(.37333rem + var(--article-font-delta));
   gap: .16rem;
   margin: .74667rem 0;
 }
@@ -2468,7 +2617,7 @@
   color: #fff;
   cursor: pointer;
   display: inline-flex;
-  font-size: .32rem;
+  font-size: calc(.32rem + var(--reading-font-delta));
   gap: .10667rem;
   padding: .13333rem .26667rem;
 }
@@ -2499,13 +2648,13 @@
 
 .etymology-only-view > header span {
   color: #79534a;
-  font-size: .29333rem;
+  font-size: calc(.29333rem + var(--reading-font-delta));
 }
 
 .etymology-only-view > header h1 {
   color: #64202e;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: 1.17333rem;
+  font-size: calc(1.17333rem + var(--reading-font-delta));
   line-height: 1.1;
   margin: .10667rem 0 0;
   overflow-wrap: anywhere;
@@ -2518,12 +2667,12 @@
 
 .etymology-only-error {
   color: #8b2f3e;
-  font-size: .42667rem;
+  font-size: calc(.42667rem + var(--reading-font-delta));
 }
 
 .resource-dialog-body figcaption {
   color: #626a7b;
-  font-size: .37333rem;
+  font-size: calc(.37333rem + var(--reading-font-delta));
   margin-top: .26667rem;
   text-align: center;
 }
@@ -2540,7 +2689,7 @@
 .subentry h2 {
   color: #00225f;
   font-family: "Times New Roman", Times, serif;
-  font-size: .8rem;
+  font-size: calc(.8rem + var(--reading-font-delta));
   margin: 0 0 .32rem;
 }
 
@@ -2548,7 +2697,7 @@
   align-items: center;
   display: flex;
   font-family: "Times New Roman", Times, serif;
-  font-size: .58667rem;
+  font-size: calc(.58667rem + var(--reading-font-delta));
   font-weight: 700;
   line-height: 1.4;
   margin-bottom: .4rem;
@@ -2573,7 +2722,7 @@
 .derived-form-heading h3 {
   color: #17191f;
   font-family: "Times New Roman", Times, serif;
-  font-size: .58667rem;
+  font-size: calc(.58667rem + var(--reading-font-delta));
   line-height: 1.4;
   margin: 0;
   min-width: 0;
@@ -2595,13 +2744,13 @@
 
 .derived-form-variants {
   color: #343844;
-  font-size: .42667rem;
+  font-size: calc(.42667rem + var(--reading-font-delta));
   font-weight: 400;
 }
 
 .derived-form-inflected-forms {
   color: #343844;
-  font-size: .42667rem;
+  font-size: calc(.42667rem + var(--reading-font-delta));
   font-weight: 400;
 }
 
@@ -2629,7 +2778,7 @@
 .subentry-pos {
   color: #697184;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: .34667rem;
+  font-size: calc(.34667rem + var(--reading-font-delta));
 }
 
 .derived-form-pronunciations {
@@ -2645,7 +2794,7 @@
   color: var(--british-geo-color);
   display: inline-flex;
   font-family: "Times New Roman", Times, serif;
-  font-size: .42667rem;
+  font-size: calc(.42667rem + var(--reading-font-delta));
   gap: .08rem;
 }
 
@@ -2668,7 +2817,7 @@
   color: #fff;
   display: inline-flex;
   font-family: "Times New Roman", Times, serif;
-  font-size: .34667rem;
+  font-size: calc(.34667rem + var(--reading-font-delta));
   font-style: italic;
   font-weight: 700;
   line-height: .48rem;
@@ -2693,7 +2842,7 @@
 .derived-form-usage {
   color: #4f5666;
   font-family: "Times New Roman", Times, serif;
-  font-size: .42667rem;
+  font-size: calc(.42667rem + var(--reading-font-delta));
   font-style: italic;
   margin: .10667rem 0 0;
 }
@@ -2711,7 +2860,7 @@
 .entry-qualifier-line {
   color: #22252d;
   font-family: "Times New Roman", Times, serif;
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
   font-style: italic;
   margin: 0 0 .53333rem;
 }
@@ -2724,7 +2873,7 @@
   color: #00225f;
   display: inline-flex;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: .37333rem;
+  font-size: calc(.37333rem + var(--reading-font-delta));
   font-weight: 700;
   line-height: .53333rem;
   margin: 0 .34667rem .32rem 0;
@@ -2765,7 +2914,7 @@
 .phrase-leading-usage {
   color: #17191f;
   font-family: "Times New Roman", Times, serif;
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
   line-height: 1.5;
   margin: 0 0 .32rem;
 }
@@ -2773,7 +2922,7 @@
 .phrase-entry > h3 {
   color: #17191f;
   font-family: "Times New Roman", Times, serif;
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
   line-height: 1.4;
   margin: 0 0 .05333rem;
 }
@@ -2801,7 +2950,7 @@
 .phrase-variant {
   color: #17191f;
   font-family: "Times New Roman", Times, serif;
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
   line-height: 1.4;
   margin: .05333rem 0;
 }
@@ -2820,7 +2969,7 @@
 .phrase-labels {
   color: #353a47;
   font-family: "Times New Roman", Times, serif;
-  font-size: .53333rem;
+  font-size: calc(.53333rem + var(--reading-font-delta));
   font-style: italic;
   line-height: 1.4;
   margin: .05333rem 0;
@@ -3065,13 +3214,13 @@
 .library-list strong {
   color: #00225f;
   font-family: "Times New Roman", Times, serif;
-  font-size: .48rem;
+  font-size: calc(.48rem + var(--reading-font-delta));
 }
 
 .library-list .library-record-summary {
   color: #777f8e;
   display: -webkit-box;
-  font-size: .29333rem;
+  font-size: calc(.29333rem + var(--reading-font-delta));
   margin-left: .26667rem;
   max-width: 60%;
   overflow: hidden;
@@ -3081,16 +3230,23 @@
 
 .library-empty {
   color: #8b92a0;
-  font-size: .37333rem;
+  font-size: calc(.37333rem + var(--reading-font-delta));
   margin: 1.6rem 0;
   text-align: center;
 }
 
 .search-results-shell {
+  --search-result-action-size: .37333rem;
+  --search-result-headword-size: .48rem;
+  --search-result-label-size: .26667rem;
+  --search-result-primary-size: .42667rem;
+  --search-result-secondary-size: .32rem;
+  --search-result-support-size: .34667rem;
+  --search-result-title-size: .53333rem;
   margin: 0 auto;
   max-width: var(--desktop-content-width);
   min-height: 12rem;
-  padding: 1.76rem 1.06667rem 2.4rem 4.8rem;
+  padding: 1.76rem 1.06667rem 2.4rem;
   width: 100%;
 }
 
@@ -3117,12 +3273,14 @@
 }
 
 .search-results {
+  margin-inline: auto;
   max-width: 24rem;
+  width: 100%;
 }
 
 .search-results h1 {
   color: #17191f;
-  font-size: .53333rem;
+  font-size: calc(var(--search-result-title-size) + var(--reading-font-delta));
   line-height: 1.4;
   margin: 0 0 1.06667rem;
 }
@@ -3206,7 +3364,7 @@
   color: #4a5260;
   cursor: pointer;
   display: inline-flex;
-  font-size: .32rem;
+  font-size: calc(var(--search-result-secondary-size) + var(--reading-font-delta));
   gap: .10667rem;
   line-height: 1.4;
 }
@@ -3267,18 +3425,18 @@
 .search-result-item strong {
   color: #dd2238;
   font-family: "Times New Roman", Times, serif;
-  font-size: .48rem;
+  font-size: calc(var(--search-result-headword-size) + var(--reading-font-delta));
   font-weight: 400;
 }
 
 .search-result-pos {
   color: #858c9a;
-  font-size: .32rem;
+  font-size: calc(var(--search-result-secondary-size) + var(--reading-font-delta));
 }
 
 .search-result-translation {
   color: #8b919e;
-  font-size: .34667rem;
+  font-size: calc(var(--search-result-support-size) + var(--reading-font-delta));
   overflow-wrap: anywhere;
 }
 
@@ -3298,7 +3456,7 @@
   cursor: pointer;
   display: grid;
   gap: .26667rem;
-  grid-template-columns: .93333rem minmax(0, 1fr);
+  grid-template-columns: max-content minmax(0, 1fr);
   padding: .16rem .10667rem;
   text-align: left;
   width: 100%;
@@ -3310,13 +3468,18 @@
 }
 
 .search-result-scope {
+  align-items: center;
   border: .02667rem solid #c8ccd5;
   color: #697180;
-  font-size: .26667rem;
+  display: inline-flex;
+  font-size: calc(var(--search-result-label-size) + var(--reading-font-delta));
+  justify-content: center;
   line-height: 1.35;
   margin-top: .05333rem;
+  min-width: .93333rem;
   padding: .02667rem .10667rem;
   text-align: center;
+  white-space: nowrap;
 }
 
 .search-result-evidence-copy {
@@ -3328,14 +3491,14 @@
 .search-result-english {
   color: #20242d;
   font-family: "Times New Roman", Times, serif;
-  font-size: .42667rem;
+  font-size: calc(var(--search-result-primary-size) + var(--reading-font-delta));
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
 .search-result-chinese {
   color: #737b89;
-  font-size: .32rem;
+  font-size: calc(var(--search-result-secondary-size) + var(--reading-font-delta));
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
@@ -3368,7 +3531,7 @@
 .search-results-empty,
 .search-results-error {
   color: #6b7280;
-  font-size: .42667rem;
+  font-size: calc(var(--search-result-primary-size) + var(--reading-font-delta));
   margin: .8rem 0;
 }
 
@@ -3392,7 +3555,7 @@
 
 .search-results-more p {
   color: #9b2938;
-  font-size: .34667rem;
+  font-size: calc(var(--search-result-support-size) + var(--reading-font-delta));
   margin: 0;
 }
 
@@ -3404,7 +3567,7 @@
   color: #24324a;
   cursor: pointer;
   display: inline-flex;
-  font-size: .37333rem;
+  font-size: calc(var(--search-result-action-size) + var(--reading-font-delta));
   gap: .16rem;
   justify-content: center;
   min-height: 1.06667rem;
@@ -3814,6 +3977,18 @@
 }
 
 @media (min-width: 601px) and (max-width: 1024px) {
+  .search-results-shell {
+    --search-result-action-size: .42667rem;
+    --search-result-headword-size: .56rem;
+    --search-result-label-size: .29333rem;
+    --search-result-primary-size: .48rem;
+    --search-result-secondary-size: .37333rem;
+    --search-result-support-size: .4rem;
+    --search-result-title-size: .64rem;
+    max-width: none;
+    padding: 1.76rem .8rem 2.4rem;
+  }
+
   .header-topbar,
   .dictionary-shell {
     width: 100%;
@@ -3989,6 +4164,14 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .entry-view {
+    --reading-font-delta: calc(var(--reading-scale-delta) - 2px);
+  }
+
+  .entry-resource-rail {
+    --reading-font-delta: var(--reading-scale-delta);
+  }
+
   .entry-content-layout.has-resources .entry-body {
     padding-top: .08rem;
   }
@@ -4031,11 +4214,11 @@
   }
 
   .resource-card > strong {
-    font-size: .32rem;
+    font-size: calc(.32rem + var(--reading-font-delta));
   }
 
   .resource-card > span {
-    font-size: .24rem;
+    font-size: calc(.24rem + var(--reading-font-delta));
     margin-top: .05333rem;
   }
 
@@ -4056,7 +4239,7 @@
   }
 
   .etymology-card-spine-label {
-    font-size: .29333rem;
+    font-size: calc(.29333rem + var(--reading-font-delta));
   }
 
   .etymology-card-heading {
@@ -4064,7 +4247,7 @@
   }
 
   .etymology-card-paper h3 {
-    font-size: .45333rem;
+    font-size: calc(.45333rem + var(--reading-font-delta));
     margin-top: 0;
   }
 
@@ -4074,11 +4257,11 @@
   }
 
   .etymology-card-preview p {
-    font-size: .32rem;
+    font-size: calc(.32rem + var(--reading-font-delta));
   }
 
   .etymology-card-articles button {
-    font-size: .26667rem;
+    font-size: calc(.26667rem + var(--reading-font-delta));
   }
 
   .etymology-card-articles {
@@ -4092,7 +4275,7 @@
   }
 
   .etymology-card-expand {
-    font-size: .32rem;
+    font-size: calc(.32rem + var(--reading-font-delta));
     min-height: .42667rem;
     padding-top: .02667rem;
   }
@@ -4107,12 +4290,12 @@
   }
 
   .etymology-paper {
-    font-size: .42667rem;
+    font-size: calc(.42667rem + var(--article-font-delta));
     padding: .53333rem .48rem .74667rem;
   }
 
   .etymology-paper h1 {
-    font-size: .85333rem;
+    font-size: calc(.85333rem + var(--article-font-delta));
   }
 
   .etymology-only-shell {
@@ -4167,7 +4350,7 @@
   }
 
   .headword-line h1 {
-    font-size: 1.17333rem;
+    font-size: calc(1.17333rem + var(--reading-font-delta));
   }
 
   .headword-line {
@@ -4190,11 +4373,11 @@
   }
 
   .part-of-speech-tabs {
-    font-size: .48rem;
+    font-size: calc(.48rem + var(--reading-font-delta));
   }
 
   .entry-part-marker {
-    font-size: .58667rem;
+    font-size: calc(.58667rem + var(--reading-font-delta));
     line-height: .64rem;
     min-height: .69333rem;
     padding: .02667rem .13333rem .02667rem .18667rem;
@@ -4207,6 +4390,13 @@
   }
 
   .search-results-shell {
+    --search-result-action-size: .42667rem;
+    --search-result-headword-size: .53333rem;
+    --search-result-label-size: .32rem;
+    --search-result-primary-size: .48rem;
+    --search-result-secondary-size: .37333rem;
+    --search-result-support-size: .4rem;
+    --search-result-title-size: .58667rem;
     min-height: 8rem;
     padding: .8rem .37333rem 2.4rem;
   }
@@ -4339,11 +4529,11 @@
   }
 
   .entry-view {
-    font-size: .53333rem;
+    font-size: calc(.53333rem + var(--reading-font-delta));
   }
 
   .pronunciation {
-    font-size: .37333rem;
+    font-size: calc(.42667rem + var(--reading-font-delta));
   }
 
   .sense-number {
@@ -4388,5 +4578,23 @@
     animation: none;
     filter: none;
     outline-color: rgb(239 133 0 / 88%);
+  }
+}
+
+@media (min-width: 1025px) {
+  .search-results-shell {
+    --search-result-action-size: .48rem;
+    --search-result-headword-size: .64rem;
+    --search-result-label-size: .34667rem;
+    --search-result-primary-size: .53333rem;
+    --search-result-secondary-size: .42667rem;
+    --search-result-support-size: .42667rem;
+    --search-result-title-size: .74667rem;
+    max-width: 42rem;
+    padding: 2rem 1.2rem 3.2rem;
+  }
+
+  .search-results {
+    max-width: 32rem;
   }
 }

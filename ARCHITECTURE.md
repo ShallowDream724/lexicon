@@ -229,13 +229,29 @@ Chinese results default to definitions, phrases, and forms. Users may include us
 or examples through one canonical scope control. Scope is part of the request identity,
 URL, cancellation boundary, and every continuation page. The API applies it before its
 candidate limit, so changing scope searches the complete eligible projection instead of
-filtering an already truncated browser result.
+filtering an already truncated browser result. Each semantic ranking tier owns an independent,
+fixed candidate budget. Complete-token matches suppress partial fallback only within their
+own tier, so enabling examples cannot evict or disable term and phrase candidates. All tiers
+then share the existing deterministic scorer, grouping, and pagination boundary.
 
 Result-page navigation keeps a bounded three-query in-memory session cache keyed by the
 canonical query and scope. Each session retains the loaded result window and scroll offset,
 so history navigation from an entry restores both without serializing result bodies into the
 URL, browser history, or persistent storage. Pending continuation requests are normalized to
 a retryable idle state before capture, and older sessions are evicted by least recent use.
+The result page owns its centered reading column and discrete phone, tablet, and desktop
+type scales; it never inherits the entry sidebar gutter or viewport-proportional typography.
+Its phone baseline stays close to the entry body so moving between an entry and its related
+results does not require changing the shared preference.
+One three-level reading-size preference is mounted in the shared header and applied at the
+workspace root. Entry pages retain their type hierarchy while the phone reading region applies
+a uniform two-pixel reduction to its own baseline; supplementary resource cards and etymology
+remain outside that adjustment. Result pages retain separate responsive baselines. Small and
+large levels apply a bounded pixel delta to reading text, cards, and result evidence without
+scaling layout geometry or search controls; long-form etymology uses a restrained independent
+delta. Content labels size their grid track from the rendered text, so a larger level cannot
+force a two-character scope label into a vertical stack. Dialog portals mirror the same
+preference variables because their DOM nodes live outside the workspace root.
 
 Modal resources share one reference-counted viewport lock. Opening an illustration,
 usage panel, quick-find dialog, note editor, or personal-library drawer prevents the
@@ -324,6 +340,11 @@ Bulk deletion, un-favoriting, and note deletion use one transaction per store an
 modal confirmation. The confirmation owns Escape while open and remains locked during its
 pending operation, preventing the underlying drawer from closing mid-transaction.
 
+Display preferences use the same IndexedDB repository and backup boundary as other learning
+data. Reading size is stored as `small`, `default`, or `large`; the workspace applies an
+optimistic change immediately and serializes writes so rapid slider changes preserve the last
+selected level.
+
 The storage interface includes export and import boundaries so backup or optional
 sync can be added later without replacing UI call sites. Clearing browser storage
 removes local learning data; the interface must make that limitation visible in
@@ -403,12 +424,13 @@ requests as distinct outcomes.
 - Search limits are enforced on both client and server.
 - Chinese queries are limited to 200 characters in both the HTTP and store boundaries.
 - A one-segment reverse query probes the exact-segment B-tree so a complete short meaning
-  cannot be displaced by common FTS terms. FTS tiers retrieve at most 4,096 documents;
-  multi-token lookup tries the all-token tier first and uses bounded OR retrieval only when
-  it has no usable result. Scope plus ASCII and numeric constraints are applied before the
-  SQL candidate limit; Go refinement respects normalized Chinese segment boundaries and
-  uses deterministic tie-breaks,
-  and returns at most 512 entry groups with three evidence records per entry.
+  cannot be displaced by common FTS terms. Each selected semantic ranking tier retrieves at
+  most 4,096 documents, with at most three independently bounded pools. Multi-token lookup
+  tries the all-token expression per semantic tier and uses bounded OR retrieval only for a
+  tier with no usable complete-token result. Scope plus ASCII and numeric constraints are
+  applied before each SQL candidate limit; Go refinement respects normalized Chinese segment
+  boundaries, uses deterministic tie-breaks, and returns at most 512 entry groups with three
+  evidence records per entry.
 - Chinese result pages begin at 32 groups and expand cumulatively to 64, 128, 256, then
   512. Each request transfers only the next page, and route changes cancel in-flight pages.
 - Scope predicates run in exact and FTS SQL before their candidate limits. Match tiers rank

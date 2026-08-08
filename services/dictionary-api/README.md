@@ -159,14 +159,14 @@ apostrophe variants.
 
 The optional reverse-search sidecar stores visible bilingual projections separately from
 compressed entry payloads. A deduplicated exact-segment B-tree protects complete short
-meanings from FTS displacement. The contentless FTS5 index retrieves at most 4,096
-documents, first through a bounded all-token tier and then through bounded OR retrieval
-only when no usable complete-token result exists. Go refinement respects Chinese segment
+meanings from FTS displacement. The contentless FTS5 index gives each selected semantic
+ranking tier an independent 4,096-document limit, with at most three pools. Multi-token
+lookup tries the bounded all-token expression first and runs bounded OR retrieval only for
+a semantic tier with no usable complete-token result. Go refinement respects Chinese segment
 boundaries and mixed ASCII constraints, applies deterministic semantic ranking, and returns
 at most 512 entry groups with three evidence records per entry. Query length is capped at
 200 characters in the HTTP handler and the store. The sidecar metadata validates schema,
-projection, normalizer, document and segment counts, and primary database fingerprint
-before use.
+projection, normalizer, document and segment counts, and primary database fingerprint before use.
 
 Schema 3 stores `documents`, `exact_segments`, and the contentless FTS index without the
 unused entry-order secondary index. Projection 1.2 indexes structured rich-text segments

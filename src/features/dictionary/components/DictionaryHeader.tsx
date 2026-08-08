@@ -24,6 +24,8 @@ import {
   queryHistoryPreviewRecords,
   useLongPress,
 } from "../query-history";
+import type { ReadingScale } from "../reading-scale";
+import { ReadingScaleControl } from "./ReadingScaleControl";
 
 type DictionaryHeaderProps = {
   homeMode: boolean;
@@ -33,6 +35,7 @@ type DictionaryHeaderProps = {
   searchPending: boolean;
   searchOpen: boolean;
   searchError: string | null;
+  fontScale: ReadingScale;
   inputRef: RefObject<HTMLInputElement | null>;
   onQueryChange: (value: string) => void;
   onClearQuery: () => void;
@@ -44,6 +47,7 @@ type DictionaryHeaderProps = {
   onSelect: (target: SearchTarget) => void;
   onSelectQueryHistory: (query: string) => void;
   onDeleteQueryHistory: (key: string) => void;
+  onFontScaleChange: (value: ReadingScale) => void;
   onOpenLibrary: (tab: "history" | "favorites") => void;
 };
 
@@ -91,6 +95,7 @@ export function DictionaryHeader({
   searchPending,
   searchOpen,
   searchError,
+  fontScale,
   inputRef,
   onQueryChange,
   onClearQuery,
@@ -102,6 +107,7 @@ export function DictionaryHeader({
   onSelect,
   onSelectQueryHistory,
   onDeleteQueryHistory,
+  onFontScaleChange,
   onOpenLibrary,
 }: DictionaryHeaderProps) {
   const [activeOption, setActiveOption] = useState(-1);
@@ -177,6 +183,7 @@ export function DictionaryHeader({
           >
             <Star />
           </button>
+          <ReadingScaleControl value={fontScale} onChange={onFontScaleChange} />
           <span className="header-divider" aria-hidden="true" />
           <span className="header-library-label">
             <Library aria-hidden="true" />

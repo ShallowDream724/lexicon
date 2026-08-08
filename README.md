@@ -36,9 +36,9 @@ British and North American headword audio is read directly from the local archiv
 
 **为每一块屏幕而设计**
 
-Desktop keeps the entry outline and supplementary resources within reach. Tablet layouts rebalance for portrait and landscape use. Phone layouts add touch lookup and a compact part-of-speech dock without reducing the entry to a simplified mobile version.
+Desktop keeps the entry outline and supplementary resources within reach. Tablet layouts rebalance for portrait and landscape use. Phone layouts add touch lookup and a compact part-of-speech dock without reducing the entry to a simplified mobile version. A three-level reading-size control follows the same entry and card hierarchy on every screen.
 
-桌面端把词条目录与补充资源放在随手可达的位置；平板端分别调整横屏与竖屏布局；手机端加入点词查询和紧凑的词性停靠栏，同时保留完整词条内容。
+桌面端把词条目录与补充资源放在随手可达的位置；平板端分别调整横屏与竖屏布局；手机端加入点词查询和紧凑的词性停靠栏，同时保留完整词条内容。三档阅读字号在各端沿用同一套词条与卡片层级。
 
 Lexicon can also be installed as a PWA. Installation keeps only the small application shell on the device; entries and media are still requested from the server when needed.
 

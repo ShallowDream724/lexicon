@@ -527,7 +527,7 @@ func TestScopeFilterCanonicalizesAndSearchPagesRemainScoped(t *testing.T) {
 	}
 }
 
-func TestScopeConstraintAppliesBeforeFTSCandidateLimit(t *testing.T) {
+func TestScopePartitionsPreserveHigherTierCandidatesAtFTSLimit(t *testing.T) {
 	root := t.TempDir()
 	dictionary := filepath.Join(root, "dictionary.db")
 	if err := os.WriteFile(dictionary, []byte("primary"), 0600); err != nil {
@@ -556,6 +556,66 @@ func TestScopeConstraintAppliesBeforeFTSCandidateLimit(t *testing.T) {
 	got, err := store.Search(context.Background(), "共同词，目标词", Options{Limit: 5, Scopes: phraseOnly})
 	if err != nil || len(got) != 1 || got[0].EntryID != "z-target" {
 		t.Fatalf("scope-filtered candidate was lost before LIMIT: %#v, %v", got, err)
+	}
+	phraseAndExample, err := NewScopeFilter(ScopePhrase, ScopeExample)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = store.Search(context.Background(), "共同词，目标词", Options{Limit: 5, Scopes: phraseAndExample})
+	if err != nil || len(got) == 0 || got[0].EntryID != "z-target" {
+		t.Fatalf("lower-tier candidates evicted an existing phrase match: %#v, %v", got, err)
+	}
+}
+
+func TestWiderScopesDoNotSuppressPartialTermMatches(t *testing.T) {
+	root := t.TempDir()
+	dictionary := filepath.Join(root, "dictionary.db")
+	if err := os.WriteFile(dictionary, []byte("primary"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "reverse.db")
+	documents := make([]SearchDocument, 0, 30)
+	for index := 0; index < 29; index++ {
+		documents = append(documents, doc(
+			fmt.Sprintf("example-%02d", index),
+			ScopeExample,
+			fmt.Sprintf("example-%02d", index),
+			"用户受不了这个例子",
+		))
+	}
+	documents = append(documents, doc("phrase-target", ScopePhrase, "no can do", "干不了；不行；不成"))
+	importSidecar(t, dictionary, target, documents, false)
+	store, err := Open(target, digest(t, dictionary))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	phraseOnly, err := NewScopeFilter(ScopePhrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Search(context.Background(), "受不了", Options{Limit: 32, Scopes: phraseOnly})
+	if err != nil || len(got) != 1 || got[0].EntryID != "phrase-target" {
+		t.Fatalf("partial phrase baseline = %#v, %v", got, err)
+	}
+	phraseAndExample, err := NewScopeFilter(ScopePhrase, ScopeExample)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = store.Search(context.Background(), "受不了", Options{Limit: 32, Scopes: phraseAndExample})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, group := range got {
+		if group.EntryID == "phrase-target" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("broader scopes suppressed the partial phrase match: %#v", got)
 	}
 }
 

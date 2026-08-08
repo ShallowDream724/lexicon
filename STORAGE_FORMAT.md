@@ -155,10 +155,11 @@ query with one Chinese character excludes example-only matches.
 Single-segment queries also probe the `exact_segments` primary key, preserving complete
 short meanings even when frequent terms fill the FTS window. Scope filters are applied in
 both exact and FTS SQL before their candidate limits, so optional usage and example
-searches do not displace default definition, phrase, and form candidates. FTS queries
-retrieve at most 4,096 documents. Multi-token lookup tries the all-token tier first;
-bounded OR retrieval runs only when that tier has no usable result. The selected
-candidates then receive bounded Go refinement.
+searches do not displace default definition, phrase, and form candidates. Each semantic
+ranking tier retrieves at most 4,096 documents, with no more than three pools for one
+expression. Multi-token lookup tries the all-token expression independently per semantic
+tier; bounded OR retrieval runs only for a tier without a usable complete-token result.
+The selected candidates then receive bounded Go refinement.
 
 Ranking first separates complete segments, grammatical extensions, continuous boundary
 matches, and partial matches into hard tiers. Semantic scope, source-neutral CEFR and
