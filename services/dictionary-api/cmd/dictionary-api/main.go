@@ -17,6 +17,7 @@ import (
 	"dictionary-api/internal/etymology"
 	"dictionary-api/internal/media"
 	"dictionary-api/internal/payload"
+	"dictionary-api/internal/reversesearch"
 	"dictionary-api/internal/schema"
 	"dictionary-api/internal/server"
 	_ "modernc.org/sqlite"
@@ -27,6 +28,7 @@ func main() {
 	dbPath := flag.String("db", defaults.dbPath, "path to the SQLite dictionary database")
 	audioPath := flag.String("audio-zip", defaults.audioPath, "path to the headword audio ZIP")
 	etymologyPath := flag.String("etymology-db", defaults.etymologyPath, "path to the optional Etymonline sidecar SQLite database")
+	reverseSearchPath := flag.String("reverse-search-db", defaults.reverseSearchPath, "path to the optional Chinese reverse-search sidecar SQLite database")
 	exampleAudioBaseURL := flag.String("example-audio-base-url", defaults.exampleAudioBaseURL, "base URL for example audio objects")
 	illustrationBaseURL := flag.String("illustration-base-url", defaults.illustrationBaseURL, "base URL for illustration objects")
 	illustrationURLTemplate := flag.String("illustration-url-template", defaults.illustrationURLTemplate, "URL template for full illustration objects")
@@ -85,6 +87,17 @@ func main() {
 			logger.Warn("optional etymology sidecar is unavailable", "path", path)
 		}
 	}
+	var reverseSearchStore *reversesearch.Store
+	if path := strings.TrimSpace(*reverseSearchPath); path != "" {
+		reverseSearchStore, err = openOptionalReverseSearch(path, *dbPath)
+		if err != nil {
+			logger.Error("open Chinese reverse-search sidecar", "error", err)
+			os.Exit(1)
+		}
+		if reverseSearchStore == nil {
+			logger.Warn("optional Chinese reverse-search sidecar is unavailable", "path", path)
+		}
+	}
 	mediaResolver, err := media.NewResolverWithTemplates(map[media.Kind]string{
 		media.ExampleAudio: *exampleAudioBaseURL,
 		media.Illustration: *illustrationBaseURL,
@@ -99,6 +112,7 @@ func main() {
 	service := server.New(db, audioIndex, server.Config{
 		SourceVersion: sourceVersion, PayloadCodec: payloadCodec, RemoteMedia: mediaResolver,
 		AllowedOrigins: parseOrigins(*origins), Logger: logger, Etymology: etymologyStore,
+		ReverseSearch: reverseSearchStore,
 	})
 	defer service.Close()
 
@@ -125,9 +139,10 @@ func main() {
 }
 
 type configDefaults struct {
-	dbPath, audioPath, etymologyPath, exampleAudioBaseURL, illustrationBaseURL string
-	illustrationURLTemplate, illustrationThumbnailURLTemplate                  string
-	listen, origins                                                            string
+	dbPath, audioPath, etymologyPath, reverseSearchPath       string
+	exampleAudioBaseURL, illustrationBaseURL                  string
+	illustrationURLTemplate, illustrationThumbnailURLTemplate string
+	listen, origins                                           string
 }
 
 func defaultConfig() configDefaults {
@@ -135,6 +150,7 @@ func defaultConfig() configDefaults {
 		dbPath:                           envOr("DICTIONARY_RUNTIME_DB_PATH", "./data/dictionary.db"),
 		audioPath:                        envOr("DICTIONARY_AUDIO_ZIP_PATH", ""),
 		etymologyPath:                    envOr("DICTIONARY_ETYMOLOGY_DB_PATH", ""),
+		reverseSearchPath:                envOr("DICTIONARY_REVERSE_SEARCH_DB_PATH", ""),
 		exampleAudioBaseURL:              envOr("DICTIONARY_EXAMPLE_AUDIO_BASE_URL", ""),
 		illustrationBaseURL:              envOr("DICTIONARY_ILLUSTRATION_BASE_URL", ""),
 		illustrationURLTemplate:          envOr("DICTIONARY_ILLUSTRATION_URL_TEMPLATE", ""),
@@ -159,6 +175,20 @@ func openOptionalEtymology(path string) (*etymology.Store, error) {
 		return nil, fmt.Errorf("inspect etymology sidecar: %w", err)
 	}
 	return etymology.Open(path)
+}
+
+func openOptionalReverseSearch(path, dictionaryPath string) (*reversesearch.Store, error) {
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("inspect Chinese reverse-search sidecar: %w", err)
+	}
+	fingerprint, err := reversesearch.FileSHA256(dictionaryPath)
+	if err != nil {
+		return nil, fmt.Errorf("fingerprint runtime dictionary: %w", err)
+	}
+	return reversesearch.Open(path, fingerprint)
 }
 
 func parseOrigins(value string) map[string]struct{} {

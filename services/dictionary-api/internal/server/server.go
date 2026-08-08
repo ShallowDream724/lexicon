@@ -1,10 +1,8 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -22,6 +20,8 @@ import (
 	"dictionary-api/internal/etymology"
 	"dictionary-api/internal/media"
 	"dictionary-api/internal/payload"
+	"dictionary-api/internal/reversesearch"
+	"dictionary-api/internal/runtimeentry"
 	"dictionary-api/internal/termkey"
 	"dictionary-api/internal/typo"
 )
@@ -29,7 +29,6 @@ import (
 const (
 	defaultLimit   = 20
 	maxLimit       = 50
-	maxEntrySize   = 16 << 20
 	maxTypoMatches = 128
 )
 
@@ -42,17 +41,19 @@ type Config struct {
 	AllowedOrigins map[string]struct{}
 	Logger         *slog.Logger
 	Etymology      *etymology.Store
+	ReverseSearch  *reversesearch.Store
 }
 
 type Service struct {
 	db             *sql.DB
 	audio          *audio.Index
 	sourceVersion  string
-	payloadCodec   payload.Codec
+	entryReader    *runtimeentry.Reader
 	remoteMedia    *media.Resolver
 	allowedOrigins map[string]struct{}
 	logger         *slog.Logger
 	etymology      *etymology.Store
+	reverseSearch  *reversesearch.Store
 }
 
 func New(db *sql.DB, audioIndex *audio.Index, config Config) *Service {
@@ -62,10 +63,10 @@ func New(db *sql.DB, audioIndex *audio.Index, config Config) *Service {
 	}
 	return &Service{
 		db: db, audio: audioIndex, sourceVersion: config.SourceVersion,
-		payloadCodec:   config.PayloadCodec,
+		entryReader:    runtimeentry.NewReader(db, config.PayloadCodec, config.SourceVersion),
 		remoteMedia:    config.RemoteMedia,
 		allowedOrigins: config.AllowedOrigins, logger: logger,
-		etymology: config.Etymology,
+		etymology: config.Etymology, reverseSearch: config.ReverseSearch,
 	}
 }
 
@@ -79,6 +80,9 @@ func (s *Service) Close() error {
 	}
 	if s.etymology != nil {
 		errs = append(errs, s.etymology.Close())
+	}
+	if s.reverseSearch != nil {
+		errs = append(errs, s.reverseSearch.Close())
 	}
 	return errors.Join(errs...)
 }
@@ -107,12 +111,20 @@ func (s *Service) health(w http.ResponseWriter, r *http.Request) {
 }
 
 type suggestion struct {
-	ID                 string   `json:"id"`
-	Kind               string   `json:"kind"`
-	Headword           string   `json:"headword"`
-	PartsOfSpeech      []string `json:"partsOfSpeech"`
-	TranslationPreview string   `json:"translationPreview"`
+	ID                 string        `json:"id"`
+	Kind               string        `json:"kind"`
+	Headword           string        `json:"headword"`
+	PartsOfSpeech      []string      `json:"partsOfSpeech"`
+	TranslationPreview string        `json:"translationPreview"`
+	Matches            []searchMatch `json:"matches,omitempty"`
 	rank               int
+}
+
+type searchMatch struct {
+	Scope       reversesearch.Scope    `json:"scope"`
+	EnglishText string                 `json:"englishText"`
+	ChineseText string                 `json:"chineseText"`
+	Location    reversesearch.Location `json:"location"`
 }
 
 func (s *Service) search(w http.ResponseWriter, r *http.Request) {
@@ -128,6 +140,20 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) {
 	limit, err := parseLimit(r.URL.Query().Get("limit"))
 	if err != nil {
 		s.writeError(w, r, http.StatusBadRequest, "invalid_limit", err.Error())
+		return
+	}
+
+	if reversesearch.ContainsCJK(query) {
+		results, err := s.queryReverseSuggestions(r.Context(), query, limit)
+		if err != nil {
+			s.logger.Error("Chinese reverse search failed", "error", err)
+			s.writeError(w, r, http.StatusInternalServerError, "search_failed", "search could not be completed")
+			return
+		}
+		s.writeJSON(w, http.StatusOK, struct {
+			Query string       `json:"query"`
+			Items []suggestion `json:"items"`
+		}{Query: query, Items: results})
 		return
 	}
 
@@ -161,6 +187,61 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) {
 		Query string       `json:"query"`
 		Items []suggestion `json:"items"`
 	}{Query: query, Items: results})
+}
+
+func (s *Service) queryReverseSuggestions(ctx context.Context, query string, limit int) ([]suggestion, error) {
+	if s.reverseSearch == nil {
+		return []suggestion{}, nil
+	}
+	groups, err := s.reverseSearch.Search(ctx, query, limit)
+	if err != nil || len(groups) == 0 {
+		return []suggestion{}, err
+	}
+
+	var statement strings.Builder
+	statement.WriteString("WITH candidates(entry_id, result_rank) AS (VALUES ")
+	arguments := make([]any, 0, len(groups)*2)
+	groupByID := make(map[string]reversesearch.Group, len(groups))
+	for index, group := range groups {
+		if index > 0 {
+			statement.WriteByte(',')
+		}
+		statement.WriteString("(?, ?)")
+		arguments = append(arguments, group.EntryID, index)
+		groupByID[group.EntryID] = group
+	}
+	statement.WriteString(`)
+		SELECT e.id, e.headword, e.parts_of_speech, e.translation_preview, c.result_rank
+		FROM candidates c
+		JOIN entries e ON e.id = c.entry_id
+		ORDER BY c.result_rank`)
+	rows, err := s.db.QueryContext(ctx, statement.String(), arguments...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	results := make([]suggestion, 0, len(groups))
+	for rows.Next() {
+		var item suggestion
+		var partsOfSpeech string
+		if err := rows.Scan(&item.ID, &item.Headword, &partsOfSpeech, &item.TranslationPreview, &item.rank); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(partsOfSpeech), &item.PartsOfSpeech); err != nil || item.PartsOfSpeech == nil {
+			return nil, errors.New("dictionary search projection is malformed")
+		}
+		item.Kind = "dictionary"
+		group := groupByID[item.ID]
+		item.Matches = make([]searchMatch, 0, len(group.Matches))
+		for _, match := range group.Matches {
+			item.Matches = append(item.Matches, searchMatch{
+				Scope: match.Scope, EnglishText: match.English,
+				ChineseText: match.Chinese, Location: match.Location,
+			})
+		}
+		results = append(results, item)
+	}
+	return results, rows.Err()
 }
 
 func (s *Service) queryPrefixSuggestions(ctx context.Context, canonical string, limit int) ([]suggestion, error) {
@@ -456,13 +537,14 @@ func (s *Service) entry(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, http.StatusBadRequest, "invalid_id", "entry id is invalid")
 		return
 	}
-	var headword string
-	var compressed []byte
-	var size int64
-	var checksum []byte
-	err := s.db.QueryRowContext(r.Context(), `SELECT headword, payload, payload_size, payload_sha256 FROM entries WHERE id = ?`, id).Scan(&headword, &compressed, &size, &checksum)
-	if errors.Is(err, sql.ErrNoRows) {
+	envelope, err := s.entryReader.Get(r.Context(), id)
+	if errors.Is(err, runtimeentry.ErrNotFound) {
 		s.writeError(w, r, http.StatusNotFound, "entry_not_found", "entry was not found")
+		return
+	}
+	if errors.Is(err, runtimeentry.ErrInvalidPayload) {
+		s.logger.Error("dictionary entry has malformed body", "id", id, "error", err)
+		s.writeError(w, r, http.StatusInternalServerError, "invalid_entry_body", "entry has invalid source data")
 		return
 	}
 	if err != nil {
@@ -470,26 +552,11 @@ func (s *Service) entry(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, http.StatusInternalServerError, "entry_lookup_failed", "entry could not be loaded")
 		return
 	}
-	if s.payloadCodec == nil {
-		s.writeError(w, r, http.StatusInternalServerError, "unsupported_payload_codec", "entry uses an unsupported payload codec")
-		return
-	}
-	if size < 0 || size > maxEntrySize {
-		s.writeError(w, r, http.StatusInternalServerError, "invalid_entry_body", "entry has invalid source data")
-		return
-	}
-	rawBody, err := s.payloadCodec.Decompress(compressed, size)
-	digest := sha256.Sum256(rawBody)
-	if err != nil || !bytes.Equal(digest[:], checksum) || !json.Valid(rawBody) {
-		s.logger.Error("dictionary entry has malformed body", "id", id)
-		s.writeError(w, r, http.StatusInternalServerError, "invalid_entry_body", "entry has invalid source data")
-		return
-	}
 	enhancements := make([]etymology.ResourceSummary, 0, 1)
 	if s.etymology != nil {
-		summary, err := s.etymology.Summary(r.Context(), headword)
+		summary, err := s.etymology.Summary(r.Context(), envelope.Headword)
 		if err != nil {
-			s.logger.Error("etymology summary lookup failed", "headword", headword, "error", err)
+			s.logger.Error("etymology summary lookup failed", "headword", envelope.Headword, "error", err)
 			s.writeError(w, r, http.StatusInternalServerError, "entry_lookup_failed", "entry could not be loaded")
 			return
 		}
@@ -503,7 +570,7 @@ func (s *Service) entry(w http.ResponseWriter, r *http.Request) {
 		SourceVersion string                      `json:"sourceVersion"`
 		Body          json.RawMessage             `json:"body"`
 		Enhancements  []etymology.ResourceSummary `json:"enhancements"`
-	}{EntryID: id, Headword: headword, SourceVersion: s.sourceVersion, Body: json.RawMessage(rawBody), Enhancements: enhancements})
+	}{EntryID: envelope.EntryID, Headword: envelope.Headword, SourceVersion: envelope.SourceVersion, Body: envelope.Body, Enhancements: enhancements})
 }
 
 func (s *Service) etymologyTerm(w http.ResponseWriter, r *http.Request) {
