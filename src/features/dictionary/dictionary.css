@@ -898,7 +898,7 @@
   border-left: .02667rem solid #eff2fa;
   flex: 1 1 auto;
   min-width: 0;
-  padding: 1.49333rem 1.06667rem .8rem;
+  padding: clamp(1.49333rem, calc(.82667rem + 3.05vw), 1.86667rem) 1.06667rem .8rem;
 }
 
 .entry-view {
@@ -915,7 +915,7 @@
 }
 
 .entry-header {
-  margin-bottom: .4rem;
+  margin-bottom: clamp(.4rem, calc(-.84rem + 5.67vw), 1.09333rem);
 }
 
 .headword-row {
@@ -1820,17 +1820,6 @@
 
 .sense-definition > .cross-references.is-inline {
   margin-left: .16rem;
-}
-
-@media (min-width: 821px) {
-  .word-page {
-    padding-top: 1.86667rem;
-  }
-
-  .entry-header {
-    margin-bottom: 1.09333rem;
-  }
-
 }
 
 .entry-content-layout {
