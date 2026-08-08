@@ -4,9 +4,9 @@ package reversesearch
 import "io"
 
 const (
-	SchemaVersion     = 2
-	ProjectionVersion = "1.1"
-	NormalizerVersion = "nfkc-cjk-v1"
+	SchemaVersion     = 3
+	ProjectionVersion = "1.2"
+	NormalizerVersion = "nfkc-opencc-t2s-v1"
 	defaultPageSize   = 8192
 	defaultCandidates = 4096
 	maxResults        = 512
@@ -27,6 +27,16 @@ const (
 	ScopeUsage   Scope = "usage"
 	ScopeForm    Scope = "form"
 )
+
+type ScopeFilter struct {
+	mask uint8
+}
+
+type Options struct {
+	Offset int
+	Limit  int
+	Scopes ScopeFilter
+}
 
 type Section string
 

@@ -20,6 +20,11 @@ import {
   createDictionaryApiUrl,
   resolveDictionaryApiRoot,
 } from "./api-url";
+import {
+  isChineseSearchQuery,
+  serializeDictionarySearchScopes,
+  type DictionarySearchScope,
+} from "./search-scope";
 import type { SearchTarget } from "./search-target";
 
 const dictionarySearchMatchSchema = z.object({
@@ -168,7 +173,7 @@ const adapter = new BundledBilingualAdapter({ dictionaryId: "core-english-zh" })
 export const dictionaryClient = {
   async search(
     query: string,
-    options: { limit?: number; signal?: AbortSignal } = {},
+    options: { limit?: number; scope?: readonly DictionarySearchScope[]; signal?: AbortSignal } = {},
   ): Promise<SearchTarget[]> {
     const normalized = query.trim();
     if (!normalized) {
@@ -178,13 +183,21 @@ export const dictionaryClient = {
     const url = apiUrl("search");
     url.searchParams.set("q", normalized);
     url.searchParams.set("limit", String(Math.min(Math.max(options.limit ?? 10, 1), 20)));
+    if (options.scope?.length && isChineseSearchQuery(normalized)) {
+      url.searchParams.set("scope", serializeDictionarySearchScopes(options.scope));
+    }
     const payload = await getJson(url, options.signal);
     return parseSearchTargets(payload);
   },
 
   async searchPage(
     query: string,
-    options: { limit?: number; offset?: number; signal?: AbortSignal } = {},
+    options: {
+      limit?: number;
+      offset?: number;
+      scope?: readonly DictionarySearchScope[];
+      signal?: AbortSignal;
+    } = {},
   ): Promise<DictionarySearchPage> {
     const normalized = query.trim();
     if (!normalized) {
@@ -194,6 +207,9 @@ export const dictionaryClient = {
     const url = apiUrl("search");
     url.searchParams.set("q", normalized);
     url.searchParams.set("limit", String(Math.min(Math.max(options.limit ?? 32, 1), 256)));
+    if (options.scope?.length && isChineseSearchQuery(normalized)) {
+      url.searchParams.set("scope", serializeDictionarySearchScopes(options.scope));
+    }
     const offset = Math.min(Math.max(options.offset ?? 0, 0), 511);
     if (offset > 0) {
       url.searchParams.set("offset", String(offset));

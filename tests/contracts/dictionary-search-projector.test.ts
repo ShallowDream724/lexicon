@@ -11,6 +11,11 @@ import {
 } from "../../packages/dictionary-search/src/index";
 
 const text = (value: string): CanonicalText => ({ text: value, tokens: [], raw: value });
+const taggedText = (...tokens: Array<{ tag?: string; text: string }>): CanonicalText => ({
+  text: tokens.map((token) => token.text).join(""),
+  tokens: tokens.map((token) => ({ ...token, raw: {} })),
+  raw: {},
+});
 const raw = {};
 
 function entryFixture(): CanonicalEntry {
@@ -206,7 +211,7 @@ function entryFixture(): CanonicalEntry {
 test("projects canonical bilingual content recursively with stable document locations", () => {
   const documents = projectCanonicalEntrySearchDocuments(entryFixture());
   searchDocumentsSchema.parse(documents);
-  assert.equal(SEARCH_DOCUMENT_SCHEMA_VERSION, "1.1");
+  assert.equal(SEARCH_DOCUMENT_SCHEMA_VERSION, "1.2");
 
   const rootSense = documents.find((document) => document.location.ownerId === "sense-root");
   assert.deepEqual(rootSense?.location, {
@@ -288,6 +293,135 @@ test("keeps identical text at distinct locations and omits content without Chine
   assert.deepEqual(sameText.map((document) => document.location.path), [["senses", "0"], ["senses", "1"]]);
   assert.equal(documents.some((document) => document.englishText.includes("English-only")), false);
   assert.equal(documents.every((document) => /\p{Script=Han}/u.test(document.chineseText)), true);
+});
+
+test("projects rich box segments without aggregate duplicates and preserves token language boundaries", () => {
+  const entry = entryFixture();
+  const box = entry.grammarUsageBoxes[0]!;
+  const paragraph = box.blocks[0]!;
+  assert.equal(paragraph.kind, "paragraph");
+  box.title = taggedText({ tag: "eng", text: "Object-like detail" }, { tag: "simp", text: "对象式细节。" });
+  paragraph.value = taggedText({ tag: "eng", text: "Object-like summary" }, { tag: "simp", text: "对象式摘要。" });
+  paragraph.segments = [{
+    kind: "text",
+    value: taggedText({ tag: "eng", text: "Object-like detail" }, { tag: "simp", text: "对象式细节。" }),
+    raw,
+  }, {
+    kind: "term",
+    headword: taggedText({ tag: "eng", text: "object form" }, { tag: "simp", text: "对象形式。" }),
+    raw,
+  }];
+
+  const documents = projectCanonicalEntrySearchDocuments(entry);
+  const boxDocuments = documents.filter((document) => document.location.ownerId === "box-record");
+  assert.equal(boxDocuments.some((document) => document.location.path.join("/").endsWith("blocks/0/value")), false);
+  assert.equal(boxDocuments.some((document) => document.location.path.join("/").endsWith("blocks/0/segments/0")), true);
+  assert.equal(boxDocuments.some((document) => document.location.path.join("/").endsWith("blocks/0/segments/1")), true);
+  const detail = boxDocuments.find((document) => document.location.path.join("/").endsWith("blocks/0/segments/0"));
+  assert.equal(boxDocuments.filter((document) => document.chineseText === "对象式细节。").length, 1);
+  assert.equal(detail?.englishText, "Object-like detail");
+  assert.equal(detail?.chineseText, "对象式细节。");
+  assert.equal(/[，。！？；：、】【、】【（）《》〈〉「」『』]/u.test(detail?.englishText ?? ""), false);
+  assert.equal(boxDocuments.some((document) => document.location.path.includes("rows")), false);
+  assert.equal(documents.some((document) => document.location.ownerId === "box-list-example"), true);
+  assert.equal(documents.some((document) => document.location.ownerId === "box-table-example"), true);
+});
+
+test("coalesces compatibility text with its structured segment under the same owner", () => {
+  const entry = entryFixture();
+  const repeated = taggedText(
+    { tag: "eng", text: "Use this form carefully." },
+    { tag: "simp", text: "谨慎使用这一形式。" },
+  );
+  entry.senses[0]!.usage = [repeated];
+  entry.senses[0]!.usageSegments = [{ kind: "text", value: repeated, raw }];
+
+  const matches = projectCanonicalEntrySearchDocuments(entry).filter((document) =>
+    document.scope === "usage" &&
+    document.location.ownerId === "sense-root" &&
+    document.chineseText === "谨慎使用这一形式。",
+  );
+
+  assert.equal(matches.length, 1);
+  assert.deepEqual(matches[0]?.location.path, ["senses", "0", "usageSegments", "0"]);
+});
+
+test("keeps one deepest projection for a repeated box id while retaining equal text for distinct owners", () => {
+  const entry = entryFixture();
+  const repeated = entry.grammarUsageBoxes[0]!;
+  entry.senses[0]!.grammarUsageBoxes.push(repeated);
+  entry.senses.push({
+    id: "sense-equal-text",
+    order: 4,
+    labels: [],
+    definition: text("to store information"),
+    translation: text("记录信息"),
+    examples: [],
+    usage: [],
+    usageSegments: [],
+    crossReferences: [],
+    illustrations: [],
+    grammarUsageBoxes: [],
+    subsenses: [],
+    raw,
+  });
+
+  const documents = projectCanonicalEntrySearchDocuments(entry);
+  const repeatedDocuments = documents.filter((document) =>
+    document.location.path.includes("grammarUsageBoxes") &&
+    document.location.ownerId === "box-record",
+  );
+  assert.equal(repeatedDocuments.length > 0, true);
+  assert.equal(repeatedDocuments.every((document) => document.location.path[0] === "senses"), true);
+  assert.equal(documents.filter((document) => document.chineseText === "记录信息").length, 2);
+
+  const index = indexCanonicalEntrySearchLocations(entry);
+  assert.deepEqual(index.get(repeated), {
+    section: "grammar-usage",
+    part: "verb",
+    ownerId: "box-record",
+    path: ["senses", "0", "grammarUsageBoxes", "0"],
+  });
+});
+
+test("uses tagged Chinese text once when examples carry a language-like duplicate", () => {
+  const entry = entryFixture();
+  entry.senses[0]!.examples[0] = {
+    id: "language-duplicate",
+    text: taggedText(
+      { tag: "eng", text: "The process works." },
+      { tag: "simp", text: "过程有效。" },
+    ),
+    translation: taggedText({ tag: "simp", text: "过程有效。" }),
+    audio: [],
+    raw,
+  };
+
+  const document = projectCanonicalEntrySearchDocuments(entry).find(
+    (candidate) => candidate.location.ownerId === "language-duplicate",
+  );
+  assert.equal(document?.englishText, "The process works.");
+  assert.equal(document?.chineseText, "过程有效。");
+});
+
+test("preserves traditional and unlabelled bilingual tokens without weakening language boundaries", () => {
+  const entry = entryFixture();
+  entry.senses[0]!.definition = taggedText(
+    { tag: "strong", text: "a lexical" },
+    { tag: "custom-br", text: "" },
+    { tag: "eng", text: "item" },
+  );
+  entry.senses[0]!.translation = taggedText({ tag: "trad", text: "詞彙" });
+  entry.senses[0]!.inlineUsage = [taggedText({ tag: "strong", text: "formal 正式" })];
+
+  const documents = projectCanonicalEntrySearchDocuments(entry);
+  const sense = documents.find((document) => document.location.ownerId === "sense-root" && document.scope === "sense");
+  const usage = documents.find((document) => document.location.ownerId === "sense-root" && document.scope === "usage");
+
+  assert.equal(sense?.englishText, "a lexical item");
+  assert.equal(sense?.chineseText, "詞彙");
+  assert.equal(usage?.englishText, "formal");
+  assert.equal(usage?.chineseText, "正式");
 });
 
 test("indexes rendered canonical objects with the projector's exact locations", () => {

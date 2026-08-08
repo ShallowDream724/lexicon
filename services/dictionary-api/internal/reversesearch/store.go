@@ -23,6 +23,8 @@ type candidate struct {
 	document         SearchDocument
 	bm25             float64
 	score            float64
+	matchTier        int
+	scopeTier        int
 	exact            bool
 	coverage         float64
 	longest          int
@@ -106,13 +108,19 @@ func (s *Store) Close() error {
 
 func (s *Store) Available() bool { return s != nil && s.db != nil }
 
-func (s *Store) Search(ctx context.Context, query string, limit int) ([]Group, error) {
-	page, err := s.SearchPage(ctx, query, 0, limit)
+func (s *Store) Search(ctx context.Context, query string, options Options) ([]Group, error) {
+	options.Offset = 0
+	page, err := s.SearchPage(ctx, query, options)
 	return page.Groups, err
 }
 
-func (s *Store) SearchPage(ctx context.Context, query string, offset, limit int) (Page, error) {
+func (s *Store) SearchPage(ctx context.Context, query string, options Options) (Page, error) {
 	empty := Page{Groups: []Group{}}
+	scopes, err := options.Scopes.values()
+	if err != nil {
+		return empty, err
+	}
+	offset, limit := options.Offset, options.Limit
 	if s == nil || s.db == nil || limit < 1 {
 		return empty, nil
 	}
@@ -132,10 +140,11 @@ func (s *Store) SearchPage(ctx context.Context, query string, offset, limit int)
 	if groupLimit < maxResults {
 		groupLimit++
 	}
-	querySequences := cjkSequences(query)
-	queryRunes := cjkRunes(query)
+	normalizedQuery := normalizeChinese(query)
+	querySequences := cjkSequencesFromNormalized(normalizedQuery)
+	queryRunes := cjkRunesFromSequences(querySequences)
 	asciiTerms := asciiQueryTerms(query)
-	searchTokens := queryTokens(query)
+	searchTokens := queryTokensFromSequences(querySequences)
 	if len(queryRunes) == 0 || len(searchTokens) == 0 {
 		return empty, nil
 	}
@@ -143,7 +152,7 @@ func (s *Store) SearchPage(ctx context.Context, query string, offset, limit int)
 	exactCandidates := []candidate{}
 	if len(querySequences) == 1 {
 		var err error
-		exactCandidates, err = s.searchExactCandidates(ctx, string(querySequences[0]), queryRunes, matcher)
+		exactCandidates, err = s.searchExactCandidates(ctx, string(querySequences[0]), queryRunes, matcher, scopes, asciiTerms)
 		if err != nil {
 			return empty, err
 		}
@@ -154,6 +163,8 @@ func (s *Store) SearchPage(ctx context.Context, query string, offset, limit int)
 			conjunctiveMatchExpression(searchTokens),
 			queryRunes,
 			matcher,
+			scopes,
+			asciiTerms,
 		)
 		if err != nil {
 			return empty, err
@@ -163,7 +174,7 @@ func (s *Store) SearchPage(ctx context.Context, query string, offset, limit int)
 			return paginateGroups(groups, offset, limit), nil
 		}
 	}
-	candidates, err := s.searchCandidates(ctx, matchExpression(searchTokens), queryRunes, matcher)
+	candidates, err := s.searchCandidates(ctx, matchExpression(searchTokens), queryRunes, matcher, scopes, asciiTerms)
 	if err != nil {
 		return empty, err
 	}
@@ -192,15 +203,23 @@ func (s *Store) searchCandidates(
 	match string,
 	queryRunes []rune,
 	matcher commonRunMatcher,
+	scopes []Scope,
+	asciiTerms []string,
 ) ([]candidate, error) {
-	rows, err := s.db.QueryContext(ctx, `
-				SELECT d.id, d.entry_id, d.headword, d.scope, d.english_text, d.chinese_text,
-				       d.section, d.part, d.owner_id, d.path_json, d.weight, bm25(documents_fts)
-		FROM documents_fts
-		JOIN documents d ON d.id = documents_fts.rowid
-			WHERE documents_fts MATCH ?
-				ORDER BY bm25(documents_fts) - (d.weight * 0.01), d.entry_id, d.id
-				LIMIT ?`, match, defaultCandidates)
+	predicate, predicateArguments := candidatePredicate(scopes, asciiTerms)
+	statement := fmt.Sprintf(`
+					SELECT d.id, d.entry_id, d.headword, d.scope, d.english_text, d.chinese_text,
+					       d.section, d.part, d.owner_id, d.path_json, d.weight, bm25(documents_fts)
+			FROM documents_fts
+			JOIN documents d ON d.id = documents_fts.rowid
+				WHERE documents_fts MATCH ? AND %s
+					ORDER BY bm25(documents_fts) - (d.weight * 0.01), d.entry_id, d.id
+					LIMIT ?`, predicate)
+	arguments := make([]any, 0, len(predicateArguments)+2)
+	arguments = append(arguments, match)
+	arguments = append(arguments, predicateArguments...)
+	arguments = append(arguments, defaultCandidates)
+	rows, err := s.db.QueryContext(ctx, statement, arguments...)
 	if err != nil {
 		return nil, err
 	}
@@ -212,19 +231,47 @@ func (s *Store) searchExactCandidates(
 	normalized string,
 	queryRunes []rune,
 	matcher commonRunMatcher,
+	scopes []Scope,
+	asciiTerms []string,
 ) ([]candidate, error) {
-	rows, err := s.db.QueryContext(ctx, `
-			SELECT d.id, d.entry_id, d.headword, d.scope, d.english_text, d.chinese_text,
-			       d.section, d.part, d.owner_id, d.path_json, d.weight, 0.0
-			FROM exact_segments x
-			JOIN documents d ON d.id = x.document_id
-			WHERE x.normalized = ?
-			ORDER BY d.weight DESC, d.entry_id, d.id
-			LIMIT ?`, normalized, defaultCandidates)
+	predicate, predicateArguments := candidatePredicate(scopes, asciiTerms)
+	statement := fmt.Sprintf(`
+				SELECT d.id, d.entry_id, d.headword, d.scope, d.english_text, d.chinese_text,
+				       d.section, d.part, d.owner_id, d.path_json, d.weight, 0.0
+				FROM exact_segments x
+				JOIN documents d ON d.id = x.document_id
+				WHERE x.normalized = ? AND %s
+				ORDER BY d.weight DESC, d.entry_id, d.id
+				LIMIT ?`, predicate)
+	arguments := make([]any, 0, len(predicateArguments)+2)
+	arguments = append(arguments, normalized)
+	arguments = append(arguments, predicateArguments...)
+	arguments = append(arguments, defaultCandidates)
+	rows, err := s.db.QueryContext(ctx, statement, arguments...)
 	if err != nil {
 		return nil, err
 	}
 	return scanCandidates(ctx, rows, queryRunes, matcher)
+}
+
+func scopePredicate(scopes []Scope) (string, []any) {
+	placeholders := make([]string, len(scopes))
+	arguments := make([]any, len(scopes))
+	for index, scope := range scopes {
+		placeholders[index] = "?"
+		arguments[index] = scope
+	}
+	return "d.scope IN (" + strings.Join(placeholders, ",") + ")", arguments
+}
+
+func candidatePredicate(scopes []Scope, asciiTerms []string) (string, []any) {
+	scope, arguments := scopePredicate(scopes)
+	clauses := []string{scope}
+	for _, term := range asciiTerms {
+		clauses = append(clauses, "instr(lower(d.headword || ' ' || d.english_text || ' ' || d.chinese_text), ?) > 0")
+		arguments = append(arguments, term)
+	}
+	return strings.Join(clauses, " AND "), arguments
 }
 
 func scanCandidates(
@@ -247,7 +294,8 @@ func scanCandidates(
 		if err := json.Unmarshal([]byte(pathJSON), &c.document.Location.Path); err != nil {
 			return nil, fmt.Errorf("invalid stored location path: %w", err)
 		}
-		c.score, c.exact, c.coverage, c.longest, c.negationMismatch = scoreCandidate(queryRunes, matcher, c.document, c.bm25)
+		c.score, c.matchTier, c.exact, c.coverage, c.longest, c.negationMismatch = scoreCandidate(queryRunes, matcher, c.document, c.bm25)
+		c.scopeTier = scopeMatchTier(c.document.Scope)
 		candidates = append(candidates, c)
 	}
 	if err := rows.Err(); err != nil {
@@ -307,10 +355,13 @@ func scoreCandidate(
 	matcher commonRunMatcher,
 	document SearchDocument,
 	bm25 float64,
-) (float64, bool, float64, int, bool) {
-	sequences := cjkSequences(document.ChineseText)
+) (float64, int, bool, float64, int, bool) {
+	sequences := cjkSequencesWithoutTraditionalConversion(document.ChineseText)
+	if coverageSequences(queryRunes, sequences) < 1 {
+		sequences = cjkSequences(document.ChineseText)
+	}
 	if len(sequences) == 0 {
-		return math.Inf(-1), false, 0, 0, false
+		return math.Inf(-1), 0, false, 0, 0, false
 	}
 	exact := false
 	longest := 0
@@ -337,21 +388,20 @@ func scoreCandidate(
 		totalRunes += len(sequence)
 	}
 	overallCompactness := float64(len(queryRunes)) / float64(totalRunes)
-	score := float64(document.Weight) - bm25
-	if exact {
-		score += 100
-	}
-	if segmentExact {
-		score += 90
+	bracketOnly := exactMatchOnlyInsideBrackets(document.ChineseText, queryRunes)
+	matchTier := 1
+	if segmentExact && !bracketOnly {
+		matchTier = 4
 	} else if grammaticalExtension {
-		score += 100
-	} else if segmentBoundary {
-		score += 25
+		matchTier = 3
+	} else if segmentBoundary || exact {
+		matchTier = 2
 	}
+	score := float64(document.Weight) - bm25
 	score += compactness * 40
 	score += overallCompactness * 120
 	score += positionQuality * 60
-	if exactMatchOnlyInsideBrackets(document.ChineseText, queryRunes) {
+	if bracketOnly {
 		score -= 90
 	}
 	score += bigramCoverage * 30
@@ -359,7 +409,20 @@ func scoreCandidate(
 	if negationMismatch {
 		score -= 45
 	}
-	return score, exact, bigramCoverage, longest, negationMismatch
+	return score, matchTier, exact, bigramCoverage, longest, negationMismatch
+}
+
+func scopeMatchTier(scope Scope) int {
+	switch scope {
+	case ScopeSense, ScopePhrase, ScopeForm:
+		return 3
+	case ScopeUsage:
+		return 2
+	case ScopeExample:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func segmentMatchQuality(query []rune, sequences [][]rune) (exact, grammaticalExtension, boundary bool, compactness, positionQuality float64) {
@@ -493,13 +556,22 @@ func groupCandidates(query []rune, candidates []candidate, limit int) []Group {
 		}
 	}
 	sort.SliceStable(candidates, func(left, right int) bool {
+		if candidates[left].matchTier != candidates[right].matchTier {
+			return candidates[left].matchTier > candidates[right].matchTier
+		}
+		if candidates[left].scopeTier != candidates[right].scopeTier {
+			return candidates[left].scopeTier > candidates[right].scopeTier
+		}
 		if candidates[left].score != candidates[right].score {
 			return candidates[left].score > candidates[right].score
 		}
 		if candidates[left].document.EntryID != candidates[right].document.EntryID {
 			return candidates[left].document.EntryID < candidates[right].document.EntryID
 		}
-		return candidates[left].document.Headword < candidates[right].document.Headword
+		if candidates[left].document.Headword != candidates[right].document.Headword {
+			return candidates[left].document.Headword < candidates[right].document.Headword
+		}
+		return candidates[left].id < candidates[right].id
 	})
 	groups := make([]Group, 0, limit)
 	byEntry := make(map[string]int, limit)

@@ -131,7 +131,8 @@ type searchMatch struct {
 }
 
 func (s *Service) search(w http.ResponseWriter, r *http.Request) {
-	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	parameters := r.URL.Query()
+	query := strings.TrimSpace(parameters.Get("q"))
 	if query == "" {
 		s.writeError(w, r, http.StatusBadRequest, "invalid_query", "q must not be empty")
 		return
@@ -140,18 +141,32 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, http.StatusBadRequest, "invalid_query", "q must be 200 characters or fewer")
 		return
 	}
+	scopeValues, hasScope := parameters["scope"]
 	if reversesearch.ContainsCJK(query) {
-		limit, err := parseReverseLimit(r.URL.Query().Get("limit"))
+		scopes := reversesearch.DefaultScopeFilter()
+		if hasScope {
+			var err error
+			if len(scopeValues) != 1 {
+				err = errors.New("scope must be provided once as a comma-separated list")
+			} else {
+				scopes, err = reversesearch.ParseScopeFilter(scopeValues[0])
+			}
+			if err != nil {
+				s.writeError(w, r, http.StatusBadRequest, "invalid_scope", err.Error())
+				return
+			}
+		}
+		limit, err := parseReverseLimit(parameters.Get("limit"))
 		if err != nil {
 			s.writeError(w, r, http.StatusBadRequest, "invalid_limit", err.Error())
 			return
 		}
-		offset, err := parseReverseOffset(r.URL.Query().Get("offset"))
+		offset, err := parseReverseOffset(parameters.Get("offset"))
 		if err != nil {
 			s.writeError(w, r, http.StatusBadRequest, "invalid_offset", err.Error())
 			return
 		}
-		page, err := s.queryReverseSuggestions(r.Context(), query, offset, limit)
+		page, err := s.queryReverseSuggestions(r.Context(), query, reversesearch.Options{Offset: offset, Limit: limit, Scopes: scopes})
 		if err != nil {
 			s.logger.Error("Chinese reverse search failed", "error", err)
 			s.writeError(w, r, http.StatusInternalServerError, "search_failed", "search could not be completed")
@@ -168,8 +183,12 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) {
 		}{Query: query, Items: page.items, NextOffset: nextOffset})
 		return
 	}
+	if hasScope {
+		s.writeError(w, r, http.StatusBadRequest, "invalid_scope", "scope is only valid for Chinese reverse search")
+		return
+	}
 
-	limit, err := parseLimit(r.URL.Query().Get("limit"))
+	limit, err := parseLimit(parameters.Get("limit"))
 	if err != nil {
 		s.writeError(w, r, http.StatusBadRequest, "invalid_limit", err.Error())
 		return
@@ -213,11 +232,11 @@ type reverseSuggestionPage struct {
 	hasMore    bool
 }
 
-func (s *Service) queryReverseSuggestions(ctx context.Context, query string, offset, limit int) (reverseSuggestionPage, error) {
+func (s *Service) queryReverseSuggestions(ctx context.Context, query string, options reversesearch.Options) (reverseSuggestionPage, error) {
 	if s.reverseSearch == nil {
 		return reverseSuggestionPage{items: []suggestion{}}, nil
 	}
-	page, err := s.reverseSearch.SearchPage(ctx, query, offset, limit)
+	page, err := s.reverseSearch.SearchPage(ctx, query, options)
 	if err != nil || len(page.Groups) == 0 {
 		return reverseSuggestionPage{items: []suggestion{}}, err
 	}

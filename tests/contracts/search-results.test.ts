@@ -40,6 +40,30 @@ test("renders grouped Chinese evidence without repeating the generic preview", (
   assert.equal((html.match(/<button/g) ?? []).length, 2);
 });
 
+test("renders scope controls only for Chinese reverse search", () => {
+  const chinese = renderToStaticMarkup(createElement(SearchResults, {
+    query: "休息",
+    items: [],
+    pending: false,
+    scope: ["sense", "phrase", "form"],
+    onScopeChange: () => undefined,
+    onSelect: () => undefined,
+  }));
+  const english = renderToStaticMarkup(createElement(SearchResults, {
+    query: "rest",
+    items: [],
+    pending: false,
+    scope: ["sense", "phrase", "form"],
+    onScopeChange: () => undefined,
+    onSelect: () => undefined,
+  }));
+
+  assert.match(chinese, /词义与短语/);
+  assert.match(chinese, /用法/);
+  assert.match(chinese, /例句/);
+  assert.doesNotMatch(english, /词义与短语/);
+});
+
 test("renders one bounded continuation control for incremental Chinese results", () => {
   const html = renderToStaticMarkup(createElement(SearchResults, {
     query: "休息",

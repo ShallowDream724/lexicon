@@ -4,6 +4,12 @@ import type {
   DictionarySearchMatch,
   SearchTarget,
 } from "../../../lib/dictionary-client/search-target";
+import {
+  searchScopeCategoryEnabled,
+  toggleSearchScopeCategory,
+  type DictionarySearchScope,
+  type DictionarySearchScopeCategory,
+} from "../../../lib/dictionary-client/search-scope";
 import { isChineseSearchQuery } from "../search-matches";
 
 type SearchResultsProps = {
@@ -15,10 +21,20 @@ type SearchResultsProps = {
   loadingMore?: boolean;
   loadMoreError?: string | null;
   nextResultCount?: number;
+  scope?: readonly DictionarySearchScope[];
   onSelect: (target: SearchTarget, match?: DictionarySearchMatch) => void;
   onLoadMore?: () => void;
   onRetry?: () => void;
+  onScopeChange?: (scope: DictionarySearchScope[]) => void;
 };
+
+const scopeCategoryLabels: Record<DictionarySearchScopeCategory, string> = {
+  terms: "词义与短语",
+  usage: "用法",
+  example: "例句",
+};
+
+const scopeCategories: readonly DictionarySearchScopeCategory[] = ["terms", "usage", "example"];
 
 const matchLabels: Record<DictionarySearchMatch["scope"], string> = {
   sense: "词义",
@@ -37,11 +53,16 @@ export function SearchResults({
   loadingMore = false,
   loadMoreError,
   nextResultCount,
+  scope,
   onSelect,
   onLoadMore,
   onRetry,
+  onScopeChange,
 }: SearchResultsProps) {
   const reverseLookup = isChineseSearchQuery(query);
+  const enabledScopeCategories = scopeCategories.filter((category) =>
+    searchScopeCategoryEnabled(scope ?? [], category),
+  );
   return (
     <section
       aria-busy={pending}
@@ -53,6 +74,25 @@ export function SearchResults({
           ? `“${query}”的相关英文词条`
           : items.length ? "你要找的是不是：" : "查询结果"}
       </h1>
+
+      {reverseLookup && scope && onScopeChange ? (
+        <div className="search-results-scope" role="group" aria-label="搜索范围">
+          {scopeCategories.map((category) => {
+            const checked = searchScopeCategoryEnabled(scope, category);
+            return (
+              <label key={category}>
+                <input
+                  checked={checked}
+                  disabled={checked && enabledScopeCategories.length === 1}
+                  type="checkbox"
+                  onChange={() => onScopeChange(toggleSearchScopeCategory(scope, category))}
+                />
+                <span>{scopeCategoryLabels[category]}</span>
+              </label>
+            );
+          })}
+        </div>
+      ) : null}
 
       {pending ? <p className="search-results-status" role="status">正在查询</p> : null}
 

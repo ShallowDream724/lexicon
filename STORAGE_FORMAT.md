@@ -137,35 +137,41 @@ documents_fts  contentless FTS5 candidate index using detail=none
 ```
 
 The sidecar is generated from validated `CanonicalEntry` values through the shared
-`SearchDocument` projector. The current full build contains 197,538 documents and 368,319
-exact segments from 40,974 entries in an 86,327,296-byte file. Repeating the same
-projection and import produced the byte-identical SHA-256
-`8e8fb45c3dc7e6a68720f3195ede607b382974b4a29b3047cf4ac2213f1c1da9`.
+`SearchDocument` projector. The current schema 3 / projection 1.2 build contains 188,851
+documents and 347,486 exact segments from 40,974 entries in a 69,894,144-byte file.
+Repeating the same projection and import produced the byte-identical SHA-256
+`5f5b0d024141d6be17e76ef62a83206a2ca750984cd793bc52094b6a8298aaf5`.
 
-Normalization applies Unicode NFKC, collapses punctuation and whitespace boundaries,
-and maps the observed Chinese spelling variant `矽` to `硅`. The FTS payload contains
-ASCII-encoded CJK unigrams and bigrams, avoiding dependence on a platform-specific
-SQLite tokenizer. Each normalized query segment uses bigrams when possible and retains
-an explicit unigram when that segment contains one character. A query with one Chinese
-character excludes example-only matches.
+Normalization applies Unicode NFKC, OpenCC traditional-to-simplified conversion, and
+collapsed punctuation and whitespace boundaries. One process-wide, race-safe OpenCC
+converter is reused by every request; normalized text, runes, segments, and FTS tokens
+are derived once per query. The FTS payload contains ASCII-encoded CJK unigrams and
+bigrams, avoiding dependence on a platform-specific SQLite tokenizer. Each normalized
+query segment uses bigrams when possible and retains an explicit unigram when that
+segment contains one character. Mixed ASCII and numeric constraints join the scope
+predicate before the candidate limit and are rechecked during bounded refinement. A
+query with one Chinese character excludes example-only matches.
 
 Single-segment queries also probe the `exact_segments` primary key, preserving complete
-short meanings even when frequent terms fill the FTS window. FTS queries retrieve at most
-4,096 documents. Multi-token lookup tries the all-token tier first; bounded OR retrieval
-runs only when that tier has no usable result. The selected candidates then receive
-bounded Go refinement.
+short meanings even when frequent terms fill the FTS window. Scope filters are applied in
+both exact and FTS SQL before their candidate limits, so optional usage and example
+searches do not displace default definition, phrase, and form candidates. FTS queries
+retrieve at most 4,096 documents. Multi-token lookup tries the all-token tier first;
+bounded OR retrieval runs only when that tier has no usable result. The selected
+candidates then receive bounded Go refinement.
 
-Scoring combines semantic scope, source-neutral CEFR and frequency labels, BM25, complete
-Chinese segments, segment boundaries, compactness, position, bigram coverage, and the
-longest contiguous common run. Parenthetical-only matches are demoted. Long partial
-matches require a contiguous run covering about half the query, and lightweight polarity
-checking rejects misleading negated fallbacks. Mixed Chinese and ASCII or numeric queries
-retain every ASCII or numeric constraint. Scoring never joins text across punctuation or
-whitespace boundaries. Results are grouped with deterministic ties into a stable window of
-at most 512 entries and at most three evidence records per entry. The HTTP endpoint returns
-32 groups by default, accepts pages of at most 256, and exposes `nextOffset` for progressive
-32, 64, 128, 256, and 512 cumulative result counts. Both the HTTP endpoint and the store
-reject queries longer than 200 characters.
+Ranking first separates complete segments, grammatical extensions, continuous boundary
+matches, and partial matches into hard tiers. Semantic scope, source-neutral CEFR and
+frequency labels, BM25, compactness, position, bigram coverage, and the longest contiguous
+common run rank candidates only within the appropriate tier. Parenthetical-only matches
+are demoted. Long partial matches require a contiguous run covering about half the query,
+and lightweight polarity checking rejects misleading negated fallbacks. Mixed Chinese and
+ASCII or numeric queries retain every ASCII or numeric constraint. Scoring never joins text
+across punctuation or whitespace boundaries. Results are grouped with deterministic ties
+into a stable window of at most 512 entries and at most three evidence records per entry.
+The HTTP endpoint returns 32 groups by default, accepts pages of at most 256, and exposes
+`nextOffset` for progressive 32, 64, 128, 256, and 512 cumulative result counts. Both the
+HTTP endpoint and the store reject queries longer than 200 characters.
 
 The sidecar metadata stores the SHA-256 of its exact primary runtime database. The API
 checks that fingerprint before accepting the index, so canonical paths and entry content
@@ -177,13 +183,13 @@ Representative 100-request samples with a result limit of 32 measured:
 
 | Query | Result groups | p50 | p95 | p99 |
 | --- | ---: | ---: | ---: | ---: |
-| `书` | 32 | 29.61 ms | 35.98 ms | 44.38 ms |
-| `学校` | 32 | 10.78 ms | 13.93 ms | 16.07 ms |
-| `记录` | 32 | 2.57 ms | 3.68 ms | 4.53 ms |
-| `休息` | 32 | 2.53 ms | 3.54 ms | 4.08 ms |
-| `短暂的休息` | 2 | 0.52 ms | 1.02 ms | 1.11 ms |
-| `火山矽肺病` | 1 | 1.07 ms | 2.00 ms | 2.39 ms |
-| `完全受某人控制` | 2 | 1.00 ms | 1.50 ms | 2.00 ms |
+| `书` | 32 | 17.48 ms | 19.58 ms | 20.58 ms |
+| `学校` | 32 | 6.21 ms | 7.59 ms | 8.08 ms |
+| `记录` | 32 | 2.00 ms | 3.00 ms | 3.56 ms |
+| `休息` | 32 | 1.29 ms | 2.20 ms | 2.54 ms |
+| `短暂的休息` | 1 | 0.99 ms | 1.51 ms | 1.59 ms |
+| `火山矽肺病` | 1 | 1.08 ms | 1.77 ms | 2.52 ms |
+| `完全受某人控制` | 2 | 1.00 ms | 1.50 ms | 1.61 ms |
 
 Run the same bounded benchmark from the repository root:
 

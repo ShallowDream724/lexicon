@@ -11,7 +11,7 @@
     <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.24-2f7f8f" alt="Go 1.24"></a>
   </p>
 
-  <p><strong>40,974 entries · 197,538 Chinese search records · 51,716 etymology articles · 128,010 headword pronunciations</strong><br><strong>40,974 个词条 · 197,538 条中文反查记录 · 51,716 篇词源文章 · 128,010 个词头发音</strong></p>
+  <p><strong>40,974 entries · 188,851 Chinese search records · 51,716 etymology articles · 128,010 headword pronunciations</strong><br><strong>40,974 个词条 · 188,851 条中文反查记录 · 51,716 篇词源文章 · 128,010 个词头发音</strong></p>
 </div>
 
 <img src="docs/readme/hero-desktop.webp" width="100%" alt="Lexicon desktop entry view / Lexicon 桌面端词条页面">
@@ -76,9 +76,9 @@ Broad Chinese searches open with 32 ranked entries and can progressively reveal 
 
 范围较广的中文查询会先展示 32 个排序结果，并可逐步展开至 512 个；每次只请求新增的一页，兼顾首屏速度与继续查找的空间。
 
-The released dataset contains 40,974 bilingual entries projected into 197,538 Chinese search records, 46,773 searchable etymology terms across 51,716 articles, and 128,010 usable headword MP3 assets. Storage design, query plans, and reproducible benchmarks are documented in [STORAGE_FORMAT.md](STORAGE_FORMAT.md).
+The released dataset contains 40,974 bilingual entries projected into 188,851 Chinese search records, 46,773 searchable etymology terms across 51,716 articles, and 128,010 usable headword MP3 assets. Storage design, query plans, and reproducible benchmarks are documented in [STORAGE_FORMAT.md](STORAGE_FORMAT.md).
 
-参考数据集包含 40,974 个双语词条及其 197,538 条中文反查记录、覆盖 51,716 篇文章的 46,773 个可搜索词源词语，以及 128,010 个可用词头 MP3。存储设计、查询计划与可复现基准见 [STORAGE_FORMAT.md](STORAGE_FORMAT.md)。
+参考数据集包含 40,974 个双语词条及其 188,851 条中文反查记录、覆盖 51,716 篇文章的 46,773 个可搜索词源词语，以及 128,010 个可用词头 MP3。存储设计、查询计划与可复现基准见 [STORAGE_FORMAT.md](STORAGE_FORMAT.md)。
 
 ## Quick start
 

@@ -24,3 +24,20 @@ test("uses an etymology-only route without synthesizing a dictionary entry", () 
   });
   assert.equal(workspaceRouteUrl("/lookup", route), "/lookup?etymology=origo&article=noun-1");
 });
+
+test("round-trips Chinese scope in the canonical URL order and removes it from English URLs", () => {
+  const chinese = parseWorkspaceRoute(new URLSearchParams("q=%E4%BC%91%E6%81%AF&scope=example,sense,form,phrase"));
+  assert.deepEqual(chinese, {
+    kind: "query",
+    query: "休息",
+    scope: ["sense", "phrase", "form", "example"],
+  });
+  assert.equal(
+    workspaceRouteUrl("/", chinese),
+    "/?q=%E4%BC%91%E6%81%AF&scope=sense%2Cphrase%2Cform%2Cexample",
+  );
+
+  const english = parseWorkspaceRoute(new URLSearchParams("q=rest&scope=usage,example"));
+  assert.deepEqual(english, { kind: "query", query: "rest" });
+  assert.equal(workspaceRouteUrl("/", english), "/?q=rest");
+});

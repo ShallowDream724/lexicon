@@ -42,7 +42,7 @@ CanonicalEntry v1
         |
         +---- offline SearchDocument projection ----> immutable reverse-search sidecar
         |
-        +---- IndexedDB learning data: history, favorites, notes, preferences
+        +---- IndexedDB learning data: query history, visits, favorites, notes, preferences
 
 Root application composition
         |
@@ -164,6 +164,13 @@ projection, builds a new SQLite file transactionally, and atomically replaces an
 sidecar only when explicitly requested. Supplementary resources keep their own versioned
 search providers and merge with primary results at the API boundary.
 
+Structured canonical text is split by its language tokens. Simplified, traditional, and
+standard Chinese tags enter the Chinese projection; known English tags enter the English
+projection; unlabelled formatting tokens fall back to script-aware splitting. Rich box
+paragraphs and cells emit their ordered segments instead of also indexing an aggregate
+compatibility value. Repeated paths to the same source box retain the deepest rendered
+owner, while equal text under distinct semantic owners remains independently searchable.
+
 ### React Application
 
 The React layer renders only canonical types. It owns:
@@ -215,6 +222,12 @@ location. Selecting it loads the entry, switches to the matching part of speech,
 registered resource when needed, and scrolls to the most specific rendered path. Owner and
 section checks prevent repeated source ids from opening an unrelated resource; older or
 coarser locations fall back to their owner and then their section.
+
+Chinese results default to definitions, phrases, and forms. Users may include usage notes
+or examples through one canonical scope control. Scope is part of the request identity,
+URL, cancellation boundary, and every continuation page. The API applies it before its
+candidate limit, so changing scope searches the complete eligible projection instead of
+filtering an already truncated browser result.
 
 Modal resources share one reference-counted viewport lock. Opening an illustration,
 usage panel, quick-find dialog, note editor, or personal-library drawer prevents the
@@ -283,10 +296,25 @@ immutable and is never updated with notes or favorites.
 History visit increments read and write inside one transaction, preventing concurrent
 entry loads from losing a visit count.
 
-The workspace reads the 100 most recent history records. Compact header and home
-previews merge repeated spellings while preserving accumulated visit counts; the home
+Entry visits and submitted queries use separate stores and retention policies. The workspace
+reads the 100 most recent records from each. Compact visit previews in the home screen
+merge repeated spellings while preserving accumulated visit counts; the home
 screen displays at most five recent items and five favorites, with the full collections
 available from their library views.
+
+Every explicit non-empty query is recorded after normalization for identity while retaining
+its complete cleaned display text. Suggestions, URL hydration, browser history navigation,
+scope changes, retries, and continuation pages do not create records. The header shows the
+five newest queries and refills from the retained 100 after deletion. Fine-pointer devices
+reveal an independent delete target on hover or keyboard focus; touch pointers use a
+movement-cancellable long press, independent of viewport width. Query-history mutations
+use optimistic deletion plus a latest-revision reconciliation guard, so rapid submissions
+and deletions cannot restore a stale browser-storage snapshot.
+
+History, favorites, and notes share one selection model in the personal-library drawer.
+Bulk deletion, un-favoriting, and note deletion use one transaction per store and require a
+modal confirmation. The confirmation owns Escape while open and remains locked during its
+pending operation, preventing the underlying drawer from closing mid-transaction.
 
 The storage interface includes export and import boundaries so backup or optional
 sync can be added later without replacing UI call sites. Clearing browser storage
@@ -329,7 +357,7 @@ All endpoints use `/api/v1`. Errors have a stable code, message, and request id.
 
 ```text
 GET /api/v1/health
-GET /api/v1/search?q=<query>&limit=<bounded integer>&offset=<Chinese results only>
+GET /api/v1/search?q=<query>&limit=<bounded integer>&offset=<Chinese results only>&scope=<Chinese scopes>
 GET /api/v1/entries/<url-encoded entry id>
 GET /api/v1/enhancements/etymology/terms/<url-encoded term>
 GET /api/v1/enhancements/etymology/articles/<url-encoded article id>
@@ -343,6 +371,10 @@ record contains `scope`, `englishText`, `chineseText`, and a validated `location
 search items retain their existing compact response shape. Chinese requests accept an
 optional `offset`; their default page contains 32 groups, a page contains at most 256, and
 `nextOffset` is returned only while more of the stable 512-group result window remains.
+Their optional comma-separated `scope` uses the stable order
+`sense,phrase,form,usage,example`; omission defaults to `sense,phrase,form`. Empty,
+repeated, whitespace-bearing, or unknown values are rejected, and English requests reject
+the parameter.
 
 The entry endpoint returns the source envelope consumed by the registered adapter:
 
@@ -365,11 +397,17 @@ requests as distinct outcomes.
 - A one-segment reverse query probes the exact-segment B-tree so a complete short meaning
   cannot be displaced by common FTS terms. FTS tiers retrieve at most 4,096 documents;
   multi-token lookup tries the all-token tier first and uses bounded OR retrieval only when
-  it has no usable result. Go refinement respects normalized Chinese segment boundaries,
-  preserves ASCII and numeric constraints in mixed queries, uses deterministic tie-breaks,
+  it has no usable result. Scope plus ASCII and numeric constraints are applied before the
+  SQL candidate limit; Go refinement respects normalized Chinese segment boundaries and
+  uses deterministic tie-breaks,
   and returns at most 512 entry groups with three evidence records per entry.
 - Chinese result pages begin at 32 groups and expand cumulatively to 64, 128, 256, then
   512. Each request transfers only the next page, and route changes cancel in-flight pages.
+- Scope predicates run in exact and FTS SQL before their candidate limits. Match tiers rank
+  complete segments, grammatical extensions, bounded substrings, and partial matches in
+  discrete order; semantic scope and source priors only rank within the applicable tier.
+- Traditional-to-simplified conversion uses one process-wide, race-safe converter. A query
+  is normalized once before its CJK sequences, runes, and FTS tokens are derived.
 - Exact and prefix results are ranked in SQL; the browser never filters the full
   dictionary.
 - One-edit spelling correction runs only after an empty exact/prefix result for a

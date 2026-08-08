@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"testing"
 
@@ -105,6 +106,55 @@ func TestChineseSearchRejectsUnboundedWindows(t *testing.T) {
 	}
 }
 
+func TestSearchScopeValidationDefaultsAndDeduplication(t *testing.T) {
+	service := newFixtureServiceWithReverseSearch(t)
+	usageQuery := url.QueryEscape("用法释义")
+	if response := get(t, service, "/api/v1/search?q="+usageQuery); response.Code != http.StatusOK || len(searchIDs(t, response)) != 0 {
+		t.Fatalf("default scopes included usage: %d %s", response.Code, response.Body.String())
+	}
+	response := get(t, service, "/api/v1/search?q="+usageQuery+"&scope=usage,usage")
+	if response.Code != http.StatusOK {
+		t.Fatalf("deduplicated scope: %d %s", response.Code, response.Body.String())
+	}
+	var scoped struct {
+		Items []struct {
+			ID      string `json:"id"`
+			Matches []struct {
+				Scope string `json:"scope"`
+			} `json:"matches"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &scoped); err != nil {
+		t.Fatal(err)
+	}
+	if len(scoped.Items) != 1 || scoped.Items[0].ID != "exact" || len(scoped.Items[0].Matches) != 1 || scoped.Items[0].Matches[0].Scope != "usage" {
+		t.Fatalf("scoped response = %#v", scoped)
+	}
+
+	invalidTargets := []string{
+		"/api/v1/search?q=" + usageQuery + "&scope=",
+		"/api/v1/search?q=" + usageQuery + "&scope=unknown",
+		"/api/v1/search?q=" + usageQuery + "&scope=sense,",
+		"/api/v1/search?q=" + usageQuery + "&scope=sense&scope=phrase",
+		"/api/v1/search?q=alpha&scope=sense",
+	}
+	for _, target := range invalidTargets {
+		response := get(t, service, target)
+		if response.Code != http.StatusBadRequest {
+			t.Errorf("%s: got %d %s", target, response.Code, response.Body.String())
+			continue
+		}
+		var failure struct {
+			Error struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &failure); err != nil || failure.Error.Code != "invalid_scope" {
+			t.Errorf("%s: unstable error %#v, %v", target, failure, err)
+		}
+	}
+}
+
 func newFixtureServiceWithReverseSearch(t testing.TB) *server.Service {
 	t.Helper()
 	directory := t.TempDir()
@@ -122,6 +172,16 @@ func newFixtureServiceWithReverseSearch(t testing.TB) *server.Service {
 			DictionaryID: "fixture", EntryID: "exact", Scope: reversesearch.ScopeSense,
 			Headword: "alpha", EnglishText: "exact definition", ChineseText: "精确释义",
 			Location: reversesearch.Location{Section: reversesearch.SectionDefinitions, Part: "noun", OwnerID: "sense-exact", Path: []string{"senses", "0"}}, Weight: 100,
+		},
+		{
+			DictionaryID: "fixture", EntryID: "exact", Scope: reversesearch.ScopeUsage,
+			Headword: "alpha", EnglishText: "usage note", ChineseText: "用法释义",
+			Location: reversesearch.Location{Section: reversesearch.SectionGrammarUsage, OwnerID: "usage-exact", Path: []string{"usage", "0"}}, Weight: 60,
+		},
+		{
+			DictionaryID: "fixture", EntryID: "exact", Scope: reversesearch.ScopeExample,
+			Headword: "alpha", EnglishText: "example sentence", ChineseText: "例句释义",
+			Location: reversesearch.Location{Section: reversesearch.SectionDefinitions, OwnerID: "example-exact", Path: []string{"examples", "0"}}, Weight: 30,
 		},
 		{
 			DictionaryID: "fixture", EntryID: "one", Scope: reversesearch.ScopePhrase,

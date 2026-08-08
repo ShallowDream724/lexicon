@@ -1,14 +1,37 @@
 package reversesearch
 
 import (
+	"fmt"
 	"strings"
+	"sync"
 	"unicode"
 
+	"github.com/longbridgeapp/opencc"
 	"golang.org/x/text/unicode/norm"
 )
 
+var loadTraditionalConverter = sync.OnceValues(func() (*opencc.OpenCC, error) {
+	return opencc.New("t2s")
+})
+
 func normalizeChinese(value string) string {
 	value = norm.NFKC.String(value)
+	converter, err := loadTraditionalConverter()
+	if err != nil {
+		panic(fmt.Sprintf("initialize traditional Chinese normalizer: %v", err))
+	}
+	value, err = converter.Convert(value)
+	if err != nil {
+		panic(fmt.Sprintf("normalize traditional Chinese: %v", err))
+	}
+	return normalizeChineseSpacing(value)
+}
+
+func normalizeChineseWithoutTraditionalConversion(value string) string {
+	return normalizeChineseSpacing(norm.NFKC.String(value))
+}
+
+func normalizeChineseSpacing(value string) string {
 	var out strings.Builder
 	out.Grow(len(value))
 	space := true
@@ -48,7 +71,14 @@ func ContainsCJK(value string) bool {
 }
 
 func cjkSequences(value string) [][]rune {
-	normalized := normalizeChinese(value)
+	return cjkSequencesFromNormalized(normalizeChinese(value))
+}
+
+func cjkSequencesWithoutTraditionalConversion(value string) [][]rune {
+	return cjkSequencesFromNormalized(normalizeChineseWithoutTraditionalConversion(value))
+}
+
+func cjkSequencesFromNormalized(normalized string) [][]rune {
 	sequences := make([][]rune, 0, 4)
 	current := make([]rune, 0, len(normalized))
 	flush := func() {
@@ -69,7 +99,10 @@ func cjkSequences(value string) [][]rune {
 }
 
 func cjkRunes(value string) []rune {
-	sequences := cjkSequences(value)
+	return cjkRunesFromSequences(cjkSequences(value))
+}
+
+func cjkRunesFromSequences(sequences [][]rune) []rune {
 	count := 0
 	for _, sequence := range sequences {
 		count += len(sequence)
@@ -207,9 +240,12 @@ func tokens(value string) []string {
 }
 
 func queryTokens(value string) []string {
-	sequences := cjkSequences(value)
-	result := make([]string, 0, len(value))
-	seen := make(map[string]struct{}, len(value))
+	return queryTokensFromSequences(cjkSequences(value))
+}
+
+func queryTokensFromSequences(sequences [][]rune) []string {
+	result := make([]string, 0, len(sequences)*2)
+	seen := make(map[string]struct{}, len(sequences)*2)
 	add := func(token string) {
 		if _, exists := seen[token]; exists {
 			return

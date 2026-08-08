@@ -97,7 +97,7 @@ Endpoints:
 ```text
 GET /api/v1/health
 GET /api/v1/search?q=word&limit=20
-GET /api/v1/search?q=中文&limit=32&offset=0
+GET /api/v1/search?q=中文&limit=32&offset=0&scope=sense,phrase,form
 GET /api/v1/entries/{id}
 GET /api/v1/enhancements/etymology/terms/{term}
 GET /api/v1/enhancements/etymology/articles/{id}
@@ -115,6 +115,12 @@ only in an enabled enhancement use their resource kind. Chinese responses includ
 groups and accept a page size of at most 256. English responses retain their 20-result
 default and 50-result maximum. Errors contain a stable code,
 message, and request id; the same request id is returned in `X-Request-ID`.
+
+Chinese `scope` accepts a non-empty comma-separated subset of
+`sense,phrase,form,usage,example`; omission defaults to `sense,phrase,form`. Scope is applied
+inside both exact and FTS SQL before the bounded candidate limit. Unknown, repeated query
+parameters, empty values, and whitespace-bearing lists return `400 invalid_scope`; English
+search rejects the parameter.
 
 ## Storage
 
@@ -161,6 +167,12 @@ at most 512 entry groups with three evidence records per entry. Query length is 
 200 characters in the HTTP handler and the store. The sidecar metadata validates schema,
 projection, normalizer, document and segment counts, and primary database fingerprint
 before use.
+
+Schema 3 stores `documents`, `exact_segments`, and the contentless FTS index without the
+unused entry-order secondary index. Projection 1.2 indexes structured rich-text segments
+once, preserves distinct semantic owners, and separates bilingual token streams. A shared
+OpenCC converter normalizes traditional queries and indexed Chinese while the request path
+derives all query views from one normalized value.
 
 ## Container
 

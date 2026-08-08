@@ -1,3 +1,11 @@
+import {
+  DEFAULT_CHINESE_SEARCH_SCOPES,
+  isChineseSearchQuery,
+  parseChineseSearchScopes,
+  serializeDictionarySearchScopes,
+  type DictionarySearchScope,
+} from "../../lib/dictionary-client/search-scope";
+
 export type EtymologyRoute = {
   term: string;
   articleId?: string;
@@ -5,7 +13,7 @@ export type EtymologyRoute = {
 
 export type WorkspaceRoute =
   | { kind: "home" }
-  | { kind: "query"; query: string }
+  | { kind: "query"; query: string; scope?: DictionarySearchScope[] }
   | { kind: "entry"; entryId: string; etymology?: EtymologyRoute }
   | { kind: "etymology"; etymology: EtymologyRoute };
 
@@ -28,7 +36,9 @@ export function parseWorkspaceRoute(parameters: SearchParameters): WorkspaceRout
     return { kind: "etymology", etymology: { term, articleId } };
   }
   if (query) {
-    return { kind: "query", query };
+    return isChineseSearchQuery(query)
+      ? { kind: "query", query, scope: parseChineseSearchScopes(parameters.get("scope")) }
+      : { kind: "query", query };
   }
   return { kind: "home" };
 }
@@ -50,6 +60,12 @@ export function workspaceRouteUrl(pathname: string, route: WorkspaceRoute): stri
     }
   } else if (route.kind === "query") {
     parameters.set("q", route.query);
+    if (isChineseSearchQuery(route.query)) {
+      parameters.set(
+        "scope",
+        serializeDictionarySearchScopes(route.scope ?? DEFAULT_CHINESE_SEARCH_SCOPES),
+      );
+    }
   }
 
   const query = parameters.toString();

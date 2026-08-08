@@ -77,6 +77,14 @@ examples, phrase groups, forms, structured usage segments, and grammar or usage 
 Canonical object order becomes a stable path, while `ownerId` retains a source identity
 when one exists. The browser builds its rendered-location index with the same traversal.
 
+Language-tagged canonical tokens are projected without flattening their boundaries.
+Simplified, traditional, and standard Chinese tags feed `chineseText`; English tags feed
+`englishText`; unlabelled presentation tokens use script-aware fallback splitting. When a
+rich paragraph or table cell has ordered segments, those segments are indexed and its
+aggregate compatibility value is not emitted a second time. Repeated references to the same
+box id retain the deepest canonical owner, while identical text under different owners is
+preserved.
+
 An adapter that maps a new source into existing canonical fields receives reverse-search
 coverage without additional search code. A new canonical semantic type extends the
 projector and rendered-anchor contract once for every source. Opaque `raw` fields remain
@@ -85,6 +93,8 @@ metadata and currently hidden content from producing results the UI cannot displ
 
 Search documents are build artifacts. They are validated and imported into an immutable
 sidecar, never attached to `CanonicalEntry` responses or retained in browser state.
+The request-time scope filter selects any non-empty subset in canonical order
+`sense,phrase,form,usage,example`; the product default is definitions, phrases, and forms.
 
 ## Enhancement Resources
 

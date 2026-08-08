@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseSearchPage, parseSearchTargets } from "../../src/lib/dictionary-client/client";
+import {
+  dictionaryClient,
+  parseSearchPage,
+  parseSearchTargets,
+} from "../../src/lib/dictionary-client/client";
 
 test("parses optional reverse-search evidence without changing English search items", () => {
   const [english, chinese] = parseSearchTargets({
@@ -64,4 +68,33 @@ test("rejects reverse-search evidence with an unknown location contract", () => 
       }],
     }],
   }));
+});
+
+test("serializes one canonical scope for every Chinese page and omits it for English search", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: URL[] = [];
+  globalThis.fetch = async (input) => {
+    requests.push(new URL(String(input)));
+    return new Response(JSON.stringify({ items: [] }), { status: 200 });
+  };
+
+  try {
+    await dictionaryClient.searchPage("休息", {
+      limit: 32,
+      scope: ["example", "usage", "sense", "phrase", "form"],
+    });
+    await dictionaryClient.searchPage("休息", {
+      limit: 32,
+      offset: 32,
+      scope: ["form", "sense", "phrase", "usage", "example"],
+    });
+    await dictionaryClient.search("rest", { scope: ["usage"] });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(requests[0]?.searchParams.get("scope"), "sense,phrase,form,usage,example");
+  assert.equal(requests[1]?.searchParams.get("scope"), "sense,phrase,form,usage,example");
+  assert.equal(requests[1]?.searchParams.get("offset"), "32");
+  assert.equal(requests[2]?.searchParams.has("scope"), false);
 });

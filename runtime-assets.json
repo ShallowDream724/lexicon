@@ -22,10 +22,10 @@
     {
       "kind": "database",
       "file": "reverse-search.db",
-      "bytes": 86327296,
-      "sha256": "8e8fb45c3dc7e6a68720f3195ede607b382974b4a29b3047cf4ac2213f1c1da9",
-      "runtimeSchema": 2,
-      "records": 197538,
+      "bytes": 69894144,
+      "sha256": "5f5b0d024141d6be17e76ef62a83206a2ca750984cd793bc52094b6a8298aaf5",
+      "runtimeSchema": 3,
+      "records": 188851,
       "primarySha256": "f6ac9d3e20482112b24ca4142481e5b5ba78efbc9cbca85299e0ac4fc86e22d5"
     },
     {

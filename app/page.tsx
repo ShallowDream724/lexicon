@@ -15,7 +15,7 @@ function firstParameter(value: string | string[] | undefined): string | undefine
 export default async function Home({ searchParams }: HomeProps) {
   const parameters = (await searchParams) ?? {};
   const routeParameters = new URLSearchParams();
-  for (const key of ["entry", "q", "etymology", "article"]) {
+  for (const key of ["entry", "q", "scope", "etymology", "article"]) {
     const value = firstParameter(parameters[key])?.trim();
     if (value) {
       routeParameters.set(key, value);

@@ -12,14 +12,14 @@ import type {
   CanonicalText,
 } from "../../dictionary-schema/src/index";
 
-export const SEARCH_DOCUMENT_SCHEMA_VERSION = "1.1" as const;
+export const SEARCH_DOCUMENT_SCHEMA_VERSION = "1.2" as const;
 
 export const SEARCH_DOCUMENT_SCOPES = [
   "sense",
   "phrase",
-  "example",
-  "usage",
   "form",
+  "usage",
+  "example",
 ] as const;
 
 export const SEARCH_DOCUMENT_SECTIONS = [
@@ -85,10 +85,6 @@ function hasCjkText(text: string): boolean {
   return cjkPattern.test(text) && text.replace(/\s+/gu, "").length > 0;
 }
 
-function nonCjkProjection(text: string): string {
-  return text.replace(/\p{Script=Han}/gu, "").replace(/\s+/gu, " ").trim();
-}
-
 function textValue(text: CanonicalText | undefined): string {
   return text?.text ?? "";
 }
@@ -101,14 +97,130 @@ function joinText(...values: string[]): string {
   return values.filter((value) => value.trim().length > 0).join(" ").trim();
 }
 
+type BilingualSource = CanonicalText | string;
+
+interface BilingualProjection {
+  englishText: string;
+  chineseText: string;
+}
+
+function sourceText(value: BilingualSource): string {
+  return typeof value === "string" ? value : value.text;
+}
+
+function normalizeText(value: string): string {
+  return value.replace(/\s+/gu, " ").trim();
+}
+
+function isCjkPunctuation(value: string): boolean {
+  return /[，。！？；：、】【、】【（）《》〈〉「」『』]/u.test(value);
+}
+
+function splitUnstructuredText(value: string): BilingualProjection {
+  const english: string[] = [];
+  const chinese: string[] = [];
+  const units = Array.from(value);
+  let pending = "";
+  let previous: "english" | "chinese" | undefined;
+
+  const nextLanguage = (from: number): "english" | "chinese" | undefined => {
+    for (let index = from; index < units.length; index += 1) {
+      if (cjkPattern.test(units[index]!)) return "chinese";
+      if (!/\s/u.test(units[index]!) && !isCjkPunctuation(units[index]!)) return "english";
+    }
+    return undefined;
+  };
+  const append = (language: "english" | "chinese", content: string): void => {
+    (language === "english" ? english : chinese).push(content);
+  };
+
+  for (let index = 0; index < units.length; index += 1) {
+    const unit = units[index]!;
+    const language = cjkPattern.test(unit)
+      ? "chinese"
+      : isCjkPunctuation(unit)
+        ? "chinese"
+        : /\s/u.test(unit)
+          ? undefined
+          : "english";
+    if (!language) {
+      pending += unit;
+      continue;
+    }
+    if (pending) {
+      append(language === "chinese" || previous === "chinese" || nextLanguage(index) === "chinese" ? "chinese" : "english", pending);
+      pending = "";
+    }
+    append(language, unit);
+    previous = language;
+  }
+  if (pending) append(previous ?? "english", pending);
+  return { englishText: normalizeText(english.join("")), chineseText: normalizeText(chinese.join("")) };
+}
+
+function projectCanonicalText(value: BilingualSource): BilingualProjection {
+  if (typeof value === "string") return splitUnstructuredText(value);
+  if (value.tokens.length === 0) return splitUnstructuredText(value.text);
+
+  const english: string[] = [];
+  const chinese: string[] = [];
+  let englishBoundary = false;
+  let chineseBoundary = false;
+  const append = (parts: string[], text: string, boundary: boolean): boolean => {
+    if (!text) return boundary;
+    if (boundary && parts.length > 0) parts.push(" ");
+    parts.push(text);
+    return false;
+  };
+  for (const token of value.tokens) {
+    const tag = token.tag?.toLocaleLowerCase();
+    if (tag === "custom-br" || !token.text.trim()) {
+      englishBoundary = true;
+      chineseBoundary = true;
+      continue;
+    }
+
+    let projection: BilingualProjection;
+    if (tag === "simp" || tag === "trad" || tag === "zh" || tag === "zho") {
+      projection = { englishText: "", chineseText: token.text };
+    } else if (tag === "eng" || tag === "en") {
+      projection = { englishText: token.text, chineseText: "" };
+    } else {
+      projection = splitUnstructuredText(token.text);
+    }
+    englishBoundary = append(english, projection.englishText, englishBoundary);
+    chineseBoundary = append(chinese, projection.chineseText, chineseBoundary);
+  }
+  return { englishText: normalizeText(english.join("")), chineseText: normalizeText(chinese.join("")) };
+}
+
+function joinCanonicalText(...values: Array<CanonicalText | undefined>): CanonicalText {
+  const present = values.filter((value): value is CanonicalText => Boolean(value && value.text.trim()));
+  return {
+    text: present.map((value) => value.text).join(" "),
+    tokens: present.every((value) => value.tokens.length > 0)
+      ? present.flatMap((value, index) => index === 0 ? value.tokens : [{ text: " ", raw: {} }, ...value.tokens])
+      : [],
+    raw: {},
+  };
+}
+
 interface ProjectionContext {
   dictionaryId: string;
   entryId: string;
   headword: string;
   entryWeight: number;
   documents?: SearchDocument[];
-  signatures?: Set<string>;
+  documentsBySignature?: Map<string, SearchDocument>;
   locations?: WeakMap<object, SearchDocumentLocation>;
+  boxProjections?: Map<string, BoxProjection>;
+  activeBoxProjection?: BoxProjection;
+}
+
+interface BoxProjection {
+  path: string[];
+  documents: SearchDocument[];
+  emit: boolean;
 }
 
 interface DocumentCandidate {
@@ -139,11 +251,15 @@ function indexLocation(
   value: object,
   candidate: Pick<DocumentCandidate, "section" | "path" | "part" | "ownerId">,
 ): void {
-  context.locations?.set(value, candidateLocation(candidate));
+  const location = candidateLocation(candidate);
+  const current = context.locations?.get(value);
+  if (!current || location.path.length > current.path.length) {
+    context.locations?.set(value, location);
+  }
 }
 
 function addDocument(context: ProjectionContext, candidate: DocumentCandidate): void {
-  if (!context.documents || !context.signatures || !hasCjkText(candidate.chineseText)) {
+  if (!context.documents || !context.documentsBySignature || !hasCjkText(candidate.chineseText)) {
     return;
   }
 
@@ -157,40 +273,49 @@ function addDocument(context: ProjectionContext, candidate: DocumentCandidate): 
     location: candidateLocation(candidate),
     weight: SEARCH_DOCUMENT_WEIGHTS[candidate.scope] + context.entryWeight,
   };
-  const signature = JSON.stringify(document);
-  if (!context.signatures.has(signature)) {
-    context.signatures.add(signature);
+  const signature = documentSignature(document);
+  const existing = context.documentsBySignature.get(signature);
+  if (!existing) {
+    context.documentsBySignature.set(signature, document);
     context.documents.push(document);
+    context.activeBoxProjection?.documents.push(document);
+  } else if (documentLocationPriority(document) > documentLocationPriority(existing)) {
+    Object.assign(existing, document);
   }
+}
+
+function documentLocationPriority(document: SearchDocument): number {
+  const structuredSegment = document.location.path.some((part) =>
+    part === "segments" || part.endsWith("Segments"),
+  );
+  return document.location.path.length * 2 + (structuredSegment ? 1 : 0);
+}
+
+function documentSignature(document: SearchDocument): string {
+  return JSON.stringify([
+    document.scope,
+    document.location.section,
+    document.location.part ?? "",
+    document.location.ownerId || document.location.path,
+    document.englishText,
+    document.chineseText,
+  ]);
 }
 
 function addBilingualDocument(
   context: ProjectionContext,
   candidate: Omit<DocumentCandidate, "englishText" | "chineseText"> & {
-    englishText: string;
-    chineseText?: string;
+    englishText: BilingualSource;
+    chineseText?: BilingualSource;
   },
 ): void {
-  if (!context.documents) {
+  if (!context.documents || context.activeBoxProjection?.emit === false) {
     return;
   }
-  const chineseText = candidate.chineseText ?? "";
-  if (hasCjkText(chineseText)) {
-    addDocument(context, {
-      ...candidate,
-      englishText: nonCjkProjection(candidate.englishText),
-      chineseText,
-    });
-    return;
-  }
-
-  if (hasCjkText(candidate.englishText)) {
-    addDocument(context, {
-      ...candidate,
-      englishText: nonCjkProjection(candidate.englishText),
-      chineseText: candidate.englishText,
-    });
-  }
+  const english = projectCanonicalText(candidate.englishText);
+  const explicitChinese = candidate.chineseText ? projectCanonicalText(candidate.chineseText) : undefined;
+  const chineseText = explicitChinese?.chineseText || (candidate.chineseText ? sourceText(candidate.chineseText) : english.chineseText);
+  addDocument(context, { ...candidate, englishText: english.englishText, chineseText });
 }
 
 function projectExample(
@@ -212,8 +337,8 @@ function projectExample(
     path,
     part,
     ownerId: example.id,
-    englishText: example.text.text,
-    chineseText: textValue(example.translation),
+    englishText: example.text,
+    chineseText: example.translation,
   });
 }
 
@@ -236,7 +361,7 @@ function projectSegments(
         path: segmentPath,
         part,
         ownerId,
-        englishText: segment.value.text,
+        englishText: segment.value,
       });
     } else if (segment.kind === "example") {
       projectExample(context, segment.value, section, segmentPath, part);
@@ -248,7 +373,7 @@ function projectSegments(
         path: segmentPath,
         part,
         ownerId,
-        englishText: joinText(segment.headword.text, textValue(segment.partOfSpeech)),
+        englishText: joinCanonicalText(segment.headword, segment.partOfSpeech),
       });
     }
   }
@@ -267,6 +392,23 @@ function projectGrammarUsageBox(
     part,
     ownerId: boxOwnerId,
   });
+  const boxKey = box.id?.trim();
+  const previous = boxKey ? context.boxProjections?.get(boxKey) : undefined;
+  const emit = !previous || path.length > previous.path.length;
+  if (emit && previous) {
+    const removed = new Set(previous.documents);
+    context.documents = context.documents?.filter((document) => !removed.has(document));
+    for (const document of previous.documents) {
+      const signature = documentSignature(document);
+      if (context.documentsBySignature?.get(signature) === document) {
+        context.documentsBySignature.delete(signature);
+      }
+    }
+  }
+  const projection: BoxProjection = { path: [...path], documents: [], emit };
+  if (boxKey && emit) context.boxProjections?.set(boxKey, projection);
+  const priorProjection = context.activeBoxProjection;
+  context.activeBoxProjection = projection;
   if (box.title) {
     addBilingualDocument(context, {
       scope: "usage",
@@ -274,7 +416,7 @@ function projectGrammarUsageBox(
       path: [...path, "title"],
       part,
       ownerId: boxOwnerId,
-      englishText: box.title.text,
+      englishText: box.title,
     });
   }
 
@@ -287,6 +429,7 @@ function projectGrammarUsageBox(
       part,
     );
   }
+  context.activeBoxProjection = priorProjection;
 }
 
 function projectGrammarUsageBlock(
@@ -309,7 +452,7 @@ function projectGrammarUsageBlock(
       path: [...path, "value"],
       part,
       ownerId,
-      englishText: block.value.text,
+      englishText: block.value,
     });
     return;
   }
@@ -321,14 +464,16 @@ function projectGrammarUsageBlock(
       part,
       ownerId,
     });
-    addBilingualDocument(context, {
-      scope: "usage",
-      section: "grammar-usage",
-      path: [...path, "value"],
-      part,
-      ownerId,
-      englishText: block.value.text,
-    });
+    if (block.segments.length === 0) {
+      addBilingualDocument(context, {
+        scope: "usage",
+        section: "grammar-usage",
+        path: [...path, "value"],
+        part,
+        ownerId,
+        englishText: block.value,
+      });
+    }
     projectSegments(context, block.segments, "grammar-usage", path, part, ownerId);
     return;
   }
@@ -352,14 +497,16 @@ function projectGrammarUsageBlock(
       const rowPath = stablePath(path, "rows", rowIndex);
       for (const [cellIndex, cell] of row.cells.entries()) {
         const cellPath = stablePath(rowPath, "cells", cellIndex);
-        addBilingualDocument(context, {
-          scope: "usage",
-          section: "grammar-usage",
-          path: [...cellPath, "value"],
-          part,
-          ownerId,
-          englishText: cell.value.text,
-        });
+        if (cell.segments.length === 0) {
+          addBilingualDocument(context, {
+            scope: "usage",
+            section: "grammar-usage",
+            path: [...cellPath, "value"],
+            part,
+            ownerId,
+            englishText: cell.value,
+          });
+        }
         projectSegments(context, cell.segments, "grammar-usage", cellPath, part, ownerId);
       }
     }
@@ -371,7 +518,7 @@ function projectSense(
   sense: CanonicalSense,
   section: SearchDocumentSection,
   path: string[],
-  phraseHeading?: string,
+  phraseHeading?: CanonicalText,
   phraseOwnerId?: string,
 	  inheritedPart?: string,
 ): void {
@@ -389,8 +536,8 @@ function projectSense(
     path,
     part,
     ownerId: senseOwnerId,
-    englishText: joinText(phraseHeading ?? "", textValue(sense.definition)),
-    chineseText: textValue(sense.translation),
+    englishText: joinCanonicalText(phraseHeading, sense.definition),
+    chineseText: sense.translation,
   });
 
   for (const [index, usage] of (sense.inlineUsage ?? []).entries()) {
@@ -402,7 +549,7 @@ function projectSense(
       path: usagePath,
       part,
       ownerId: sense.id,
-      englishText: usage.text,
+      englishText: usage,
     });
   }
   for (const [index, usage] of sense.usage.entries()) {
@@ -414,7 +561,7 @@ function projectSense(
       path: usagePath,
       part,
       ownerId: sense.id,
-      englishText: usage.text,
+      englishText: usage,
     });
   }
   projectSegments(context, sense.definitionSegments ?? [], section, path, part, sense.id, "definitionSegments");
@@ -467,7 +614,7 @@ function projectPhrase(
       section,
       path: usagePath,
       ownerId: phrase.id,
-      englishText: usage.text,
+      englishText: usage,
     });
   }
   projectForms(context, phrase.variants, section, [...path, "variants"]);
@@ -477,7 +624,7 @@ function projectPhrase(
       sense,
       section,
       stablePath(path, "senses", index),
-      phrase.display.text,
+      phrase.display,
       phrase.id,
 	      inheritedPart,
     );
@@ -522,7 +669,7 @@ function projectForms(
         path: usagePath,
         part,
         ownerId: form.id,
-        englishText: usage.text,
+        englishText: usage,
       });
     }
     projectForms(context, form.variants ?? [], section, [...formPath, "variants"], part);
@@ -581,7 +728,7 @@ function projectEntry(
       section: "definitions",
       path: usagePath,
 	      part,
-      englishText: usage.text,
+      englishText: usage,
     });
   }
   for (const [index, sense] of entry.senses.entries()) {
@@ -612,7 +759,8 @@ export function projectCanonicalEntrySearchDocuments(entry: CanonicalEntry): Sea
     headword: entry.headword,
     entryWeight: entrySearchWeight(entry),
     documents: [],
-    signatures: new Set<string>(),
+    documentsBySignature: new Map<string, SearchDocument>(),
+    boxProjections: new Map<string, BoxProjection>(),
   };
   projectEntry(context, entry, []);
   return context.documents ?? [];

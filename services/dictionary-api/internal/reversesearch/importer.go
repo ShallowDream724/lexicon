@@ -127,7 +127,6 @@ func applySchema(ctx context.Context, db *sql.DB) error {
 			path_json TEXT NOT NULL CHECK(length(path_json) <= 8192),
 			weight INTEGER NOT NULL CHECK(weight BETWEEN -1000000 AND 1000000)
 		)`,
-		`CREATE INDEX documents_by_entry ON documents(entry_id, id)`,
 		`CREATE TABLE exact_segments (
 				normalized TEXT NOT NULL CHECK(length(normalized) BETWEEN 1 AND 200),
 				document_id INTEGER NOT NULL,

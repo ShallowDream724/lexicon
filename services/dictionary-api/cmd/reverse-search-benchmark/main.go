@@ -43,20 +43,21 @@ func main() {
 	defer store.Close()
 
 	ctx := context.Background()
+	options := reversesearch.Options{Limit: *limit, Scopes: reversesearch.DefaultScopeFilter()}
 	results := make([]queryResult, 0)
 	for _, query := range strings.Split(*queryList, ",") {
 		query = strings.TrimSpace(query)
 		if query == "" {
 			continue
 		}
-		if _, err := store.Search(ctx, query, *limit); err != nil {
+		if _, err := store.Search(ctx, query, options); err != nil {
 			fatal(err)
 		}
 		durations := make([]time.Duration, *iterations)
 		matches := 0
 		for index := range durations {
 			started := time.Now()
-			groups, err := store.Search(ctx, query, *limit)
+			groups, err := store.Search(ctx, query, options)
 			durations[index] = time.Since(started)
 			if err != nil {
 				fatal(err)

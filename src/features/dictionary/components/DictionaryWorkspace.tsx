@@ -15,10 +15,16 @@ import {
 } from "../../../lib/dictionary-client/client";
 import { searchTargetKey } from "../../../lib/dictionary-client/search-target";
 import {
+  dictionarySearchRequestKey,
+  parseChineseSearchScopes,
+  type DictionarySearchScope,
+} from "../../../lib/dictionary-client/search-scope";
+import {
   learningData,
   type FavoriteRecord,
   type HistoryRecord,
   type NoteRecord,
+  type QueryHistoryRecord,
 } from "../../../lib/storage/learning-data";
 import { demoEntry } from "../demo-entry";
 import { entryPartIndexFor, projectEntryPart } from "../entry-sections";
@@ -58,6 +64,7 @@ type DictionaryWorkspaceProps = {
 
 type SearchResultsState = {
   query: string;
+  scope?: DictionarySearchScope[];
   items: SearchTarget[];
   pending: boolean;
   error: string | null;
@@ -126,6 +133,7 @@ export function DictionaryWorkspace({
     initialRoute.kind === "query"
       ? {
           query: initialRoute.query,
+          scope: initialRoute.scope,
           items: [],
           pending: true,
           error: null,
@@ -136,6 +144,7 @@ export function DictionaryWorkspace({
       : emptySearchResults,
   );
   const [suggestions, setSuggestions] = useState<SearchTarget[]>([]);
+  const [queryHistory, setQueryHistory] = useState<QueryHistoryRecord[]>([]);
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [favorites, setFavorites] = useState<FavoriteRecord[]>([]);
   const [notes, setNotes] = useState<NoteRecord[]>([]);
@@ -157,21 +166,52 @@ export function DictionaryWorkspace({
   const suggestionRequest = useRef<AbortController | null>(null);
   const submittedSearchRequest = useRef<AbortController | null>(null);
   const resultPageRequest = useRef<AbortController | null>(null);
-  const submittedSearchQuery = useRef<string | null>(null);
+  const submittedSearchKey = useRef<string | null>(null);
+  const queryHistoryMutationRevision = useRef(0);
   const entryRequest = useRef<AbortController | null>(null);
   const etymologyNavigationRequest = useRef<AbortController | null>(null);
   const activeAudio = useRef<HTMLAudioElement | null>(null);
 
   const refreshLearningData = useCallback(async () => {
-    const [nextHistory, nextFavorites, nextNotes] = await Promise.all([
+    const [nextQueryHistory, nextHistory, nextFavorites, nextNotes] = await Promise.all([
+      learningData.listQueryHistory(),
       learningData.listHistory(),
       learningData.listFavorites(),
       learningData.listNotes(),
     ]);
+    setQueryHistory(nextQueryHistory);
     setHistory(nextHistory);
     setFavorites(nextFavorites);
     setNotes(nextNotes);
   }, []);
+
+  const resyncQueryHistory = useCallback(async (revision: number): Promise<void> => {
+    try {
+      const records = await learningData.listQueryHistory();
+      if (queryHistoryMutationRevision.current === revision) {
+        setQueryHistory(records);
+      }
+    } catch {
+      // Personal history must never block dictionary navigation.
+    }
+  }, []);
+
+  const recordExplicitQuery = useCallback((rawQuery: string): void => {
+    const revision = ++queryHistoryMutationRevision.current;
+    void learningData.recordQueryHistory(rawQuery).then(
+      () => resyncQueryHistory(revision),
+      () => resyncQueryHistory(revision),
+    );
+  }, [resyncQueryHistory]);
+
+  const deleteQueryHistory = useCallback((key: string): void => {
+    const revision = ++queryHistoryMutationRevision.current;
+    setQueryHistory((current) => current.filter((record) => record.key !== key));
+    void learningData.deleteQueryHistory(key).then(
+      () => resyncQueryHistory(revision),
+      () => resyncQueryHistory(revision),
+    );
+  }, [resyncQueryHistory]);
 
   const loadEntryLearningState = useCallback(async (nextEntry: CanonicalEntry) => {
     const identity = {
@@ -364,7 +404,7 @@ export function DictionaryWorkspace({
     submittedSearchRequest.current = null;
     resultPageRequest.current?.abort();
     resultPageRequest.current = null;
-    submittedSearchQuery.current = null;
+    submittedSearchKey.current = null;
     entryRequest.current?.abort();
     entryRequest.current = null;
     activeAudio.current?.pause();
@@ -401,6 +441,7 @@ export function DictionaryWorkspace({
       options: {
         route?: "none" | "push" | "replace";
         targetArticleId?: string;
+        scope?: readonly DictionarySearchScope[];
       } = {},
     ): Promise<boolean | null> => {
       const requestedQuery = rawQuery.normalize("NFKC").trim().replace(/\s+/g, " ");
@@ -409,8 +450,13 @@ export function DictionaryWorkspace({
         return false;
       }
 
+      const reverseLookup = isChineseSearchQuery(requestedQuery);
+      const scope = reverseLookup
+        ? parseChineseSearchScopes(options.scope?.join(","))
+        : undefined;
+      const requestKey = dictionarySearchRequestKey(requestedQuery, scope);
       if (
-        submittedSearchQuery.current === requestedQuery &&
+        submittedSearchKey.current === requestKey &&
         submittedSearchRequest.current &&
         !submittedSearchRequest.current.signal.aborted
       ) {
@@ -428,7 +474,7 @@ export function DictionaryWorkspace({
       entryRequest.current = null;
       const controller = new AbortController();
       submittedSearchRequest.current = controller;
-      submittedSearchQuery.current = requestedQuery;
+      submittedSearchKey.current = requestKey;
 
       setQuery(requestedQuery);
       if (!options.targetArticleId) {
@@ -442,6 +488,7 @@ export function DictionaryWorkspace({
       setView("loading");
       setSearchResults({
         query: requestedQuery,
+        scope,
         items: [],
         pending: true,
         error: null,
@@ -451,10 +498,10 @@ export function DictionaryWorkspace({
       });
 
       try {
-        const reverseLookup = isChineseSearchQuery(requestedQuery);
         const primaryPage = reverseLookup
           ? await dictionaryClient.searchPage(requestedQuery, {
               limit: initialReverseResultCount,
+              scope,
               signal: controller.signal,
             })
           : {
@@ -495,6 +542,7 @@ export function DictionaryWorkspace({
 
         setSearchResults({
           query: requestedQuery,
+          scope,
           items: resolution.items,
           pending: false,
           error: null,
@@ -508,10 +556,11 @@ export function DictionaryWorkspace({
         setView("search-results");
         const route = options.route ?? "push";
         if (route !== "none") {
-          updateRoute(
-            `${window.location.pathname}?q=${encodeURIComponent(requestedQuery)}`,
-            route,
-          );
+          updateRoute(workspaceRouteUrl(window.location.pathname, {
+            kind: "query",
+            query: requestedQuery,
+            ...(scope ? { scope } : {}),
+          }), route);
         }
         window.scrollTo({ top: 0, behavior: "auto" });
         return true;
@@ -524,6 +573,7 @@ export function DictionaryWorkspace({
         }
         setSearchResults({
           query: requestedQuery,
+          scope,
           items: [],
           pending: false,
           error: "词典服务暂不可用",
@@ -534,17 +584,18 @@ export function DictionaryWorkspace({
         setView("search-results");
         const route = options.route ?? "push";
         if (route !== "none") {
-          updateRoute(
-            `${window.location.pathname}?q=${encodeURIComponent(requestedQuery)}`,
-            route,
-          );
+          updateRoute(workspaceRouteUrl(window.location.pathname, {
+            kind: "query",
+            query: requestedQuery,
+            ...(scope ? { scope } : {}),
+          }), route);
         }
         return false;
       } finally {
         if (submittedSearchRequest.current === controller) {
           submittedSearchRequest.current = null;
-          if (submittedSearchQuery.current === requestedQuery) {
-            submittedSearchQuery.current = null;
+          if (submittedSearchKey.current === requestKey) {
+            submittedSearchKey.current = null;
           }
         }
       }
@@ -554,6 +605,7 @@ export function DictionaryWorkspace({
 
   const loadMoreSearchResults = useCallback(async (): Promise<void> => {
     const requestedQuery = searchResults.query;
+    const scope = searchResults.scope;
     const offset = searchResults.nextOffset;
     if (
       offset === null ||
@@ -578,13 +630,19 @@ export function DictionaryWorkspace({
       const page = await dictionaryClient.searchPage(requestedQuery, {
         limit: targetCount - offset,
         offset,
+        scope,
         signal: controller.signal,
       });
       if (resultPageRequest.current !== controller || controller.signal.aborted) {
         return;
       }
       setSearchResults((current) => {
-        if (current.query !== requestedQuery || current.nextOffset !== offset) {
+        if (
+          current.query !== requestedQuery ||
+          current.nextOffset !== offset ||
+          dictionarySearchRequestKey(current.query, current.scope) !==
+            dictionarySearchRequestKey(requestedQuery, scope)
+        ) {
           return current;
         }
         const seen = new Set(current.items.map(searchTargetKey));
@@ -607,6 +665,8 @@ export function DictionaryWorkspace({
       if (!isAbortError(error) && resultPageRequest.current === controller) {
         setSearchResults((current) =>
           current.query === requestedQuery
+            && dictionarySearchRequestKey(current.query, current.scope) ===
+              dictionarySearchRequestKey(requestedQuery, scope)
             ? { ...current, loadMoreError: "更多结果暂时无法加载" }
             : current,
         );
@@ -616,6 +676,8 @@ export function DictionaryWorkspace({
         resultPageRequest.current = null;
         setSearchResults((current) =>
           current.query === requestedQuery
+            && dictionarySearchRequestKey(current.query, current.scope) ===
+              dictionarySearchRequestKey(requestedQuery, scope)
             ? { ...current, loadingMore: false }
             : current,
         );
@@ -670,7 +732,8 @@ export function DictionaryWorkspace({
         return;
       }
       if (route.kind === "query") {
-        void runSearch(route.query, { route: "none" });
+        updateRoute(workspaceRouteUrl(window.location.pathname, route), "replace");
+        void runSearch(route.query, { route: "none", scope: route.scope });
         return;
       }
       showHome(false);
@@ -741,6 +804,9 @@ export function DictionaryWorkspace({
   const submitSearch = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const normalizedQuery = normalizeSearchQuery(query);
+    if (normalizedQuery) {
+      recordExplicitQuery(query);
+    }
     const currentEntryIsOpen =
       (view === "entry" && normalizeSearchQuery(entry.headword) === normalizedQuery) ||
       (view === "etymology" && normalizeSearchQuery(etymology?.term ?? "") === normalizedQuery);
@@ -763,7 +829,7 @@ export function DictionaryWorkspace({
     submittedSearchRequest.current = null;
     resultPageRequest.current?.abort();
     resultPageRequest.current = null;
-    submittedSearchQuery.current = null;
+    submittedSearchKey.current = null;
     setQuery(value);
     setSuggestions([]);
     if (!value.trim()) {
@@ -780,7 +846,7 @@ export function DictionaryWorkspace({
     submittedSearchRequest.current = null;
     resultPageRequest.current?.abort();
     resultPageRequest.current = null;
-    submittedSearchQuery.current = null;
+    submittedSearchKey.current = null;
     setQuery("");
     setSuggestions([]);
     setSearchPending(false);
@@ -844,6 +910,36 @@ export function DictionaryWorkspace({
     setDrawer({ mode: "library", tab });
   };
 
+  const runLibraryBulkAction = useCallback(async (
+    tab: LibraryTab,
+    keys: string[],
+  ): Promise<void> => {
+    if (tab === "history") {
+      await learningData.deleteHistory(keys);
+    } else if (tab === "favorites") {
+      await learningData.removeFavorites(keys);
+    } else {
+      await learningData.deleteNotes(keys);
+    }
+
+    const identity = { dictionaryId: entry.dictionaryId, entryId: entry.id };
+    const [nextQueryHistory, nextHistory, nextFavorites, nextNotes, nextFavorite, nextNote] =
+      await Promise.all([
+        learningData.listQueryHistory(),
+        learningData.listHistory(),
+        learningData.listFavorites(),
+        learningData.listNotes(),
+        learningData.isFavorite(identity),
+        learningData.getNote(identity),
+      ]);
+    setQueryHistory(nextQueryHistory);
+    setHistory(nextHistory);
+    setFavorites(nextFavorites);
+    setNotes(nextNotes);
+    setFavorite(nextFavorite);
+    setNote(nextNote?.text ?? "");
+  }, [entry.dictionaryId, entry.id]);
+
   const projection = useMemo(
     () => projectEntryPart(entry, activePartIndex),
     [activePartIndex, entry],
@@ -905,7 +1001,7 @@ export function DictionaryWorkspace({
         homeMode={view === "home"}
         query={query}
         suggestions={suggestions}
-        history={history}
+        queryHistory={queryHistory}
         searchPending={searchPending}
         searchOpen={searchOpen}
         searchError={searchError}
@@ -923,7 +1019,16 @@ export function DictionaryWorkspace({
         }}
         onSubmit={submitSearch}
         onHome={() => showHome(true)}
-        onSelect={(target) => void selectSearchTarget(target, { route: "push" })}
+        onSelect={(target) => {
+          recordExplicitQuery(query || target.headword);
+          void selectSearchTarget(target, { route: "push" });
+        }}
+        onSelectQueryHistory={(historicalQuery) => {
+          setQuery(historicalQuery);
+          recordExplicitQuery(historicalQuery);
+          void runSearch(historicalQuery, { route: "push" });
+        }}
+        onDeleteQueryHistory={deleteQueryHistory}
         onOpenLibrary={(tab) => void openLibrary(tab)}
       />
 
@@ -950,7 +1055,14 @@ export function DictionaryWorkspace({
               ? undefined
               : nextReverseResultCount(searchResults.nextOffset)}
             onLoadMore={() => void loadMoreSearchResults()}
-            onRetry={() => void runSearch(searchResults.query, { route: "none" })}
+            onRetry={() => void runSearch(searchResults.query, {
+              route: "none",
+              scope: searchResults.scope,
+            })}
+            onScopeChange={(scope) => void runSearch(searchResults.query, {
+              route: "push",
+              scope,
+            })}
             onSelect={(target, match) => void selectSearchTarget(target, {
               route: "push",
               articleTarget: searchResults.articleTarget,
@@ -958,6 +1070,7 @@ export function DictionaryWorkspace({
             })}
             pending={searchResults.pending}
             query={searchResults.query}
+            scope={searchResults.scope}
           />
         </div>
       ) : view === "etymology" && etymology ? (
@@ -1043,7 +1156,10 @@ export function DictionaryWorkspace({
             onJump={scrollToSection}
           />
           <InlineLookup
-            onLookup={(lookupQuery) => runSearch(lookupQuery, { route: "push" })}
+            onLookup={(lookupQuery) => {
+              recordExplicitQuery(lookupQuery);
+              return runSearch(lookupQuery, { route: "push" });
+            }}
             rootRef={wordPageRef}
           />
         </section>
@@ -1069,6 +1185,7 @@ export function DictionaryWorkspace({
                 favorites,
                 notes,
                 onTabChange: (tab: LibraryTab) => setDrawer({ mode: "library", tab }),
+                onBulkAction: runLibraryBulkAction,
                 onSelect: (entryId: string) => {
                   setDrawer(null);
                   void selectEntry(entryId, { route: "push" });

@@ -17,15 +17,19 @@ import {
   useState,
 } from "react";
 
-import type { HistoryRecord } from "../../../lib/storage/learning-data";
+import type { QueryHistoryRecord } from "../../../lib/storage/learning-data";
 import type { SearchTarget } from "../../../lib/dictionary-client/client";
-import { historyPreviewRecords } from "../history-preview";
+import {
+  queryHistoryDisplayText,
+  queryHistoryPreviewRecords,
+  useLongPress,
+} from "../query-history";
 
 type DictionaryHeaderProps = {
   homeMode: boolean;
   query: string;
   suggestions: SearchTarget[];
-  history: HistoryRecord[];
+  queryHistory: QueryHistoryRecord[];
   searchPending: boolean;
   searchOpen: boolean;
   searchError: string | null;
@@ -38,14 +42,52 @@ type DictionaryHeaderProps = {
   onHome: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onSelect: (target: SearchTarget) => void;
+  onSelectQueryHistory: (query: string) => void;
+  onDeleteQueryHistory: (key: string) => void;
   onOpenLibrary: (tab: "history" | "favorites") => void;
 };
+
+type QueryHistoryItemProps = {
+  record: QueryHistoryRecord;
+  onSelect: (query: string) => void;
+  onDelete: (key: string) => void;
+};
+
+function QueryHistoryItem({ record, onSelect, onDelete }: QueryHistoryItemProps) {
+  const longPress = useLongPress(() => onDelete(record.key));
+  const query = queryHistoryDisplayText(record);
+
+  return (
+    <span className="search-recent-item">
+      <button
+        className="search-recent-query"
+        type="button"
+        title={query}
+        aria-label={query}
+        {...longPress}
+        onClick={() => onSelect(query)}
+      >
+        <span>{query}</span>
+      </button>
+      <button
+        className="search-recent-delete"
+        type="button"
+        title={`删除查询：${query}`}
+        aria-label={`删除查询：${query}`}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => onDelete(record.key)}
+      >
+        <X aria-hidden="true" />
+      </button>
+    </span>
+  );
+}
 
 export function DictionaryHeader({
   homeMode,
   query,
   suggestions,
-  history,
+  queryHistory,
   searchPending,
   searchOpen,
   searchError,
@@ -58,12 +100,14 @@ export function DictionaryHeader({
   onHome,
   onSubmit,
   onSelect,
+  onSelectQueryHistory,
+  onDeleteQueryHistory,
   onOpenLibrary,
 }: DictionaryHeaderProps) {
   const [activeOption, setActiveOption] = useState(-1);
   const showSuggestions =
     searchOpen && Boolean(query.trim()) && suggestions.length > 0;
-  const visibleHistory = historyPreviewRecords(history);
+  const visibleQueryHistory = queryHistoryPreviewRecords(queryHistory);
   const optionCount = showSuggestions ? suggestions.length : 0;
 
   const selectOption = (index: number) => {
@@ -202,23 +246,16 @@ export function DictionaryHeader({
             </button>
           </div>
 
-          {visibleHistory.length ? (
+          {visibleQueryHistory.length ? (
             <div className="search-recent-row" aria-label="历史查询">
               <span>历史查询：</span>
-              {visibleHistory.map((record) => (
-                <button
+              {visibleQueryHistory.map((record) => (
+                <QueryHistoryItem
                   key={record.key}
-                  type="button"
-                  onClick={() => onSelect({
-                    kind: "dictionary",
-                    id: record.entryId,
-                    headword: record.headword,
-                    partsOfSpeech: [],
-                    translationPreview: "",
-                  })}
-                >
-                  {record.headword}
-                </button>
+                  record={record}
+                  onSelect={onSelectQueryHistory}
+                  onDelete={onDeleteQueryHistory}
+                />
               ))}
             </div>
           ) : null}
