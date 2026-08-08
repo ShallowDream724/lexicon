@@ -14,6 +14,7 @@ TLS reverse proxy on ports 80 and 443
 
 Go dictionary API
    +-- primary runtime SQLite, read-only
+   +-- Chinese reverse-search SQLite, read-only
    +-- etymology sidecar SQLite, read-only
    +-- pronunciation ZIP, read-only
 ```
@@ -31,6 +32,7 @@ The measured production assets are:
 | Asset | Stored size | Runtime treatment |
 | --- | ---: | --- |
 | Runtime SQLite schema v3 | 53,952,512 bytes | opened read-only |
+| Reverse-search sidecar schema v1 | 76,914,688 bytes | opened read-only; bounded FTS candidates and grouped refinement |
 | Etymology sidecar schema v3 | 45,400,064 bytes | opened read-only; articles decoded on demand |
 | Headword pronunciation ZIP | 1,135,490,706 bytes | indexed once, streamed without extraction |
 | Usable headword MP3 assets | 128,010 files / 1,143,628,003 bytes | not extracted |
@@ -60,7 +62,7 @@ and one normal rebuild; ten GiB leaves room for build cache and atomic asset rep
 - Ports 80 and 443 reachable when automatic HTTPS is used.
 - A domain with an A or AAAA record pointing to the server, or plain HTTP by IP for a
   private deployment.
-- The three released runtime assets downloaded through the project manifest.
+- The four released runtime assets downloaded through the project manifest.
 
 ## Prepare Assets
 
@@ -77,17 +79,20 @@ The command creates the ignored `data` directory with this layout:
 data/
   dictionary.db
   etymology.db
+  reverse-search.db
   headword-audio.zip
 ```
 
-Both runtime databases pass importer schema and integrity validation before release. The
-audio archive passes its pinned size and SHA-256 checks and retains its original ZIP body.
+All three runtime databases pass importer schema and integrity validation before release.
+The reverse-search sidecar additionally pins the exact primary database SHA-256. The audio
+archive passes its pinned size and SHA-256 checks and retains its original ZIP body.
 Run `npm run data:verify` after transferring the asset set through a mirror or backup. The
-included Compose expects all three files. A custom Compose may omit the etymology
-environment variable and mount, the audio environment variable and mount, or both;
-search and entry lookup will continue without those resources.
+included Compose expects all four files. A custom Compose may omit the reverse-search
+environment variable and mount when Chinese lookup is not needed. It may independently omit
+the etymology or audio configuration; English search and entry lookup continue without
+those optional resources.
 
-Make all three files readable by the Docker daemon and keep them immutable during normal
+Make all four files readable by the Docker daemon and keep them immutable during normal
 operation. Content assets never enter an image or Git commit.
 
 ## Configure
@@ -142,7 +147,8 @@ curl https://dict.example.com/api/v1/health
 When `SITE_ADDRESS=:80`, use the corresponding `http://` server address. The API
 validates the primary database and every configured optional asset before it begins
 serving traffic. A configured etymology path that has not been populated yet is logged
-and disabled; a present but invalid sidecar still stops startup.
+and disabled. The reverse-search path behaves the same when absent; a present but invalid
+sidecar or a primary fingerprint mismatch stops startup.
 
 ## Existing Reverse Proxy
 
@@ -204,10 +210,11 @@ docker compose up -d --build
 The private Compose owns network membership, proxy integration, asset paths, and media
 origins; these deployment-specific values do not belong in the public repository.
 
-Replace `dictionary.db` or `etymology.db` only with a fully imported and audited runtime
-of the supported schema version. Stop the API before replacing a mounted database or
-archive, perform an atomic rename, and restart so SQLite metadata and the ZIP central
-directory are reloaded.
+Replace runtime assets only with fully imported and audited files of supported schema
+versions. `dictionary.db` and `reverse-search.db` are one release unit: stop the API,
+replace both through atomic renames, and restart only after their manifest checks pass.
+The etymology database and audio archive can be replaced independently while the API is
+stopped so SQLite metadata and the ZIP central directory are reloaded.
 
 Each web rebuild creates a new PWA revision. Clients install it in the background and
 activate it after explicit acceptance or on their next clean launch. Rebuilding an older

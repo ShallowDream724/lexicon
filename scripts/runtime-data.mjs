@@ -40,6 +40,8 @@ export function validateManifest(value) {
       !Number.isSafeInteger(asset.records) ||
       asset.records <= 0 ||
       (asset.kind === "database" && (!Number.isSafeInteger(asset.runtimeSchema) || asset.runtimeSchema <= 0)) ||
+      (asset.primarySha256 !== undefined &&
+        (typeof asset.primarySha256 !== "string" || !sha256Pattern.test(asset.primarySha256))) ||
       typeof asset.sha256 !== "string" ||
       !sha256Pattern.test(asset.sha256)
     ) {
@@ -49,6 +51,14 @@ export function validateManifest(value) {
       throw new Error(`runtime asset manifest repeats ${asset.file}`);
     }
     names.add(asset.file);
+  }
+  const dictionary = value.assets.find((asset) => asset.file === "dictionary.db");
+  const reverseSearch = value.assets.find((asset) => asset.file === "reverse-search.db");
+  if (
+    reverseSearch &&
+    (!dictionary || reverseSearch.primarySha256 !== dictionary.sha256)
+  ) {
+    throw new Error("reverse-search.db must identify the bundled dictionary.db fingerprint");
   }
   return value;
 }

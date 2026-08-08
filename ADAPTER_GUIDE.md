@@ -37,6 +37,8 @@ Every adapter must:
 11. Preserve structured examples and media wherever a source box can contain them,
    including lists, paragraphs, and table cells.
 12. Preserve the order of text and embedded examples in sense-level usage content.
+13. Put searchable bilingual content in its visible canonical owner rather than leaving
+    the only usable text inside `raw`.
 
 ## Adding A Source
 
@@ -56,6 +58,31 @@ Register the adapter in the central registry and add a dictionary configuration
 that supplies stable `dictionaryId` and source-version data in its validated
 envelope. Media resolution belongs to the client/API configuration and must not be
 embedded in canonical objects.
+
+## Reverse-Search Coverage
+
+Adapters do not implement Chinese search. The shared projector in
+`packages/dictionary-search` recursively reads canonical headword usage, senses,
+subsenses, examples, phrases, forms, usage segments, and grammar or usage boxes. A new
+source mapped to those existing fields is included in the next reverse-search build
+without source-specific search code.
+
+Every projected record carries a canonical section, part of speech, owner id when
+available, and stable object path. The renderer uses the same traversal to attach DOM
+anchors. This lets a result switch to the correct part of speech, open a registered box,
+and locate the matching content without inspecting the source adapter.
+
+When the canonical schema gains a genuinely new visible semantic type, extend three
+adjacent contracts together:
+
+1. Add its source-neutral canonical field and adapter fixtures.
+2. Add one projector traversal and location rule in `packages/dictionary-search`.
+3. Attach the shared location attributes in its renderer and add a navigation contract
+   test.
+
+Do this once at the canonical boundary. Do not add per-source branches to the API,
+search result component, or entry workspace. Content preserved only in `raw` stays
+unsearchable until it has a renderable canonical projection.
 
 ## Adding An Enhancement Source
 
@@ -98,6 +125,8 @@ Fixtures should be compact while exercising real structural cases:
 - entry-level and sense-level construction patterns;
 - illustrations attached below the root level;
 - unknown fields that must survive in `raw`.
+- Chinese-bearing senses, phrases, examples, usage, forms, and boxes whose projected
+  evidence points back to the correct canonical owner and path.
 
 Golden snapshots may cover canonical shape, but tests should also assert semantic
 invariants directly so intentional additive fields do not cause noisy rewrites.

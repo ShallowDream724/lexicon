@@ -2,7 +2,7 @@
   <img src="public/icons/app-192.png" width="88" height="88" alt="Lexicon icon / Lexicon 图标">
   <h1>Lexicon</h1>
   <p><strong>A bilingual dictionary for reading words in context.</strong><br><strong>在语境中读懂单词的双语词典。</strong></p>
-  <p>Definitions, examples, pronunciation, usage notes, and etymology share one clear entry, with layouts tuned for desktop, tablet, and phone.<br>释义、例句、发音、用法说明与词源都在同一个清楚的词条中呈现，并分别适配桌面、平板和手机。</p>
+  <p>Search by English spelling or Chinese meaning, then read definitions, examples, pronunciation, usage notes, and etymology in one clear entry across desktop, tablet, and phone.<br>既可按英文拼写查询，也可用中文释义反查；释义、例句、发音、用法说明与词源在同一个清楚的词条中呈现，并分别适配桌面、平板和手机。</p>
 
   <p>
     <a href="https://github.com/ShallowDream724/lexicon/actions/workflows/ci.yml"><img src="https://github.com/ShallowDream724/lexicon/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
@@ -11,7 +11,7 @@
     <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.24-2f7f8f" alt="Go 1.24"></a>
   </p>
 
-  <p><strong>40,974 entries · 51,716 etymology articles · 128,010 headword pronunciations</strong><br><strong>40,974 个词条 · 51,716 篇词源文章 · 128,010 个词头发音</strong></p>
+  <p><strong>40,974 entries · 197,538 Chinese search records · 51,716 etymology articles · 128,010 headword pronunciations</strong><br><strong>40,974 个词条 · 197,538 条中文反查记录 · 51,716 篇词源文章 · 128,010 个词头发音</strong></p>
 </div>
 
 <img src="docs/readme/hero-desktop.webp" width="100%" alt="Lexicon desktop entry view / Lexicon 桌面端词条页面">
@@ -23,6 +23,10 @@
 Lexicon preserves the hierarchy of meanings, constructions, examples, usage notes, idioms, phrasal verbs, derivatives, and cross-references. Related material stays together, and the structure remains easy to scan.
 
 Lexicon 保留词义、句型、例句、用法说明、习语、短语动词、派生词与交叉引用之间的层级。相关内容放在一起，词条结构也更容易浏览。
+
+Chinese searches return grouped English entries with the matching definition, phrase, usage note, form, or example shown as evidence. Selecting an evidence line opens the right part of speech and scrolls to that exact content.
+
+中文反查会把英文词条按词头分组，并直接展示命中的释义、短语、用法、词形或例句。选择某条命中依据后，会打开正确词性并定位到对应内容。
 
 British and North American headword audio is read directly from the local archive. Sentence audio and illustrations can be connected separately. Recent searches, favorites, notes, and preferences remain in the current browser profile, with no account required.
 
@@ -68,9 +72,9 @@ Indexed lookup and independently compressed entries let the server return only t
 
 索引查询与独立压缩词条让服务器只返回当前选择的结果。打开网站或安装 PWA 时，不会在后台悄悄下载整部词典，也不会下载 1.06 GiB 的发音包。
 
-The released dataset contains 40,974 bilingual entries, 46,773 searchable etymology terms across 51,716 articles, and 128,010 usable headword MP3 assets. Storage design, query plans, and reproducible benchmarks are documented in [STORAGE_FORMAT.md](STORAGE_FORMAT.md).
+The released dataset contains 40,974 bilingual entries projected into 197,538 Chinese search records, 46,773 searchable etymology terms across 51,716 articles, and 128,010 usable headword MP3 assets. Storage design, query plans, and reproducible benchmarks are documented in [STORAGE_FORMAT.md](STORAGE_FORMAT.md).
 
-参考数据集包含 40,974 个双语词条、覆盖 51,716 篇文章的 46,773 个可搜索词源词语，以及 128,010 个可用词头 MP3。存储设计、查询计划与可复现基准见 [STORAGE_FORMAT.md](STORAGE_FORMAT.md)。
+参考数据集包含 40,974 个双语词条及其 197,538 条中文反查记录、覆盖 51,716 篇文章的 46,773 个可搜索词源词语，以及 128,010 个可用词头 MP3。存储设计、查询计划与可复现基准见 [STORAGE_FORMAT.md](STORAGE_FORMAT.md)。
 
 ## Quick start
 
@@ -85,20 +89,21 @@ npm ci
 npm run data:download
 ```
 
-The download is about 1.15 GiB. It retrieves the versioned [runtime-data-v1 Release](https://github.com/ShallowDream724/lexicon/releases/tag/runtime-data-v1), verifies every file against `runtime-assets.json`, and creates the exact layout used by local development and the included Compose deployment:
+The download is about 1.22 GiB. It retrieves the versioned [runtime-data-v1 Release](https://github.com/ShallowDream724/lexicon/releases/tag/runtime-data-v1), verifies every file against `runtime-assets.json`, and creates the exact layout used by local development and the included Compose deployment:
 
-完整下载量约为 1.15 GiB。命令会获取带版本的 [runtime-data-v1 Release](https://github.com/ShallowDream724/lexicon/releases/tag/runtime-data-v1)，依据 `runtime-assets.json` 校验每个文件，并创建本地开发与随附 Compose 共用的数据目录：
+完整下载量约为 1.22 GiB。命令会获取带版本的 [runtime-data-v1 Release](https://github.com/ShallowDream724/lexicon/releases/tag/runtime-data-v1)，依据 `runtime-assets.json` 校验每个文件，并创建本地开发与随附 Compose 共用的数据目录：
 
 ```text
 data/
   dictionary.db
   etymology.db
+  reverse-search.db
   headword-audio.zip
 ```
 
-Keep `headword-audio.zip` packed. If the assets were downloaded or transferred manually, place all three files at these paths and run `npm run data:verify` before starting the application.
+Keep `headword-audio.zip` packed. If the assets were downloaded or transferred manually, place all four files at these paths and run `npm run data:verify` before starting the application. The reverse-search sidecar is fingerprinted to the bundled primary database, so those two files must be updated together.
 
-`headword-audio.zip` 无需解压。手动下载或传输资源时，请把三个文件放在上述路径，并在启动前运行 `npm run data:verify`。
+`headword-audio.zip` 无需解压。手动下载或传输资源时，请把四个文件放在上述路径，并在启动前运行 `npm run data:verify`。中文反查库带有主词典指纹，因此这两个文件必须配套更新。
 
 Start the API and web application in separate terminals:
 
@@ -129,9 +134,9 @@ docker compose --env-file deploy/server/.env -f deploy/server/compose.yaml up -d
 
 **为持续扩展而设计**
 
-The interface reads one canonical entry model, while import adapters and enhancement resources remain outside the renderer. New source formats and supplementary datasets can be added without scattering source-specific conditions through the UI.
+The interface reads one canonical entry model, while import adapters, search projection, and enhancement resources remain outside the renderer. Content mapped to existing canonical senses, examples, phrases, usage blocks, forms, and boxes enters Chinese search automatically; new source formats and supplementary datasets do not scatter source-specific conditions through the UI.
 
-界面只读取统一的规范词条模型，导入适配器与增强资源则独立于渲染层。新增数据格式或补充数据集时，无需把针对来源的判断散落到 UI 各处。
+界面只读取统一的规范词条模型，导入适配器、搜索投影与增强资源则独立于渲染层。映射到既有规范义项、例句、短语、用法、词形和卡片的数据会自动进入中文反查；新增数据格式或补充数据集时，无需把针对来源的判断散落到 UI 各处。
 
 | Document<br>文档 | Scope<br>内容 |
 | --- | --- |

@@ -8,12 +8,31 @@ test("runtime release manifest pins the complete runtime asset set", async () =>
   const manifest = validateManifest(JSON.parse(await readFile(new URL("../runtime-assets.json", import.meta.url), "utf8")));
   assert.deepEqual(
     manifest.assets.map((asset) => asset.file),
-    ["dictionary.db", "etymology.db", "headword-audio.zip"],
+    ["dictionary.db", "etymology.db", "reverse-search.db", "headword-audio.zip"],
   );
-  assert.ok(manifest.assets.filter((asset) => asset.kind === "database").every((asset) => asset.runtimeSchema === 3));
+  const dictionary = manifest.assets.find((asset) => asset.file === "dictionary.db");
+  const reverseSearch = manifest.assets.find((asset) => asset.file === "reverse-search.db");
+  assert.equal(dictionary.runtimeSchema, 3);
+  assert.equal(reverseSearch.runtimeSchema, 1);
+  assert.equal(reverseSearch.records, 197538);
+  assert.equal(reverseSearch.primarySha256, dictionary.sha256);
   const audio = manifest.assets.find((asset) => asset.kind === "headword-audio");
   assert.equal(audio.records, 128010);
   assert.ok(audio.bytes > 1024 ** 3);
+});
+
+test("runtime release manifest rejects a reverse-search sidecar built from another primary database", () => {
+  assert.throws(() =>
+    validateManifest({
+      schemaVersion: 2,
+      releaseTag: "test",
+      baseUrl: "https://example.test/",
+      assets: [
+        { kind: "database", file: "dictionary.db", bytes: 1, records: 1, runtimeSchema: 1, sha256: "0".repeat(64) },
+        { kind: "database", file: "reverse-search.db", bytes: 1, records: 1, runtimeSchema: 1, sha256: "1".repeat(64), primarySha256: "2".repeat(64) },
+      ],
+    }),
+  );
 });
 
 test("runtime release manifest rejects path traversal", () => {

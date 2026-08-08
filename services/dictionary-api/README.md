@@ -1,7 +1,7 @@
 # Dictionary API
 
-Read-only local HTTP service for a generated dictionary database, optional enhancement
-sidecars, and a headword pronunciation archive.
+Read-only local HTTP service for a generated dictionary database, its derived Chinese
+reverse-search sidecar, optional enhancement sidecars, and a headword pronunciation archive.
 
 The same binary runs locally or in the server container. Content files are mounted at
 runtime and are never copied into the image.
@@ -40,12 +40,25 @@ This importer projects source HTML into ordered semantic blocks, keeps internal 
 structured, retains valid unindexed articles under their own headword, and writes
 independently compressed article payloads. It never serves or copies the source tables.
 
+Build the reverse-search sidecar from the generated primary database and the registered
+canonical adapter:
+
+```sh
+npm run reverse-search:build
+```
+
+The root script streams source-neutral `SearchDocument` records to the Go importer. The
+sidecar records the exact primary database SHA-256 and is rejected at API startup if the
+two files do not match. Rebuilding a primary database therefore requires rebuilding and
+publishing its reverse-search sidecar.
+
 ## Run
 
 ```sh
 go run ./cmd/dictionary-api \
   -db ./data/dictionary.db \
   -etymology-db ./data/etymology.db \
+  -reverse-search-db ./data/reverse-search.db \
   -audio-zip ./data/headword-audio.zip \
   -example-audio-base-url https://media.example.test/audio/examples/ \
   -illustration-url-template 'https://media.example.test/images/{key}.png' \
@@ -69,6 +82,7 @@ API environment variables:
 ```text
 DICTIONARY_RUNTIME_DB_PATH
 DICTIONARY_ETYMOLOGY_DB_PATH
+DICTIONARY_REVERSE_SEARCH_DB_PATH
 DICTIONARY_AUDIO_ZIP_PATH
 DICTIONARY_EXAMPLE_AUDIO_BASE_URL
 DICTIONARY_ILLUSTRATION_BASE_URL
@@ -92,7 +106,9 @@ GET /api/v1/media/illustration?key=illustration-key&variant=thumbnail
 ```
 
 Each search item contains `kind`, `id`, `headword`, `partsOfSpeech`, and
-`translationPreview`. Primary dictionary items use `kind: "dictionary"`; terms found
+`translationPreview`. Chinese reverse-search items also contain up to three `matches`
+with semantic scope, English and Chinese evidence text, and a canonical location used by
+the browser for part-of-speech switching and exact navigation. Primary dictionary items use `kind: "dictionary"`; terms found
 only in an enabled enhancement use their resource kind. Errors contain a stable code,
 message, and request id; the same request id is returned in `X-Request-ID`.
 
@@ -131,17 +147,33 @@ hyphens, internal spaces, trademark marks, and other potentially meaningful punc
 Existing runtime dictionaries remain compatible through a bounded set of exact indexed
 apostrophe variants.
 
+The optional reverse-search sidecar stores visible bilingual projections separately from
+compressed entry payloads. Its contentless FTS5 index retrieves at most 512 candidates;
+Go refinement respects Chinese segment boundaries, applies deterministic semantic ranking,
+and returns at most three evidence records per entry. Query length is capped at 200
+characters in the HTTP handler and the store. The sidecar metadata validates schema,
+projection, normalizer, document count, and primary database fingerprint before use.
+
 ## Container
 
-From the repository root, prepare `data/dictionary.db`, `data/etymology.db`, and
-`data/headword-audio.zip`, then use the Compose definition in `deploy/server`. It
+From the repository root, prepare `data/dictionary.db`, `data/etymology.db`,
+`data/reverse-search.db`, and `data/headword-audio.zip`, then use the Compose definition
+in `deploy/server`. It
 mounts all files read-only, listens only on the private container network, and publishes
 no API host port. Configure an exact HTTPS frontend origin before starting the service. The
 complete production procedure is in the root [deployment guide](../../DEPLOYMENT.md).
 
 ## Verification
 
+From `services/dictionary-api`:
+
 ```sh
 go test ./...
 go test -bench RandomEntryDecode ./internal/server
+```
+
+From the repository root:
+
+```sh
+npm run reverse-search:benchmark -- -db ../../data/dictionary.db -reverse-search-db ../../data/reverse-search.db
 ```

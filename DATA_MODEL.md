@@ -47,6 +47,45 @@ Supporting objects are recursive where the source is recursive. A sense can cont
 subsenses, examples, cross references, illustrations, and boxes. A subentry can
 contain the same semantic sections as a root entry.
 
+## Reverse-Search Documents
+
+Chinese lookup consumes a derived `SearchDocument` contract from
+`packages/dictionary-search`; it does not inspect adapter-specific fields or persisted
+entry JSON:
+
+```ts
+interface SearchDocument {
+  dictionaryId: string;
+  entryId: string;
+  scope: "sense" | "phrase" | "example" | "usage" | "form";
+  headword: string;
+  englishText: string;
+  chineseText: string;
+  location: {
+    section: "definitions" | "idioms" | "phrasal-verbs" | "derived-forms" | "grammar-usage";
+    part?: string;
+    ownerId?: string;
+    path: string[];
+  };
+  weight: number;
+}
+```
+
+The projector recursively traverses canonical entries and emits a document only when the
+visible projection contains Chinese text. It covers headword usage, senses and subsenses,
+examples, phrase groups, forms, structured usage segments, and grammar or usage boxes.
+Canonical object order becomes a stable path, while `ownerId` retains a source identity
+when one exists. The browser builds its rendered-location index with the same traversal.
+
+An adapter that maps a new source into existing canonical fields receives reverse-search
+coverage without additional search code. A new canonical semantic type extends the
+projector and rendered-anchor contract once for every source. Opaque `raw` fields remain
+outside the index until they acquire a visible canonical meaning; this prevents transport
+metadata and currently hidden content from producing results the UI cannot display.
+
+Search documents are build artifacts. They are validated and imported into an immutable
+sidecar, never attached to `CanonicalEntry` responses or retained in browser state.
+
 ## Enhancement Resources
 
 Optional sources that enrich an entry without redefining it use the independent

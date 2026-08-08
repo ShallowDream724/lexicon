@@ -7,7 +7,7 @@
       "kind": "database",
       "file": "dictionary.db",
       "bytes": 53952512,
-      "sha256": "296deec07f197d70dfed9eb7f117e6768453c350ae67f26034c97949ab4d038a",
+      "sha256": "f6ac9d3e20482112b24ca4142481e5b5ba78efbc9cbca85299e0ac4fc86e22d5",
       "runtimeSchema": 3,
       "records": 40974
     },
@@ -15,9 +15,18 @@
       "kind": "database",
       "file": "etymology.db",
       "bytes": 45400064,
-      "sha256": "90b7be85875a30d2ef8e64859bd853905c8da239082a2d3d860c1f5daa533220",
+      "sha256": "d64d13cf7888ccbf06a7b7bb90d81f5c0ee6686931bda6d98769912a9a73ce5b",
       "runtimeSchema": 3,
       "records": 51716
+    },
+    {
+      "kind": "database",
+      "file": "reverse-search.db",
+      "bytes": 76914688,
+      "sha256": "8cfc801f69c216c4a45e36a74397dab3a85b1a5dec70b36bb500c61144662412",
+      "runtimeSchema": 1,
+      "records": 197538,
+      "primarySha256": "f6ac9d3e20482112b24ca4142481e5b5ba78efbc9cbca85299e0ac4fc86e22d5"
     },
     {
       "kind": "headword-audio",

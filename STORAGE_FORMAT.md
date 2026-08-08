@@ -1,6 +1,6 @@
 # Runtime Storage Format
 
-## Layout
+## Primary Database Layout
 
 The generated SQLite database owns five compact structures:
 
@@ -124,6 +124,64 @@ uncompressed length, SHA-256, and decoded JSON before returning an entry.
 The shared dictionary is part of the database format and is stored in the same file.
 A missing or mismatched dictionary therefore cannot silently turn the payload table
 into an external dependency.
+
+## Chinese Reverse-Search Sidecar
+
+Chinese lookup is a derived, project-owned SQLite sidecar with three structures:
+
+```text
+metadata       schema, normalizer, projection, source, count, and primary fingerprint
+documents      display evidence, grouping identity, weight, and canonical location
+documents_fts  contentless FTS5 candidate index using detail=none
+```
+
+The sidecar is generated from validated `CanonicalEntry` values through the shared
+`SearchDocument` projector. The current full build contains 197,538 documents from
+40,974 entries in a 76,914,688-byte file. Repeating the same projection and import
+produced the byte-identical SHA-256
+`8cfc801f69c216c4a45e36a74397dab3a85b1a5dec70b36bb500c61144662412`.
+
+Normalization applies Unicode NFKC, collapses punctuation and whitespace boundaries,
+and maps the observed Chinese spelling variant `矽` to `硅`. The FTS payload contains
+ASCII-encoded CJK unigrams and bigrams, avoiding dependence on a platform-specific
+SQLite tokenizer. Multi-character queries use bigrams; a one-character query uses the
+unigram fallback and excludes example-only matches.
+
+Each request retrieves at most 512 FTS candidates, then performs bounded Go refinement.
+Scoring combines semantic scope weight, BM25, complete Chinese segments, segment
+boundaries, bigram coverage, compactness, and the longest contiguous common run. Scoring
+never joins text across punctuation or whitespace boundaries. Results are grouped by
+entry with deterministic ties, at most 50 groups, and at most three evidence records per
+entry. Both the HTTP endpoint and the store reject queries longer than 200 characters.
+
+The sidecar metadata stores the SHA-256 of its exact primary runtime database. The API
+checks that fingerprint before accepting the index, so canonical paths and entry content
+cannot silently drift. The primary database and reverse-search sidecar must be released
+and replaced as one pair. Omitting the sidecar disables Chinese reverse search while
+leaving English exact, prefix, correction, entry, and enhancement lookup available.
+
+Representative 100-request samples with a result limit of 20 measured:
+
+| Query | Result groups | p50 | p95 | p99 |
+| --- | ---: | ---: | ---: | ---: |
+| `记录` | 20 | 2.73 ms | 4.03 ms | 4.52 ms |
+| `休息` | 20 | 2.63 ms | 4.36 ms | 4.78 ms |
+| `短暂的休息` | 2 | 6.38 ms | 8.54 ms | 9.66 ms |
+| `火山矽肺病` | 1 | 1.00 ms | 1.51 ms | 2.01 ms |
+| `完全受某人控制` | 4 | 23.38 ms | 28.58 ms | 30.98 ms |
+
+Run the same bounded benchmark from the repository root:
+
+```bash
+npm run reverse-search:benchmark -- \
+  -db ../../data/dictionary.db \
+  -reverse-search-db ../../data/reverse-search.db \
+  -iterations 100 \
+  -limit 20
+```
+
+Paths after `--` are relative to `services/dictionary-api` because the root command uses
+Go's `-C` option.
 
 ## Pronunciation Archive
 

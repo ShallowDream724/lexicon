@@ -23,12 +23,14 @@ The first release optimizes for:
 Read-only import source
         |
         v
-One-way importer  ----  project-owned runtime SQLite + media manifest
+One-way importers  ----  project-owned runtime SQLite + enhancement sidecars
         |
-        +--------------  project-owned enhancement sidecars
+        +--------------  media manifest and pronunciation archive
         |
         v
-Go source service  ----  /api/v1/search, /entries, /enhancements, /media
+Go source service  <----  immutable reverse-search sidecar
+        |
+        +--------------  /api/v1/search, /entries, /enhancements, /media
         |
         v
 TypeScript source adapter
@@ -38,8 +40,9 @@ CanonicalEntry v1
         |
         +---- React dictionary renderer
         |
-        +---- IndexedDB learning data
-              history, favorites, notes, preferences
+        +---- offline SearchDocument projection ----> immutable reverse-search sidecar
+        |
+        +---- IndexedDB learning data: history, favorites, notes, preferences
 
 Root application composition
         |
@@ -59,6 +62,7 @@ src/lib/dictionary-client/   cancellable HTTP client and query orchestration
 src/lib/storage/             device-local learning-data repository
 src/platform/pwa/            install, update, offline, and cache policy
 packages/dictionary-schema/  versioned UI-facing domain contract
+packages/dictionary-search/  source-neutral search documents and locations
 packages/enhancement-schema/ versioned optional-resource contracts
 packages/adapters/           source adapters and registry
 services/dictionary-api/     read-only Go/SQLite/media service
@@ -82,6 +86,8 @@ The service owns runtime storage work:
 - opening only the generated runtime database in read-only mode;
 - validating the project schema version at startup;
 - bounded, parameterized search with deterministic ranking;
+- validating the reverse-search sidecar against the primary database fingerprint;
+- bounded FTS candidate retrieval and grouped Chinese-result ranking;
 - decompressing one independently stored entry and returning a stable envelope
   around the unmodified entry JSON;
 - indexing the pronunciation archive once and streaming individual assets;
@@ -94,6 +100,13 @@ source version, search projection, payload codec, and integrity metadata. The pr
 entry endpoint returns only lightweight enhancement summaries; complete enhancement
 articles load through their own endpoint when a user opens a card. An unavailable
 optional sidecar does not prevent the primary dictionary from starting.
+
+Chinese reverse search uses a separate derived sidecar rather than adding request-time
+scans to the primary database. It stores only source-neutral search documents projected
+from validated canonical entries. Metadata pins the canonical projection version,
+normalizer version, source version, document count, and SHA-256 of the exact primary
+runtime database. A missing sidecar disables Chinese reverse search; a configured but
+incompatible sidecar fails startup so evidence locations cannot drift from entry data.
 
 Primary search and enhancement association share one server-side term-key boundary.
 Dictionary keys remove source display syllable separators; enhancement keys additionally
@@ -127,6 +140,28 @@ forms within a group remain intact.
 
 Adapter registration is explicit. A future MDX, StarDict, JSON, or remote source
 adds an adapter and fixtures; it does not add source conditionals to components.
+
+### Reverse-Search Projection
+
+`packages/dictionary-search` is the single projection boundary between canonical content
+and Chinese lookup. It recursively traverses root entries, subentries, senses, examples,
+phrases, usage segments, forms, and grammar or usage boxes. Each bilingual projection is
+a `SearchDocument` with a semantic scope, English and Chinese text, a stable entry id,
+and a source-neutral location consisting of section, part of speech, owner id, and
+canonical object path.
+
+The same traversal builds the browser's object-to-location index. Search evidence and
+rendered anchors therefore cannot acquire separate path conventions. Content from a new
+adapter enters reverse search automatically as soon as it maps to existing canonical
+fields. A genuinely new canonical semantic type adds one projection branch, one rendered
+anchor, and one contract fixture at this boundary; individual adapters, result pages,
+and navigation components remain unchanged. Preserved `raw` data is deliberately not
+indexed because it may contain transport fields or content the UI cannot display.
+
+The build script streams projected documents into the Go importer. The importer validates
+ordering and bounds, creates a new SQLite file transactionally, and atomically replaces an
+existing sidecar only when explicitly requested. Supplementary resources keep their own
+versioned search providers and merge with primary results at the API boundary.
 
 ### React Application
 
@@ -171,6 +206,14 @@ The server derives the initial workspace route from the request URL, so entry de
 links render a stable loading state instead of briefly rendering home content. Later
 history navigation uses the same route resolver. Repeated submission of the same
 normalized query shares one in-flight transition through search and entry loading.
+
+English exact, prefix, correction, and etymology search keep their existing orchestration.
+A query containing Han characters uses the reverse-search sidecar and always remains on a
+grouped results page, even when one entry matches. Each evidence row carries its canonical
+location. Selecting it loads the entry, switches to the matching part of speech, opens a
+registered resource when needed, and scrolls to the most specific rendered path. Owner and
+section checks prevent repeated source ids from opening an unrelated resource; older or
+coarser locations fall back to their owner and then their section.
 
 Modal resources share one reference-counted viewport lock. Opening an illustration,
 usage panel, quick-find dialog, note editor, or personal-library drawer prevents the
@@ -294,6 +337,10 @@ GET /api/v1/media/example-audio?key=<url-encoded asset key>
 GET /api/v1/media/illustration?key=<url-encoded asset key>
 ```
 
+Chinese search items additionally include up to three bounded evidence records. Each
+record contains `scope`, `englishText`, `chineseText`, and a validated `location`. English
+search items retain their existing compact response shape.
+
 The entry endpoint returns the source envelope consumed by the registered adapter:
 
 ```json
@@ -311,6 +358,10 @@ requests as distinct outcomes.
 ## Performance Rules
 
 - Search limits are enforced on both client and server.
+- Chinese queries are limited to 200 characters in both the HTTP and store boundaries.
+- The reverse-search FTS query returns at most 512 candidates. Go refinement respects
+  normalized Chinese segment boundaries, uses deterministic tie-breaks, returns at most
+  50 entry groups, and retains at most three evidence records per entry.
 - Exact and prefix results are ranked in SQL; the browser never filters the full
   dictionary.
 - One-edit spelling correction runs only after an empty exact/prefix result for a
@@ -358,19 +409,21 @@ The minimum release gate is:
    audio-bearing entries.
 3. A complete source-corpus adapter audit for structural-field leakage, empty forms,
    invalid JSON, and concatenated navigation metadata.
-4. TypeScript compilation and production build.
-5. Browser workflows for search, entry navigation, playback, favorite, note,
+4. Deterministic reverse-search projection/import checks, primary fingerprint validation,
+   representative relevance cases, and bounded latency benchmarks.
+5. TypeScript compilation and production build.
+6. Browser workflows for search, entry navigation, playback, favorite, note,
    history, and refresh persistence.
-6. Screenshots at desktop, tablet portrait, tablet landscape, and phone viewports,
+7. Screenshots at desktop, tablet portrait, tablet landscape, and phone viewports,
    with overflow, overlap, sticky navigation, and media-state checks.
-7. Manifest, install-icon, Service Worker header, precache-boundary, update-lifecycle,
+8. Manifest, install-icon, Service Worker header, precache-boundary, update-lifecycle,
    and offline-navigation checks against standalone production output.
 
 ## Data Delivery
 
 Application source and dictionary assets have separate release lifecycles. The
 repository contains checksums, manifests, import tooling, and small test fixtures.
-Large generated databases and media archives are published as versioned release
+Large generated databases, derived search sidecars, and media archives are published as versioned release
 assets or Git LFS objects so ordinary clones remain usable. Original application
 databases are import inputs and are never shipped as project artifacts. Runtime
 configuration resolves generated asset paths; no absolute workstation path is
@@ -390,6 +443,7 @@ Browser
 TLS reverse proxy
    +---- /api/v1/* ---- Go API container
    |                         +---- read-only runtime SQLite
+   |                         +---- read-only reverse-search sidecar
    |                         +---- read-only enhancement sidecars
    |                         +---- read-only pronunciation ZIP
    |

@@ -48,6 +48,7 @@ services:
     environment:
       DICTIONARY_RUNTIME_DB_PATH: /var/lib/lexicon/dictionary.db
       DICTIONARY_ETYMOLOGY_DB_PATH: /var/lib/lexicon/etymology.db
+      DICTIONARY_REVERSE_SEARCH_DB_PATH: /var/lib/lexicon/reverse-search.db
       DICTIONARY_AUDIO_ZIP_PATH: /var/lib/lexicon/headword-audio.zip
       DICTIONARY_LISTEN: 0.0.0.0:8787
       DICTIONARY_CORS_ORIGINS: ${DICTIONARY_CORS_ORIGINS:?Set DICTIONARY_CORS_ORIGINS in deploy/server/.env}
@@ -67,6 +68,10 @@ services:
       - type: bind
         source: ${LEXICON_DATA_DIR:-../../data}/etymology.db
         target: /var/lib/lexicon/etymology.db
+        read_only: true
+      - type: bind
+        source: ${LEXICON_DATA_DIR:-../../data}/reverse-search.db
+        target: /var/lib/lexicon/reverse-search.db
         read_only: true
 
 volumes:
