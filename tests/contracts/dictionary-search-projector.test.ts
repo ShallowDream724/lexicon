@@ -5,6 +5,7 @@ import type { CanonicalEntry, CanonicalText } from "../../packages/dictionary-sc
 import {
   SEARCH_DOCUMENT_SCHEMA_VERSION,
   SEARCH_DOCUMENT_WEIGHTS,
+  indexCanonicalEntrySearchLocations,
   projectCanonicalEntrySearchDocuments,
   searchDocumentsSchema,
 } from "../../packages/dictionary-search/src/index";
@@ -273,4 +274,32 @@ test("keeps identical text at distinct locations and omits content without Chine
   assert.deepEqual(sameText.map((document) => document.location.path), [["senses", "0"], ["senses", "1"]]);
   assert.equal(documents.some((document) => document.englishText.includes("English-only")), false);
   assert.equal(documents.every((document) => /\p{Script=Han}/u.test(document.chineseText)), true);
+});
+
+test("indexes rendered canonical objects with the projector's exact locations", () => {
+  const entry = entryFixture();
+  const index = indexCanonicalEntrySearchLocations(entry);
+
+  assert.deepEqual(index.get(entry.senses[0]!), {
+    section: "definitions",
+    part: "verb",
+    ownerId: "sense-root",
+    path: ["senses", "0"],
+  });
+  assert.deepEqual(index.get(entry.senses[0]!.examples[0]!), {
+    section: "definitions",
+    part: "verb",
+    ownerId: "example-root",
+    path: ["senses", "0", "examples", "0"],
+  });
+  assert.deepEqual(index.get(entry.derivedForms[0]!.variants![0]!), {
+    section: "derived-forms",
+    ownerId: "form-recorder-variant",
+    path: ["derivedForms", "0", "variants", "0"],
+  });
+  assert.deepEqual(index.get(entry.grammarUsageBoxes[0]!), {
+    section: "grammar-usage",
+    ownerId: "box-record",
+    path: ["grammarUsageBoxes", "0"],
+  });
 });

@@ -105,8 +105,9 @@ interface ProjectionContext {
   dictionaryId: string;
   entryId: string;
   headword: string;
-  documents: SearchDocument[];
-  signatures: Set<string>;
+  documents?: SearchDocument[];
+  signatures?: Set<string>;
+  locations?: WeakMap<object, SearchDocumentLocation>;
 }
 
 interface DocumentCandidate {
@@ -119,8 +120,29 @@ interface DocumentCandidate {
   ownerId?: string;
 }
 
+export interface CanonicalSearchLocationIndex {
+  get(value: object): SearchDocumentLocation | undefined;
+}
+
+function candidateLocation(candidate: Pick<DocumentCandidate, "section" | "path" | "part" | "ownerId">): SearchDocumentLocation {
+  return {
+    section: candidate.section,
+    ...(candidate.part ? { part: candidate.part } : {}),
+    ...(candidate.ownerId ? { ownerId: candidate.ownerId } : {}),
+    path: [...candidate.path],
+  };
+}
+
+function indexLocation(
+  context: ProjectionContext,
+  value: object,
+  candidate: Pick<DocumentCandidate, "section" | "path" | "part" | "ownerId">,
+): void {
+  context.locations?.set(value, candidateLocation(candidate));
+}
+
 function addDocument(context: ProjectionContext, candidate: DocumentCandidate): void {
-  if (!hasCjkText(candidate.chineseText)) {
+  if (!context.documents || !context.signatures || !hasCjkText(candidate.chineseText)) {
     return;
   }
 
@@ -131,12 +153,7 @@ function addDocument(context: ProjectionContext, candidate: DocumentCandidate): 
     headword: context.headword,
     englishText: candidate.englishText,
     chineseText: candidate.chineseText,
-    location: {
-      section: candidate.section,
-      ...(candidate.part ? { part: candidate.part } : {}),
-      ...(candidate.ownerId ? { ownerId: candidate.ownerId } : {}),
-      path: candidate.path,
-    },
+    location: candidateLocation(candidate),
     weight: SEARCH_DOCUMENT_WEIGHTS[candidate.scope],
   };
   const signature = JSON.stringify(document);
@@ -153,6 +170,9 @@ function addBilingualDocument(
     chineseText?: string;
   },
 ): void {
+  if (!context.documents) {
+    return;
+  }
   const chineseText = candidate.chineseText ?? "";
   if (hasCjkText(chineseText)) {
     addDocument(context, {
@@ -179,6 +199,12 @@ function projectExample(
   path: string[],
   part?: string,
 ): void {
+  indexLocation(context, example, {
+    section,
+    path,
+    part,
+    ownerId: example.id,
+  });
   addBilingualDocument(context, {
     scope: "example",
     section,
@@ -232,6 +258,12 @@ function projectGrammarUsageBox(
   part?: string,
 ): void {
   const boxOwnerId = box.id;
+  indexLocation(context, box, {
+    section: "grammar-usage",
+    path,
+    part,
+    ownerId: boxOwnerId,
+  });
   if (box.title) {
     addBilingualDocument(context, {
       scope: "usage",
@@ -328,8 +360,14 @@ function projectSense(
   phraseOwnerId?: string,
 	  inheritedPart?: string,
 ): void {
-	  const part = sense.partOfSpeech ?? inheritedPart;
+  const part = sense.partOfSpeech ?? inheritedPart;
   const senseOwnerId = phraseOwnerId ?? sense.id;
+  indexLocation(context, sense, {
+    section,
+    path,
+    part,
+    ownerId: senseOwnerId,
+  });
   addBilingualDocument(context, {
     scope: phraseHeading ? "phrase" : "sense",
     section,
@@ -391,6 +429,12 @@ function projectPhrase(
   path: string[],
 	  inheritedPart?: string,
 ): void {
+  indexLocation(context, phrase, {
+    section,
+    path,
+    part: inheritedPart,
+    ownerId: phrase.id,
+  });
   for (const [index, usage] of phrase.leadingUsage.entries()) {
     addBilingualDocument(context, {
       scope: "usage",
@@ -424,6 +468,12 @@ function projectForms(
   for (const [index, form] of forms.entries()) {
     const formPath = [...path, String(index)];
     const part = form.partOfSpeech ?? inheritedPart;
+    indexLocation(context, form, {
+      section,
+      path: formPath,
+      part,
+      ownerId: form.id,
+    });
     addBilingualDocument(context, {
       scope: "form",
       section,
@@ -502,5 +552,23 @@ export function projectCanonicalEntrySearchDocuments(entry: CanonicalEntry): Sea
     signatures: new Set<string>(),
   };
   projectEntry(context, entry, []);
-  return context.documents;
+  return context.documents ?? [];
+}
+
+/** Builds a lightweight object-to-location index using the same traversal as the sidecar projector. */
+export function indexCanonicalEntrySearchLocations(entry: CanonicalEntry): CanonicalSearchLocationIndex {
+  const locations = new WeakMap<object, SearchDocumentLocation>();
+  const context: ProjectionContext = {
+    dictionaryId: entry.dictionaryId,
+    entryId: entry.id,
+    headword: entry.headword,
+    locations,
+  };
+  projectEntry(context, entry, []);
+  return {
+    get(value: object): SearchDocumentLocation | undefined {
+      const location = locations.get(value);
+      return location ? { ...location, path: [...location.path] } : undefined;
+    },
+  };
 }

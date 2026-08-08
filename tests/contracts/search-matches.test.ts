@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   fallbackSearchQueries,
+  isChineseSearchQuery,
   resolveSearchMatches,
   type DictionarySearchItem,
   type EtymologySearchItem,
@@ -50,6 +51,16 @@ test("returns prefixes as candidates without guessing a direct entry", () => {
 
 test("returns an empty candidate list for no matches", () => {
   assert.deepEqual(resolveSearchMatches("rest", []), { kind: "candidates", items: [] });
+});
+
+test("keeps Chinese reverse lookups on the result page even with one match", () => {
+  const result = item("pneumonoultramicroscopicsilicovolcanoconiosis", "pneumonoultramicroscopicsilicovolcanoconiosis");
+  assert.equal(isChineseSearchQuery("火山矽肺病"), true);
+  assert.equal(isChineseSearchQuery("volcanic lung disease"), false);
+  assert.deepEqual(resolveSearchMatches("火山矽肺病", [result]), {
+    kind: "candidates",
+    items: [result],
+  });
 });
 
 test("normalizes case, middle dots, and compatibility characters before matching", () => {

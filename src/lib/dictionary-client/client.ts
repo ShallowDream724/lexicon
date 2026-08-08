@@ -6,6 +6,10 @@ import {
 } from "../../../packages/adapters/src/index";
 import type { CanonicalEntry } from "../../../packages/dictionary-schema/src/index";
 import {
+  SEARCH_DOCUMENT_SCOPES,
+  searchDocumentLocationSchema,
+} from "../../../packages/dictionary-search/src/index";
+import {
   enhancementResourceSummariesSchema,
   etymologyArticleResponseSchema,
   etymologyResourceSummarySchema,
@@ -18,6 +22,13 @@ import {
 } from "./api-url";
 import type { SearchTarget } from "./search-target";
 
+const dictionarySearchMatchSchema = z.object({
+  scope: z.enum(SEARCH_DOCUMENT_SCOPES),
+  englishText: z.string(),
+  chineseText: z.string(),
+  location: searchDocumentLocationSchema,
+});
+
 const searchItemBaseSchema = z
   .object({
     id: z.string().optional(),
@@ -28,13 +39,17 @@ const searchItemBaseSchema = z
   });
 
 const dictionarySearchItemSchema = searchItemBaseSchema
-  .extend({ kind: z.literal("dictionary") })
+  .extend({
+    kind: z.literal("dictionary"),
+    matches: z.array(dictionarySearchMatchSchema).optional(),
+  })
   .transform((item) => ({
     kind: "dictionary" as const,
     id: item.id ?? item.entryId ?? "",
     headword: item.headword,
     partsOfSpeech: item.partsOfSpeech ?? [],
     translationPreview: item.translationPreview ?? "",
+    ...(item.matches?.length ? { matches: item.matches } : {}),
   }))
   .refine((item) => item.id.length > 0, "Search result is missing an entry id.");
 
@@ -61,6 +76,10 @@ const searchResponseSchema = z.object({
   items: z.array(searchItemSchema),
 });
 
+export function parseSearchTargets(payload: unknown): SearchTarget[] {
+  return searchResponseSchema.parse(payload).items;
+}
+
 const errorResponseSchema = z.object({
   error: z
     .object({
@@ -71,7 +90,12 @@ const errorResponseSchema = z.object({
   message: z.string().optional(),
 });
 
-export type { DictionarySearchItem, EtymologySearchItem, SearchTarget } from "./search-target";
+export type {
+  DictionarySearchItem,
+  DictionarySearchMatch,
+  EtymologySearchItem,
+  SearchTarget,
+} from "./search-target";
 
 export type DictionaryEntryResponse = {
   entry: CanonicalEntry;
@@ -144,7 +168,7 @@ export const dictionaryClient = {
     url.searchParams.set("q", normalized);
     url.searchParams.set("limit", String(Math.min(Math.max(options.limit ?? 10, 1), 20)));
     const payload = await getJson(url, options.signal);
-    return searchResponseSchema.parse(payload).items;
+    return parseSearchTargets(payload);
   },
 
   async entry(entryId: string, signal?: AbortSignal): Promise<DictionaryEntryResponse> {

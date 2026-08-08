@@ -1,9 +1,22 @@
+import type {
+  SearchDocumentLocation,
+  SearchDocumentScope,
+} from "../../../packages/dictionary-search/src/index";
+
+export type DictionarySearchMatch = {
+  scope: SearchDocumentScope;
+  englishText: string;
+  chineseText: string;
+  location: SearchDocumentLocation;
+};
+
 export type DictionarySearchItem = {
   kind: "dictionary";
   id: string;
   headword: string;
   partsOfSpeech: string[];
   translationPreview: string;
+  matches?: DictionarySearchMatch[];
 };
 
 export type EtymologySearchItem = {

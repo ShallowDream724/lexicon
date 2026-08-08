@@ -14,6 +14,10 @@ export function normalizeSearchQuery(value: string): string {
     .toLocaleLowerCase();
 }
 
+export function isChineseSearchQuery(value: string): boolean {
+  return /\p{Script=Han}/u.test(value.normalize("NFKC"));
+}
+
 export function fallbackSearchQueries(value: string): string[] {
   const word = normalizeSearchQuery(value);
   if (!/^[a-z]+$/.test(word)) {
@@ -70,6 +74,15 @@ export function resolveSearchMatches(
     (item): item is Extract<SearchTarget, { kind: "etymology" }> =>
       item.kind === "etymology" && normalizeSearchQuery(item.headword) === normalizedQuery,
   );
+
+  if (isChineseSearchQuery(query)) {
+    return {
+      kind: "candidates",
+      items: uniqueItems.toSorted((left, right) =>
+        left.kind === right.kind ? 0 : left.kind === "dictionary" ? -1 : 1,
+      ),
+    };
+  }
 
   if (exactDictionaryMatches.length === 1) {
     return { kind: "direct", target: exactDictionaryMatches[0]! };
