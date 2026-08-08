@@ -109,21 +109,25 @@ func tokens(value string) []string {
 
 func queryTokens(value string) []string {
 	sequences := cjkSequences(value)
-	bigrams := make([]string, 0, len(value))
+	result := make([]string, 0, len(value))
 	seen := make(map[string]struct{}, len(value))
+	add := func(token string) {
+		if _, exists := seen[token]; exists {
+			return
+		}
+		seen[token] = struct{}{}
+		result = append(result, token)
+	}
 	for _, sequence := range sequences {
+		if len(sequence) == 1 {
+			add(encodeRune(sequence[0]))
+			continue
+		}
 		for index := 1; index < len(sequence); index++ {
-			token := encodeBigram(sequence[index-1], sequence[index])
-			if _, exists := seen[token]; !exists {
-				seen[token] = struct{}{}
-				bigrams = append(bigrams, token)
-			}
+			add(encodeBigram(sequence[index-1], sequence[index]))
 		}
 	}
-	if len(bigrams) > 0 {
-		return bigrams
-	}
-	return tokens(value)
+	return result
 }
 
 func encodeRune(r rune) string {
@@ -142,6 +146,10 @@ func hexDigit(value byte) byte {
 
 func matchExpression(queryTokens []string) string {
 	return strings.Join(queryTokens, " OR ")
+}
+
+func conjunctiveMatchExpression(queryTokens []string) string {
+	return strings.Join(queryTokens, " AND ")
 }
 
 type commonRunMatcher struct {

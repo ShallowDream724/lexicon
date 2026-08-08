@@ -109,21 +109,51 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]Group, e
 	if len(queryRunes) == 0 || len(searchTokens) == 0 {
 		return []Group{}, nil
 	}
+	matcher := newCommonRunMatcher(queryRunes)
+	if len(searchTokens) > 1 {
+		candidates, err := s.searchCandidates(
+			ctx,
+			conjunctiveMatchExpression(searchTokens),
+			queryRunes,
+			matcher,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if groups := groupCandidates(queryRunes, candidates, limit); len(groups) > 0 {
+			return groups, nil
+		}
+	}
+	candidates, err := s.searchCandidates(ctx, matchExpression(searchTokens), queryRunes, matcher)
+	if err != nil {
+		return nil, err
+	}
+	return groupCandidates(queryRunes, candidates, limit), nil
+}
+
+func (s *Store) searchCandidates(
+	ctx context.Context,
+	match string,
+	queryRunes []rune,
+	matcher commonRunMatcher,
+) ([]candidate, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT d.entry_id, d.headword, d.scope, d.english_text, d.chinese_text,
-		       d.section, d.part, d.owner_id, d.path_json, d.weight, bm25(documents_fts)
+			SELECT d.entry_id, d.headword, d.scope, d.english_text, d.chinese_text,
+			       d.section, d.part, d.owner_id, d.path_json, d.weight, bm25(documents_fts)
 		FROM documents_fts
 		JOIN documents d ON d.id = documents_fts.rowid
-		WHERE documents_fts MATCH ?
-			ORDER BY bm25(documents_fts) - (d.weight * 0.01), d.entry_id, d.id
-			LIMIT ?`, matchExpression(searchTokens), defaultCandidates)
+			WHERE documents_fts MATCH ?
+				ORDER BY bm25(documents_fts) - (d.weight * 0.01), d.entry_id, d.id
+				LIMIT ?`, match, defaultCandidates)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	candidates := make([]candidate, 0, 32)
-	matcher := newCommonRunMatcher(queryRunes)
 	for rows.Next() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		var c candidate
 		var pathJSON string
 		if err := rows.Scan(&c.document.EntryID, &c.document.Headword, &c.document.Scope, &c.document.EnglishText, &c.document.ChineseText, &c.document.Location.Section, &c.document.Location.Part, &c.document.Location.OwnerID, &pathJSON, &c.document.Weight, &c.bm25); err != nil {
@@ -138,7 +168,10 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]Group, e
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	return groupCandidates(queryRunes, candidates, limit), nil
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return candidates, nil
 }
 
 func scoreCandidate(

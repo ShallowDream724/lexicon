@@ -144,10 +144,14 @@ produced the byte-identical SHA-256
 Normalization applies Unicode NFKC, collapses punctuation and whitespace boundaries,
 and maps the observed Chinese spelling variant `矽` to `硅`. The FTS payload contains
 ASCII-encoded CJK unigrams and bigrams, avoiding dependence on a platform-specific
-SQLite tokenizer. Multi-character queries use bigrams; a one-character query uses the
-unigram fallback and excludes example-only matches.
+SQLite tokenizer. Each normalized query segment uses bigrams when possible and retains
+an explicit unigram when that segment contains one character. A query with one Chinese
+character excludes example-only matches.
 
-Each request retrieves at most 512 FTS candidates, then performs bounded Go refinement.
+Multi-bigram queries first retrieve at most 512 candidates that contain every query token.
+The bounded OR retrieval runs only when that precision tier has no usable result, allowing
+partial semantic fallback without letting common fragments evict complete matches. The
+selected candidate tier then receives bounded Go refinement.
 Scoring combines semantic scope weight, BM25, complete Chinese segments, segment
 boundaries, bigram coverage, compactness, and the longest contiguous common run. Scoring
 never joins text across punctuation or whitespace boundaries. Results are grouped by
@@ -164,11 +168,11 @@ Representative 100-request samples with a result limit of 20 measured:
 
 | Query | Result groups | p50 | p95 | p99 |
 | --- | ---: | ---: | ---: | ---: |
-| `记录` | 20 | 2.73 ms | 4.03 ms | 4.52 ms |
-| `休息` | 20 | 2.63 ms | 4.36 ms | 4.78 ms |
-| `短暂的休息` | 2 | 6.38 ms | 8.54 ms | 9.66 ms |
-| `火山矽肺病` | 1 | 1.00 ms | 1.51 ms | 2.01 ms |
-| `完全受某人控制` | 4 | 23.38 ms | 28.58 ms | 30.98 ms |
+| `记录` | 20 | 2.00 ms | 2.91 ms | 3.04 ms |
+| `休息` | 20 | 2.00 ms | 2.78 ms | 3.58 ms |
+| `短暂的休息` | 2 | 0.00 ms | 1.14 ms | 1.59 ms |
+| `火山矽肺病` | 1 | 1.00 ms | 1.53 ms | 2.60 ms |
+| `完全受某人控制` | 2 | 0.56 ms | 1.02 ms | 1.07 ms |
 
 Run the same bounded benchmark from the repository root:
 

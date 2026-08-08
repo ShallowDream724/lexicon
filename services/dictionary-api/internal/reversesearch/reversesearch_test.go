@@ -198,6 +198,14 @@ func TestNormalizationAndBoundedCandidateFiltering(t *testing.T) {
 	}
 }
 
+func TestQueryTokensRetainSingletonSegments(t *testing.T) {
+	got := queryTokens("硅，火山")
+	want := []string{encodeRune('硅'), encodeBigram('火', '山')}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("query tokens = %#v, want %#v", got, want)
+	}
+}
+
 func TestSearchPrefersACompleteTranslationSegmentOverIncidentalContainment(t *testing.T) {
 	root := t.TempDir()
 	dictionary := filepath.Join(root, "dictionary.db")
@@ -245,6 +253,40 @@ func TestSearchDoesNotMatchAcrossTranslationBoundaries(t *testing.T) {
 	got, err := store.Search(context.Background(), "山肺", 10)
 	if err != nil || len(got) != 1 || got[0].EntryID != "2" {
 		t.Fatalf("cross-boundary match got %#v, %v", got, err)
+	}
+}
+
+func TestSearchUsesPartialCandidatesOnlyWhenNoCompleteTokenMatchExists(t *testing.T) {
+	root := t.TempDir()
+	dictionary := filepath.Join(root, "dictionary.db")
+	if err := os.WriteFile(dictionary, []byte("primary"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "reverse.db")
+	importSidecar(t, dictionary, target, []SearchDocument{
+		doc("1", ScopeSense, "confidant", "完全受某人信任"),
+		doc("2", ScopePhrase, "under somebody's thumb", "完全受某人控制；受制于人"),
+		doc("3", ScopeSense, "silicosis", "一种严重硅肺病"),
+		doc("4", ScopeSense, "volcano", "火山"),
+		doc("5", ScopeSense, "silicon volcano", "硅火山"),
+	}, false)
+	store, err := Open(target, digest(t, dictionary))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	got, err := store.Search(context.Background(), "完全受某人控制", 10)
+	if err != nil || len(got) != 1 || got[0].EntryID != "2" {
+		t.Fatalf("precision-first search got %#v, %v", got, err)
+	}
+	got, err = store.Search(context.Background(), "火山硅肺病", 10)
+	if err != nil || len(got) != 1 || got[0].EntryID != "3" {
+		t.Fatalf("partial fallback search got %#v, %v", got, err)
+	}
+	got, err = store.Search(context.Background(), "硅，火山", 10)
+	if err != nil || len(got) != 1 || got[0].EntryID != "5" {
+		t.Fatalf("singleton-segment search got %#v, %v", got, err)
 	}
 }
 

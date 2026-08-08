@@ -359,9 +359,11 @@ requests as distinct outcomes.
 
 - Search limits are enforced on both client and server.
 - Chinese queries are limited to 200 characters in both the HTTP and store boundaries.
-- The reverse-search FTS query returns at most 512 candidates. Go refinement respects
-  normalized Chinese segment boundaries, uses deterministic tie-breaks, returns at most
-  50 entry groups, and retains at most three evidence records per entry.
+- Multi-bigram reverse search first retrieves at most 512 candidates containing every
+  query token. The existing bounded OR retrieval runs only when that precision tier has
+  no usable result. Go refinement respects normalized Chinese segment boundaries, uses
+  deterministic tie-breaks, returns at most 50 entry groups, and retains at most three
+  evidence records per entry.
 - Exact and prefix results are ranked in SQL; the browser never filters the full
   dictionary.
 - One-edit spelling correction runs only after an empty exact/prefix result for a

@@ -148,9 +148,10 @@ Existing runtime dictionaries remain compatible through a bounded set of exact i
 apostrophe variants.
 
 The optional reverse-search sidecar stores visible bilingual projections separately from
-compressed entry payloads. Its contentless FTS5 index retrieves at most 512 candidates;
-Go refinement respects Chinese segment boundaries, applies deterministic semantic ranking,
-and returns at most three evidence records per entry. Query length is capped at 200
+compressed entry payloads. Its contentless FTS5 index first tries a bounded all-token
+candidate tier, then uses bounded OR retrieval only when no usable complete-token result
+exists. Go refinement respects Chinese segment boundaries, applies deterministic semantic
+ranking, and returns at most three evidence records per entry. Query length is capped at 200
 characters in the HTTP handler and the store. The sidecar metadata validates schema,
 projection, normalizer, document count, and primary database fingerprint before use.
 
