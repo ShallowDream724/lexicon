@@ -185,7 +185,10 @@ The React layer renders only canonical types. It owns:
 The search header uses three responsive compositions. Wide layouts keep the horizontal
 brand lockup. Tablet and constrained desktop widths collapse it to the brand mark and place
 the mark and search form in one centered two-column group. Phone layouts restore the full
-lockup above a compact form and keep recent queries on one clipped line. The home header's
+lockup above a compact form. The home form is bounded on phones, then its control geometry
+and width grow continuously toward the wide layout instead of jumping at a device breakpoint.
+Phone recent queries occupy one visual line; complete flex items that do not fit move into
+an overflow-hidden second line, so truncated word fragments never appear. The home header's
 minimum height combines dynamic viewport height with viewport width: tall, narrow screens
 use roughly one third of the page, progressively wider screens gain more breathing room,
 and the blue region never reserves more than half of the viewport. Its intrinsic content
@@ -200,13 +203,15 @@ metadata, pronunciation, and part marker; phone and landscape baselines remain i
 Optional entry resources pass through one registry in
 `src/features/dictionary/resource-model.ts`. The registry determines stable ordering,
 card size, quick-find placement, and opening behavior. Source-specific checks stay in
-resource renderers and clients rather than spreading through the entry view. Featured
-resources may use a wider desktop rail card and span the full resource grid on phone or
-narrow tablet layouts; native dictionary cards retain their compact size. A featured
+resource renderers and clients rather than spreading through the entry view. Resource-card
+widths come from one rail-level size contract: featured cards share one bounded width on
+desktop and portrait tablets, while phones explicitly promote them to a full row; native
+dictionary cards retain their compact size. A featured
 card exposes its first article as the card-wide primary action, while article chips are
 independent direct actions for a specific article. Etymology cards retain a book-page
-aspect ratio on desktop and landscape tablets, then use a bounded full-row format on
-phones and portrait tablets. Their title and action occupy fixed layout rows while the
+aspect ratio on desktop and landscape tablets, use the shared bounded horizontal format
+on portrait tablets, and expand to the full row only on phones. Their title and action
+occupy fixed layout rows while the
 summary consumes the remaining card height; the card's resize observer derives the
 available line count without introducing viewport-specific text limits. The watermark
 stays anchored to the paper corner and scales from the card block size. Narrow phones
@@ -258,7 +263,9 @@ a retryable idle state before capture, and older sessions are evicted by least r
 The result page owns its centered reading column and discrete phone, tablet, and desktop
 type scales; it never inherits the entry sidebar gutter or viewport-proportional typography.
 Its phone baseline stays close to the entry body so moving between an entry and its related
-results does not require changing the shared preference.
+results does not require changing the shared preference. The result list uses the same
+border-to-item inset for its first and subsequent groups, and larger result shells keep a
+compact top inset below the header transition.
 One three-level reading-size preference is mounted in the shared header and applied at the
 workspace root. Entry pages retain their type hierarchy while the phone reading region applies
 a uniform two-pixel reduction to its own baseline; supplementary resource cards and etymology
