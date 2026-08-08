@@ -187,17 +187,15 @@ brand lockup. Tablet and constrained desktop widths collapse it to the brand mar
 the mark and search form in one centered two-column group. Phone layouts restore the full
 lockup above a compact form. The home form is bounded on phones, then its control geometry
 and width grow continuously toward the wide layout instead of jumping at a device breakpoint.
-Home-only variables own its topbar, brand-to-form gap, recent-query row, and blue-region
-compression; inner-page tablet sizing never participates in the home flex composition.
-The blue region pairs its height reduction with an equal top-inset compensation, preserving
-the brand anchor while reducing the unused space below recent queries.
+Home-only variables own its topbar, brand-to-form gap, recent-query row, and content insets;
+inner-page tablet sizing never participates in the home flex composition. Header height is
+derived from the intrinsic search stack, a bounded continuous top inset, and one fixed lower
+inset, so ultra-wide layouts cannot turn flex surplus into empty blue space. The form reserves
+the recent-query row before the first query so that history availability does not move the brand.
 Phone recent queries occupy one visual line; complete flex items that do not fit move into
-an overflow-hidden second line, so truncated word fragments never appear. The home header's
-minimum height combines dynamic viewport height with viewport width: tall, narrow screens
-use roughly one third of the page, progressively wider screens gain more breathing room,
-and the blue region never reserves more than half of the viewport. Its intrinsic content
-remains free to expand under text zoom. Brand scale and vertical spacing follow the same
-continuous width curve so crossing a device breakpoint does not create a visual jump.
+an overflow-hidden second line, so truncated word fragments never appear. Intrinsic content
+remains free to expand under text zoom. Brand scale and vertical spacing follow continuous
+width curves so crossing a device breakpoint does not create a visual jump.
 
 The entry reading shell uses fixed top insets for phone, portrait-tablet, and wider
 compositions, while headword separation grows continuously without an intermediate-width

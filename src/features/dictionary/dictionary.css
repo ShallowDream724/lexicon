@@ -33,7 +33,11 @@
 .dictionary-header.is-home {
   --home-brand-search-gap-adjustment: .08rem;
   --home-brand-search-gap-base: clamp(.4rem, calc(.16rem + 1.5vw), .64rem);
-  --home-header-compression: 1.28rem;
+  --home-content-bottom-inset: .8rem;
+  --home-content-top-inset: min(
+    clamp(2.42667rem, calc(1.94667rem + 5vw), 2.74667rem),
+    clamp(2.42667rem, calc(3.2rem - 2.8vw), 2.74667rem)
+  );
   --home-recent-column-gap: clamp(.26667rem, calc(-.1098rem + 2.35294vw), .53333rem);
   --home-recent-font-size: clamp(.32rem, calc(.20706rem + .70588vw), .4rem);
   --home-recent-height: clamp(.58667rem, calc(1.10118rem - 1.88235vw), .8rem);
@@ -43,9 +47,6 @@
   --home-topbar-padding-top: clamp(.16rem, calc(-.25412rem + 2.58824vw), .45333rem);
   display: flex;
   flex-direction: column;
-  min-height: calc(
-    min(50dvh, calc(1.7rem + 20dvh + 10vw)) - var(--home-header-compression)
-  );
 }
 
 .header-topbar {
@@ -328,15 +329,12 @@
 .header-search-region.is-home {
   align-items: center;
   flex-direction: column;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   gap: calc(var(--home-brand-search-gap-base) + var(--home-brand-search-gap-adjustment));
-  justify-content: center;
+  justify-content: flex-start;
   min-height: 0;
-  padding-bottom: clamp(.48rem, calc(-.24rem + 4.5vw), 1.2rem);
-  padding-top: calc(
-    clamp(.32rem, 2vw, .64rem) + var(--home-header-compression) +
-      var(--home-brand-search-gap-adjustment)
-  );
+  padding-bottom: var(--home-content-bottom-inset);
+  padding-top: var(--home-content-top-inset);
   width: 95%;
 }
 
@@ -405,6 +403,9 @@
   --search-submit-radius: clamp(.10667rem, calc(-.04428rem + .9434vw), .21333rem);
   margin-inline: auto;
   max-width: 100%;
+  min-height: calc(
+    var(--search-row-min-height) + var(--home-recent-height) + var(--home-recent-margin-top)
+  );
   width: clamp(13.33333rem, 80%, 20rem);
 }
 
