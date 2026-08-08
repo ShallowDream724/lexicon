@@ -4126,9 +4126,10 @@
   }
 
   .header-search-region:not(.is-home) {
+    --entry-search-form-max-width: 20.34667rem;
     column-gap: .32rem;
     display: grid;
-    grid-template-columns: 1.17333rem minmax(0, 20.34667rem);
+    grid-template-columns: 1.17333rem minmax(0, var(--entry-search-form-max-width));
     justify-content: center;
   }
 
@@ -4168,6 +4169,10 @@
 }
 
 @media (min-width: 601px) and (max-width: 1024px) and (orientation: portrait) {
+  .header-search-region:not(.is-home) {
+    --entry-search-form-max-width: 15.25333rem;
+  }
+
   .entry-sidebar {
     flex-basis: 3.6rem;
     padding-top: .74667rem;

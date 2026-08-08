@@ -184,7 +184,8 @@ The React layer renders only canonical types. It owns:
 
 The search header uses three responsive compositions. Wide layouts keep the horizontal
 brand lockup. Tablet and constrained desktop widths collapse it to the brand mark and place
-the mark and search form in one centered two-column group. Phone layouts restore the full
+the mark and search form in one centered two-column group; portrait tablets use a dedicated
+three-quarter-width search bound while landscape tablets retain the wider track. Phone layouts restore the full
 lockup above a compact form. The home form is bounded on phones, then its control geometry
 and width grow continuously toward the wide layout instead of jumping at a device breakpoint.
 Home-only variables own its topbar, brand-to-form gap, recent-query row, and content insets;
