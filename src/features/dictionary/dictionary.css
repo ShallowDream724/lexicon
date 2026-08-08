@@ -4161,11 +4161,6 @@
     padding-right: .8rem;
   }
 
-  .dictionary-home {
-    padding-left: .8rem;
-    padding-right: .8rem;
-    width: 100%;
-  }
 }
 
 @media (min-width: 601px) and (max-width: 1024px) and (orientation: portrait) {
