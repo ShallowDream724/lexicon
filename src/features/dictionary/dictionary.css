@@ -33,7 +33,8 @@
 .dictionary-header.is-home {
   --home-brand-search-gap-adjustment: .08rem;
   --home-brand-search-gap-base: clamp(.4rem, calc(.16rem + 1.5vw), .64rem);
-  --home-content-bottom-inset: .8rem;
+  --home-search-row-min-height: clamp(1.2rem, calc(.40755rem + 4.95283vw), 1.76rem);
+  --home-content-bottom-inset: calc(var(--home-search-row-min-height) - .96rem);
   --home-content-top-inset: min(
     clamp(2.42667rem, calc(1.94667rem + 5vw), 2.74667rem),
     clamp(2.42667rem, calc(3.2rem - 2.8vw), 2.74667rem)
@@ -394,7 +395,7 @@
   --search-input-font-size: clamp(.37333rem, calc(-.15497rem + 3.30189vw), .74667rem);
   --search-leading-icon-inset: clamp(.10667rem, calc(.03119rem + .4717vw), .16rem);
   --search-leading-icon-size: clamp(.42667rem, calc(.12478rem + 1.88679vw), .64rem);
-  --search-row-min-height: clamp(1.2rem, calc(.40755rem + 4.95283vw), 1.76rem);
+  --search-row-min-height: var(--home-search-row-min-height);
   --search-row-padding: clamp(.16rem, calc(.08453rem + .4717vw), .21333rem);
   --search-row-radius: clamp(.21333rem, calc(.13786rem + .4717vw), .26667rem);
   --search-submit-font-size: clamp(.32rem, calc(.09358rem + 1.41509vw), .48rem);

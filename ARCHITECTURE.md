@@ -189,8 +189,9 @@ lockup above a compact form. The home form is bounded on phones, then its contro
 and width grow continuously toward the wide layout instead of jumping at a device breakpoint.
 Home-only variables own its topbar, brand-to-form gap, recent-query row, and content insets;
 inner-page tablet sizing never participates in the home flex composition. Header height is
-derived from the intrinsic search stack, a bounded continuous top inset, and one fixed lower
-inset, so ultra-wide layouts cannot turn flex surplus into empty blue space. The form reserves
+derived from the intrinsic search stack and bounded continuous insets. The lower inset contracts
+by the same amount as the home search control, so compact controls do not leave surplus blue
+space while ultra-wide layouts cannot turn flex surplus into empty blue space. The form reserves
 the recent-query row before the first query so that history availability does not move the brand.
 The recent-query label remains fixed while its complete records occupy one independently
 scrollable line with no visible scrollbar. Its reserved interaction height contains coarse-pointer
