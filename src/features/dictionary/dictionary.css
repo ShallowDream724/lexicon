@@ -819,7 +819,7 @@
 .entry-sidebar {
   align-self: flex-start;
   flex: 0 0 4rem;
-  padding: 1.49333rem .26667rem .26667rem;
+  padding: 1.4rem .26667rem .26667rem;
   position: sticky;
   top: 0;
 }
@@ -898,7 +898,7 @@
   border-left: .02667rem solid #eff2fa;
   flex: 1 1 auto;
   min-width: 0;
-  padding: clamp(1.49333rem, calc(.82667rem + 3.05vw), 1.86667rem) 1.06667rem .8rem;
+  padding: 1.4rem 1.06667rem .8rem;
 }
 
 .entry-view {
@@ -915,7 +915,7 @@
 }
 
 .entry-header {
-  margin-bottom: clamp(.4rem, calc(-.84rem + 5.67vw), 1.09333rem);
+  margin-bottom: clamp(.4rem, calc(-.84rem + 5.67vw), .88rem);
 }
 
 .headword-row {

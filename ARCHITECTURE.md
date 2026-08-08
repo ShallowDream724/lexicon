@@ -192,12 +192,10 @@ and the blue region never reserves more than half of the viewport. Its intrinsic
 remains free to expand under text zoom. Brand scale and vertical spacing follow the same
 continuous width curve so crossing a device breakpoint does not create a visual jump.
 
-The entry reading shell uses width-clamped top and headword separation. Tablet widths keep
-the compact reading rhythm, while additional space is introduced continuously toward wide
-desktop layouts rather than appearing at an intermediate-width breakpoint. Its portrait
-tablet composition halves the reading inset and applies separate compact scales to the
-headword, metadata, pronunciation, and part marker; phone and landscape baselines remain
-independent.
+The entry reading shell uses fixed top insets for phone, portrait-tablet, and wider
+compositions, while headword separation grows continuously without an intermediate-width
+jump. Its portrait-tablet composition applies separate compact scales to the headword,
+metadata, pronunciation, and part marker; phone and landscape baselines remain independent.
 
 Optional entry resources pass through one registry in
 `src/features/dictionary/resource-model.ts`. The registry determines stable ordering,
