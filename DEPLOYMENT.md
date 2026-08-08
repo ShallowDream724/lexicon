@@ -21,9 +21,10 @@ Go dictionary API
 
 The browser calls a same-origin `/api/v1` path. The repository's Compose file uses Caddy to
 keep application containers on a private network, obtain TLS certificates when a domain
-is configured, and expose only HTTP and HTTPS. An existing reverse proxy can provide the
-same routing without running the included gateway. History, favorites, and notes remain
-in the browser's IndexedDB; the server stores no personal records.
+is configured, and expose only HTTP and HTTPS. This is a public reference topology; an
+existing reverse proxy can provide the same routing without running the included gateway.
+History, favorites, and notes remain in the browser's IndexedDB; the server stores no
+personal records.
 
 ## Capacity
 
@@ -147,8 +148,9 @@ curl https://dict.example.com/api/v1/health
 When `SITE_ADDRESS=:80`, use the corresponding `http://` server address. The API
 validates the primary database and every configured optional asset before it begins
 serving traffic. A configured etymology path that has not been populated yet is logged
-and disabled. The reverse-search path behaves the same when absent; a present but invalid
-sidecar or a primary fingerprint mismatch stops startup.
+and disabled. When the reverse-search sidecar is absent, Chinese queries return
+`503 reverse_search_unavailable`; a present but invalid sidecar or a primary fingerprint
+mismatch stops startup.
 
 ## Existing Reverse Proxy
 
@@ -158,6 +160,21 @@ web and dictionary API services on its Docker network. Route `/api/v1/` to the A
 port 8787 and every other path to the web application on port 3000. Keep the network,
 hostnames, credentials, and media origins in the server's private Compose and environment
 files rather than the public repository.
+
+The custom API service must pair every configured runtime path with a read-only mount. In
+particular, Chinese reverse search requires both of these lines:
+
+```yaml
+services:
+  dictionary-api:
+    environment:
+      DICTIONARY_REVERSE_SEARCH_DB_PATH: /var/lib/lexicon/reverse-search.db
+    volumes:
+      - ./data/reverse-search.db:/var/lib/lexicon/reverse-search.db:ro
+```
+
+Keep the primary database, etymology database, and pronunciation archive environment and
+mount pairs alongside it when those capabilities are enabled.
 
 The proxy must support streaming responses and preserve query strings, response content
 types, `Cache-Control`, and `Service-Worker-Allowed`. Do not enable proxy caching for

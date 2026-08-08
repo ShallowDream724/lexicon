@@ -115,6 +115,8 @@ only in an enabled enhancement use their resource kind. Chinese responses includ
 groups and accept a page size of at most 256. English responses retain their 20-result
 default and 50-result maximum. Errors contain a stable code,
 message, and request id; the same request id is returned in `X-Request-ID`.
+`GET /api/v1/health` exposes `capabilities.chineseReverseSearch`,
+`capabilities.etymology`, and `capabilities.headwordAudio` for optional runtime resources.
 
 Chinese `scope` accepts a non-empty comma-separated subset of
 `sense,phrase,form,usage,example`; omission defaults to `sense,phrase,form`. Scope is applied
@@ -163,16 +165,25 @@ meanings from FTS displacement. The contentless FTS5 index gives each selected s
 ranking tier an independent 4,096-document limit, with at most three pools. Multi-token
 lookup tries the bounded all-token expression first and runs bounded OR retrieval only for
 a semantic tier with no usable complete-token result. Go refinement respects Chinese segment
-boundaries and mixed ASCII constraints, applies deterministic semantic ranking, and returns
-at most 512 entry groups with three evidence records per entry. Query length is capped at
-200 characters in the HTTP handler and the store. The sidecar metadata validates schema,
-projection, normalizer, document and segment counts, and primary database fingerprint before use.
+boundaries and mixed ASCII constraints, then applies final ranking separately from candidate
+retrieval. Complete matches rank match quality, protected candidate pool, semantic scope
+(sense, then phrase or form, usage, and example), distinct corroborating Chinese evidence,
+and bounded score. Partial matches rank textual relevance before semantic scope; query-leading
+coverage improves suffix and noise cases. Duplicate identical Chinese evidence does not
+increase corroboration. The API returns at most 512 entry groups with three evidence records
+per entry. Query length is capped at 200 characters in the HTTP handler and the store. The
+sidecar metadata validates schema, projection, normalizer, document and segment counts, and
+primary database fingerprint before use.
 
 Schema 3 stores `documents`, `exact_segments`, and the contentless FTS index without the
 unused entry-order secondary index. Projection 1.2 indexes structured rich-text segments
 once, preserves distinct semantic owners, and separates bilingual token streams. A shared
 OpenCC converter normalizes traditional queries and indexed Chinese while the request path
 derives all query views from one normalized value.
+
+When the reverse-search sidecar is not configured, Chinese search returns
+`503 reverse_search_unavailable`. English search, entries, enhancements, and configured media
+remain available.
 
 ## Container
 

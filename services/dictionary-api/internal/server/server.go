@@ -60,6 +60,8 @@ type Service struct {
 	reverseSearch  *reversesearch.Store
 }
 
+var errReverseSearchUnavailable = errors.New("Chinese reverse search is unavailable")
+
 func New(db *sql.DB, audioIndex *audio.Index, config Config) *Service {
 	logger := config.Logger
 	if logger == nil {
@@ -104,6 +106,18 @@ func (s *Service) Handler() http.Handler {
 	return s.withRequestID(s.withCORS(s.withLogging(mux)))
 }
 
+type healthResponse struct {
+	Status        string              `json:"status"`
+	SourceVersion string              `json:"source_version"`
+	Capabilities  serviceCapabilities `json:"capabilities"`
+}
+
+type serviceCapabilities struct {
+	ChineseReverseSearch bool `json:"chineseReverseSearch"`
+	Etymology            bool `json:"etymology"`
+	HeadwordAudio        bool `json:"headwordAudio"`
+}
+
 func (s *Service) health(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
@@ -111,7 +125,15 @@ func (s *Service) health(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, http.StatusServiceUnavailable, "database_unavailable", "dictionary database is unavailable")
 		return
 	}
-	s.writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "source_version": s.sourceVersion})
+	s.writeJSON(w, http.StatusOK, healthResponse{
+		Status:        "ok",
+		SourceVersion: s.sourceVersion,
+		Capabilities: serviceCapabilities{
+			ChineseReverseSearch: s.reverseSearch != nil,
+			Etymology:            s.etymology != nil,
+			HeadwordAudio:        s.audio != nil,
+		},
+	})
 }
 
 type suggestion struct {
@@ -175,6 +197,10 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) {
 		}
 		page, err := s.queryReverseSuggestions(r.Context(), query, reversesearch.Options{Offset: offset, Limit: limit, Scopes: scopes})
 		if err != nil {
+			if errors.Is(err, errReverseSearchUnavailable) {
+				s.writeError(w, r, http.StatusServiceUnavailable, "reverse_search_unavailable", err.Error())
+				return
+			}
 			s.logger.Error("Chinese reverse search failed", "error", err)
 			s.writeError(w, r, http.StatusInternalServerError, "search_failed", "search could not be completed")
 			return
@@ -241,7 +267,7 @@ type reverseSuggestionPage struct {
 
 func (s *Service) queryReverseSuggestions(ctx context.Context, query string, options reversesearch.Options) (reverseSuggestionPage, error) {
 	if s.reverseSearch == nil {
-		return reverseSuggestionPage{items: []suggestion{}}, nil
+		return reverseSuggestionPage{}, errReverseSearchUnavailable
 	}
 	page, err := s.reverseSearch.SearchPage(ctx, query, options)
 	if err != nil || len(page.Groups) == 0 {

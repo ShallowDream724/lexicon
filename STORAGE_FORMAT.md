@@ -161,15 +161,18 @@ expression. Multi-token lookup tries the all-token expression independently per 
 tier; bounded OR retrieval runs only for a tier without a usable complete-token result.
 The selected candidates then receive bounded Go refinement.
 
-Ranking first separates complete segments, grammatical extensions, continuous boundary
-matches, and partial matches into hard tiers. Semantic scope, source-neutral CEFR and
-frequency labels, BM25, compactness, position, bigram coverage, and the longest contiguous
-common run rank candidates only within the appropriate tier. Parenthetical-only matches
-are demoted. Long partial matches require a contiguous run covering about half the query,
-and lightweight polarity checking rejects misleading negated fallbacks. Mixed Chinese and
-ASCII or numeric queries retain every ASCII or numeric constraint. Scoring never joins text
-across punctuation or whitespace boundaries. Results are grouped with deterministic ties
-into a stable window of at most 512 entries and at most three evidence records per entry.
+Candidate retrieval remains separate from final ranking. Ranking first separates complete
+segments, grammatical extensions, continuous boundary matches, and partial matches into hard
+tiers. Within complete matches, match quality, protected candidate pool, semantic scope
+(sense, then phrase or form, usage, and example), distinct corroborating Chinese evidence, and
+bounded score determine order. Within partial matches, textual relevance precedes semantic scope;
+query-leading coverage improves suffix and noise cases. Duplicate identical Chinese evidence does
+not increase corroboration. Parenthetical-only matches are demoted. Long partial matches require
+a contiguous run covering about half the query, and lightweight polarity checking rejects
+misleading negated fallbacks. Mixed Chinese and ASCII or numeric queries retain every ASCII or
+numeric constraint. Scoring never joins text across punctuation or whitespace boundaries.
+Results are grouped with deterministic ties into a stable window of at most 512 entries and at
+most three evidence records per entry.
 The HTTP endpoint returns 32 groups by default, accepts pages of at most 256, and exposes
 `nextOffset` for progressive 32, 64, 128, 256, and 512 cumulative result counts. Both the
 HTTP endpoint and the store reject queries longer than 200 characters.
@@ -177,20 +180,21 @@ HTTP endpoint and the store reject queries longer than 200 characters.
 The sidecar metadata stores the SHA-256 of its exact primary runtime database. The API
 checks that fingerprint before accepting the index, so canonical paths and entry content
 cannot silently drift. The primary database and reverse-search sidecar must be released
-and replaced as one pair. Omitting the sidecar disables Chinese reverse search while
-leaving English exact, prefix, correction, entry, and enhancement lookup available.
+and replaced as one pair. Omitting the sidecar makes Chinese queries return
+`503 reverse_search_unavailable` while leaving English exact, prefix, correction, entry, and
+enhancement lookup available.
 
-Representative 100-request samples with a result limit of 32 measured:
+Representative 100-iteration samples with a result limit of 32 measured:
 
-| Query | Result groups | p50 | p95 | p99 |
-| --- | ---: | ---: | ---: | ---: |
-| `书` | 32 | 17.48 ms | 19.58 ms | 20.58 ms |
-| `学校` | 32 | 6.21 ms | 7.59 ms | 8.08 ms |
-| `记录` | 32 | 2.00 ms | 3.00 ms | 3.56 ms |
-| `休息` | 32 | 1.29 ms | 2.20 ms | 2.54 ms |
-| `短暂的休息` | 1 | 0.99 ms | 1.51 ms | 1.59 ms |
-| `火山矽肺病` | 1 | 1.08 ms | 1.77 ms | 2.52 ms |
-| `完全受某人控制` | 2 | 1.00 ms | 1.50 ms | 1.61 ms |
+| Query | p50 | p95 |
+| --- | ---: | ---: |
+| `放弃` | 1.556 ms | 2.508 ms |
+| `注入` | 0.581 ms | 1.291 ms |
+| `词汇` | 0.988 ms | 1.020 ms |
+| `要` | 34.891 ms | 41.999 ms |
+| `火山矽肺病` | 1.008 ms | 1.581 ms |
+| `受不了` | 1.526 ms | 2.416 ms |
+| `完全受某人控制` | 0.999 ms | 1.513 ms |
 
 Run the same bounded benchmark from the repository root:
 

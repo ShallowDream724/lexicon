@@ -88,7 +88,8 @@ The service owns runtime storage work:
 - bounded, parameterized search with deterministic exact, word-before-phrase,
   canonical-length, and lexical ranking;
 - validating the reverse-search sidecar against the primary database fingerprint;
-- exact-segment and bounded FTS candidate retrieval with grouped Chinese-result ranking;
+- exact-segment and bounded FTS candidate retrieval, followed by deterministic grouped
+  Chinese-result ranking;
 - decompressing one independently stored entry and returning a stable envelope
   around the unmodified entry JSON;
 - indexing the pronunciation archive once and streaming individual assets;
@@ -106,8 +107,9 @@ Chinese reverse search uses a separate derived sidecar rather than adding reques
 scans to the primary database. It stores only source-neutral search documents projected
 from validated canonical entries. Metadata pins the canonical projection version,
 normalizer version, source version, document count, and SHA-256 of the exact primary
-runtime database. A missing sidecar disables Chinese reverse search; a configured but
-incompatible sidecar fails startup so evidence locations cannot drift from entry data.
+runtime database. A missing sidecar returns `503 reverse_search_unavailable` for Chinese
+queries. A configured but incompatible sidecar fails startup so evidence locations cannot
+drift from entry data.
 
 Primary search and enhancement association share one server-side term-key boundary.
 Dictionary keys remove source display syllable separators; enhancement keys additionally
@@ -423,6 +425,9 @@ note editing is never interrupted by an automatic mid-session refresh.
 ## API Contract
 
 All endpoints use `/api/v1`. Errors have a stable code, message, and request id.
+`GET /api/v1/health` reports `capabilities.chineseReverseSearch`,
+`capabilities.etymology`, and `capabilities.headwordAudio` so callers can distinguish
+enabled optional resources from unavailable ones.
 
 ```text
 GET /api/v1/health
@@ -474,9 +479,12 @@ requests as distinct outcomes.
   evidence records per entry.
 - Chinese result pages begin at 32 groups and expand cumulatively to 64, 128, 256, then
   512. Each request transfers only the next page, and route changes cancel in-flight pages.
-- Scope predicates run in exact and FTS SQL before their candidate limits. Match tiers rank
-  complete segments, grammatical extensions, bounded substrings, and partial matches in
-  discrete order; semantic scope and source priors only rank within the applicable tier.
+- Scope predicates run in exact and FTS SQL before their candidate limits. Candidate retrieval
+  remains separate from final ranking. Complete matches rank match quality, protected candidate
+  pool, semantic scope (sense, then phrase or form, usage, and example), distinct corroborating
+  Chinese evidence, and bounded score. Partial matches rank textual relevance before semantic
+  scope; query-leading coverage improves suffix and noise cases. Identical Chinese evidence does
+  not increase corroboration.
 - Traditional-to-simplified conversion uses one process-wide, race-safe converter. A query
   is normalized once before its CJK sequences, runes, and FTS tokens are derived.
 - Exact and prefix results are ranked in SQL; the browser never filters the full

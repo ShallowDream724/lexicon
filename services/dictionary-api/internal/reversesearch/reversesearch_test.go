@@ -689,6 +689,97 @@ func TestMatchAndScopeTiersCannotBeOverriddenByWeights(t *testing.T) {
 	}
 }
 
+func TestDirectSenseEvidenceAndEntryFocusOutrankIncidentalPhrases(t *testing.T) {
+	root := t.TempDir()
+	dictionary := filepath.Join(root, "dictionary.db")
+	if err := os.WriteFile(dictionary, []byte("primary"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "reverse.db")
+	documents := []SearchDocument{
+		doc("abandon", ScopeSense, "abandon", "中止；放弃；不再有"),
+		doc("abandon", ScopeSense, "abandon", "停止支持；放弃（信念）"),
+		doc("back", ScopePhrase, "back", "放弃；退让"),
+		doc("bag", ScopeSense, "bag", "（认为不会成功而）放弃，取消"),
+		doc("bag", ScopeSense, "bag", "（认为不会成功而）放弃，取消"),
+	}
+	for index := range documents {
+		if documents[index].EntryID == "abandon" {
+			documents[index].Weight = -1_000_000
+		} else {
+			documents[index].Weight = 1_000_000
+		}
+	}
+	importSidecar(t, dictionary, target, documents, false)
+	store, err := Open(target, digest(t, dictionary))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	got, err := store.Search(context.Background(), "放弃", allOptions(10))
+	if err != nil || len(got) != 3 {
+		t.Fatalf("semantic ranking = %#v, %v", got, err)
+	}
+	if got[0].EntryID != "abandon" || got[1].EntryID != "bag" || got[2].EntryID != "back" {
+		t.Fatalf("semantic ranking ignored scope or corroboration: %#v", got)
+	}
+}
+
+func TestMatchQualityStillOutranksResultScope(t *testing.T) {
+	root := t.TempDir()
+	dictionary := filepath.Join(root, "dictionary.db")
+	if err := os.WriteFile(dictionary, []byte("primary"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "reverse.db")
+	importSidecar(t, dictionary, target, []SearchDocument{
+		doc("exact-phrase", ScopePhrase, "give up", "放弃"),
+		doc("weak-sense", ScopeSense, "weak", "放弃的"),
+	}, false)
+	store, err := Open(target, digest(t, dictionary))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	got, err := store.Search(context.Background(), "放弃", allOptions(10))
+	if err != nil || len(got) != 2 || got[0].EntryID != "exact-phrase" {
+		t.Fatalf("exact phrase did not outrank a weaker sense match: %#v, %v", got, err)
+	}
+}
+
+func TestPartialCandidateRankingUsesTextRelevanceBeforeScope(t *testing.T) {
+	incidentalSense := candidate{matchTier: 1, resultPriority: 3, score: 100}
+	closerPhrase := candidate{matchTier: 1, resultPriority: 2, score: 120}
+	if compareCandidateRelevance(closerPhrase, incidentalSense) <= 0 {
+		t.Fatal("partial result scope overrode the stronger text match")
+	}
+}
+
+func TestPartialSearchPrefersAQueryLeadingRun(t *testing.T) {
+	root := t.TempDir()
+	dictionary := filepath.Join(root, "dictionary.db")
+	if err := os.WriteFile(dictionary, []byte("primary"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "reverse.db")
+	importSidecar(t, dictionary, target, []SearchDocument{
+		doc("can", ScopePhrase, "can", "干不了；不行；不成"),
+		doc("enough", ScopePhrase, "enough", "再也忍受不住；受够了"),
+	}, false)
+	store, err := Open(target, digest(t, dictionary))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	got, err := store.Search(context.Background(), "受不了", allOptions(10))
+	if err != nil || len(got) != 2 || got[0].EntryID != "enough" {
+		t.Fatalf("leading partial match was not preferred: %#v, %v", got, err)
+	}
+}
+
 func TestTraditionalNormalizationIsReusableAndConcurrent(t *testing.T) {
 	const workers = 24
 	const iterations = 100

@@ -52,11 +52,46 @@ func TestChineseReverseSearchReturnsGroupedEvidenceWithoutChangingEnglishSearch(
 	}
 }
 
-func TestChineseSearchIsEmptyWhenOptionalSidecarIsAbsent(t *testing.T) {
+func TestChineseSearchReportsWhenOptionalSidecarIsAbsent(t *testing.T) {
 	service, _ := newFixtureService(t)
 	response := get(t, service, "/api/v1/search?q=%E4%B8%AD%E6%96%87&limit=10")
-	if response.Code != http.StatusOK || len(searchIDs(t, response)) != 0 {
+	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("search without sidecar: %d %s", response.Code, response.Body.String())
+	}
+	var failure struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &failure); err != nil || failure.Error.Code != "reverse_search_unavailable" {
+		t.Fatalf("search without sidecar returned an unstable error: %#v, %v", failure, err)
+	}
+}
+
+func TestHealthReportsReverseSearchCapability(t *testing.T) {
+	fixtures := []struct {
+		name      string
+		service   func(testing.TB) *server.Service
+		available bool
+	}{
+		{name: "absent", service: func(t testing.TB) *server.Service { service, _ := newFixtureService(t); return service }},
+		{name: "present", service: newFixtureServiceWithReverseSearch, available: true},
+	}
+	for _, fixture := range fixtures {
+		t.Run(fixture.name, func(t *testing.T) {
+			response := get(t, fixture.service(t), "/api/v1/health")
+			var health struct {
+				Capabilities struct {
+					ChineseReverseSearch bool `json:"chineseReverseSearch"`
+				} `json:"capabilities"`
+			}
+			if response.Code != http.StatusOK {
+				t.Fatalf("health: %d %s", response.Code, response.Body.String())
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &health); err != nil || health.Capabilities.ChineseReverseSearch != fixture.available {
+				t.Fatalf("health capability = %#v, %v", health, err)
+			}
+		})
 	}
 }
 

@@ -1,6 +1,7 @@
 package reversesearch
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -18,19 +19,31 @@ import (
 
 type Store struct{ db *sql.DB }
 
-const highestScopeMatchTier = 3
+const (
+	highestCandidatePoolTier   = 3
+	segmentCompactnessWeight   = 40
+	overallCompactnessWeight   = 120
+	positionQualityWeight      = 60
+	leadingQueryCoverageWeight = 80
+	bracketOnlyPenalty         = 90
+	bigramCoverageWeight       = 30
+	longestRunWeight           = 3
+	negationMismatchPenalty    = 45
+)
 
 type candidate struct {
-	id               int64
-	document         SearchDocument
-	bm25             float64
-	score            float64
-	matchTier        int
-	scopeTier        int
-	exact            bool
-	coverage         float64
-	longest          int
-	negationMismatch bool
+	id                int64
+	document          SearchDocument
+	bm25              float64
+	score             float64
+	matchTier         int
+	exact             bool
+	coverage          float64
+	longest           int
+	negationMismatch  bool
+	candidatePoolTier int
+	resultPriority    int
+	corroboration     int
 }
 
 // Open validates that the sidecar was built from the current primary dictionary.
@@ -216,7 +229,7 @@ func (s *Store) searchCandidates(
 	scopes []Scope,
 	asciiTerms []string,
 ) ([]candidate, error) {
-	partitions := partitionScopesByMatchTier(scopes)
+	partitions := partitionScopesByCandidatePool(scopes)
 	var candidates []candidate
 	for _, partition := range partitions {
 		predicate, predicateArguments := candidatePredicate(partition, asciiTerms)
@@ -253,7 +266,7 @@ func (s *Store) searchExactCandidates(
 	scopes []Scope,
 	asciiTerms []string,
 ) ([]candidate, error) {
-	partitions := partitionScopesByMatchTier(scopes)
+	partitions := partitionScopesByCandidatePool(scopes)
 	var candidates []candidate
 	for _, partition := range partitions {
 		predicate, predicateArguments := candidatePredicate(partition, asciiTerms)
@@ -282,17 +295,17 @@ func (s *Store) searchExactCandidates(
 	return candidates, nil
 }
 
-func partitionScopesByMatchTier(scopes []Scope) [][]Scope {
-	byTier := make([][]Scope, highestScopeMatchTier+1)
+func partitionScopesByCandidatePool(scopes []Scope) [][]Scope {
+	byTier := make([][]Scope, highestCandidatePoolTier+1)
 	for _, scope := range scopes {
-		tier := scopeMatchTier(scope)
-		if tier < 0 || tier > highestScopeMatchTier {
+		tier := candidatePoolTier(scope)
+		if tier < 0 || tier > highestCandidatePoolTier {
 			tier = 0
 		}
 		byTier[tier] = append(byTier[tier], scope)
 	}
-	partitions := make([][]Scope, 0, highestScopeMatchTier)
-	for tier := highestScopeMatchTier; tier >= 0; tier-- {
+	partitions := make([][]Scope, 0, highestCandidatePoolTier)
+	for tier := highestCandidatePoolTier; tier >= 0; tier-- {
 		if len(byTier[tier]) > 0 {
 			partitions = append(partitions, byTier[tier])
 		}
@@ -301,15 +314,15 @@ func partitionScopesByMatchTier(scopes []Scope) [][]Scope {
 }
 
 func scopesWithoutCandidateTiers(scopes []Scope, candidates []candidate) []Scope {
-	var matchedTiers [highestScopeMatchTier + 1]bool
+	var matchedTiers [highestCandidatePoolTier + 1]bool
 	for _, candidate := range candidates {
-		if candidate.scopeTier >= 0 && candidate.scopeTier <= highestScopeMatchTier {
-			matchedTiers[candidate.scopeTier] = true
+		if candidate.candidatePoolTier >= 0 && candidate.candidatePoolTier <= highestCandidatePoolTier {
+			matchedTiers[candidate.candidatePoolTier] = true
 		}
 	}
 	missing := make([]Scope, 0, len(scopes))
 	for _, scope := range scopes {
-		if !matchedTiers[scopeMatchTier(scope)] {
+		if !matchedTiers[candidatePoolTier(scope)] {
 			missing = append(missing, scope)
 		}
 	}
@@ -357,7 +370,8 @@ func scanCandidates(
 			return nil, fmt.Errorf("invalid stored location path: %w", err)
 		}
 		c.score, c.matchTier, c.exact, c.coverage, c.longest, c.negationMismatch = scoreCandidate(queryRunes, matcher, c.document, c.bm25)
-		c.scopeTier = scopeMatchTier(c.document.Scope)
+		c.candidatePoolTier = candidatePoolTier(c.document.Scope)
+		c.resultPriority = scopeResultPriority(c.document.Scope)
 		candidates = append(candidates, c)
 	}
 	if err := rows.Err(); err != nil {
@@ -444,6 +458,7 @@ func scoreCandidate(
 	}
 	negationMismatch := longest > 0 && !polarityMatchAtLongest
 	bigramCoverage := coverageSequences(queryRunes, sequences)
+	leadingCoverage := leadingQueryCoverage(queryRunes, sequences)
 	segmentExact, grammaticalExtension, segmentBoundary, compactness, positionQuality := segmentMatchQuality(queryRunes, sequences)
 	totalRunes := 0
 	for _, sequence := range sequences {
@@ -460,21 +475,22 @@ func scoreCandidate(
 		matchTier = 2
 	}
 	score := float64(document.Weight) - bm25
-	score += compactness * 40
-	score += overallCompactness * 120
-	score += positionQuality * 60
+	score += compactness * segmentCompactnessWeight
+	score += overallCompactness * overallCompactnessWeight
+	score += positionQuality * positionQualityWeight
+	score += leadingCoverage * leadingQueryCoverageWeight
 	if bracketOnly {
-		score -= 90
+		score -= bracketOnlyPenalty
 	}
-	score += bigramCoverage * 30
-	score += float64(longest) * 3
+	score += bigramCoverage * bigramCoverageWeight
+	score += float64(longest) * longestRunWeight
 	if negationMismatch {
-		score -= 45
+		score -= negationMismatchPenalty
 	}
 	return score, matchTier, exact, bigramCoverage, longest, negationMismatch
 }
 
-func scopeMatchTier(scope Scope) int {
+func candidatePoolTier(scope Scope) int {
 	switch scope {
 	case ScopeSense, ScopePhrase, ScopeForm:
 		return 3
@@ -484,6 +500,21 @@ func scopeMatchTier(scope Scope) int {
 		return 1
 	default:
 		return 0
+	}
+}
+
+func scopeResultPriority(scope Scope) int {
+	switch scope {
+	case ScopeSense:
+		return 3
+	case ScopePhrase, ScopeForm:
+		return 2
+	case ScopeUsage:
+		return 1
+	case ScopeExample:
+		return 0
+	default:
+		return -1
 	}
 }
 
@@ -560,6 +591,28 @@ func coverageSequences(query []rune, targets [][]rune) float64 {
 	return float64(hits) / float64(len(query)-1)
 }
 
+func leadingQueryCoverage(query []rune, targets [][]rune) float64 {
+	if len(query) == 0 {
+		return 0
+	}
+	longest := 0
+	for _, target := range targets {
+		for start, value := range target {
+			if value != query[0] {
+				continue
+			}
+			length := 1
+			for length < len(query) && start+length < len(target) && target[start+length] == query[length] {
+				length++
+			}
+			if length > longest {
+				longest = length
+			}
+		}
+	}
+	return float64(longest) / float64(len(query))
+}
+
 func containsRune(values []rune, wanted rune) bool {
 	for _, value := range values {
 		if value == wanted {
@@ -574,15 +627,30 @@ func groupCandidates(query []rune, candidates []candidate, limit int) []Group {
 		return []Group{}
 	}
 	candidates = filterCandidatesForQuery(query, candidates)
+	qualityCounts := make(map[candidateQuality]int, len(candidates))
+	seenEvidence := make(map[candidateEvidence]struct{}, len(candidates))
+	for _, item := range candidates {
+		quality := candidateQuality{
+			entryID:        item.document.EntryID,
+			matchTier:      item.matchTier,
+			resultPriority: item.resultPriority,
+		}
+		evidence := candidateEvidence{candidateQuality: quality, chineseText: item.document.ChineseText}
+		if _, exists := seenEvidence[evidence]; !exists && qualityCounts[quality] < maxMatches {
+			seenEvidence[evidence] = struct{}{}
+			qualityCounts[quality]++
+		}
+	}
+	for index := range candidates {
+		candidates[index].corroboration = qualityCounts[candidateQuality{
+			entryID:        candidates[index].document.EntryID,
+			matchTier:      candidates[index].matchTier,
+			resultPriority: candidates[index].resultPriority,
+		}]
+	}
 	sort.SliceStable(candidates, func(left, right int) bool {
-		if candidates[left].matchTier != candidates[right].matchTier {
-			return candidates[left].matchTier > candidates[right].matchTier
-		}
-		if candidates[left].scopeTier != candidates[right].scopeTier {
-			return candidates[left].scopeTier > candidates[right].scopeTier
-		}
-		if candidates[left].score != candidates[right].score {
-			return candidates[left].score > candidates[right].score
+		if relevance := compareCandidateRelevance(candidates[left], candidates[right]); relevance != 0 {
+			return relevance > 0
 		}
 		if candidates[left].document.EntryID != candidates[right].document.EntryID {
 			return candidates[left].document.EntryID < candidates[right].document.EntryID
@@ -610,6 +678,43 @@ func groupCandidates(query []rune, candidates []candidate, limit int) []Group {
 		groups[index].Matches = append(groups[index].Matches, Match{Scope: candidate.document.Scope, English: candidate.document.EnglishText, Chinese: candidate.document.ChineseText, Location: candidate.document.Location})
 	}
 	return groups
+}
+
+func compareCandidateRelevance(left, right candidate) int {
+	if order := cmp.Compare(left.matchTier, right.matchTier); order != 0 {
+		return order
+	}
+	if order := cmp.Compare(left.candidatePoolTier, right.candidatePoolTier); order != 0 {
+		return order
+	}
+	// Scope refines complete matches; partial fallbacks remain ordered by textual relevance.
+	if left.matchTier > 1 {
+		if order := cmp.Compare(left.resultPriority, right.resultPriority); order != 0 {
+			return order
+		}
+		if order := cmp.Compare(left.corroboration, right.corroboration); order != 0 {
+			return order
+		}
+		return cmp.Compare(left.score, right.score)
+	}
+	if order := cmp.Compare(left.score, right.score); order != 0 {
+		return order
+	}
+	if order := cmp.Compare(left.resultPriority, right.resultPriority); order != 0 {
+		return order
+	}
+	return cmp.Compare(left.corroboration, right.corroboration)
+}
+
+type candidateQuality struct {
+	entryID        string
+	matchTier      int
+	resultPriority int
+}
+
+type candidateEvidence struct {
+	candidateQuality
+	chineseText string
 }
 
 func filterCandidatesForQuery(query []rune, candidates []candidate) []candidate {
