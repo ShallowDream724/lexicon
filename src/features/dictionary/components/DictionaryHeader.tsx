@@ -187,7 +187,7 @@ export function DictionaryHeader({
           <span className="header-divider" aria-hidden="true" />
           <span className="header-library-label">
             <Library aria-hidden="true" />
-            本地词库
+            个人词库
           </span>
         </nav>
       </div>
@@ -255,15 +255,17 @@ export function DictionaryHeader({
 
           {visibleQueryHistory.length ? (
             <div className="search-recent-row" aria-label="历史查询">
-              <span>历史查询：</span>
-              {visibleQueryHistory.map((record) => (
-                <QueryHistoryItem
-                  key={record.key}
-                  record={record}
-                  onSelect={onSelectQueryHistory}
-                  onDelete={onDeleteQueryHistory}
-                />
-              ))}
+              <span className="search-recent-label">历史查询：</span>
+              <div className="search-recent-list">
+                {visibleQueryHistory.map((record) => (
+                  <QueryHistoryItem
+                    key={record.key}
+                    record={record}
+                    onSelect={onSelectQueryHistory}
+                    onDelete={onDeleteQueryHistory}
+                  />
+                ))}
+              </div>
             </div>
           ) : null}
 

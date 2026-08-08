@@ -76,6 +76,32 @@ test("fits the largest whole number of tabs into the measured dock width", () =>
   );
 });
 
+test("shrinks a non-overflowing frame to the aggregate rendered tab width", () => {
+  assert.deepEqual(
+    fitHorizontalTabsToWidth({
+      availableWidth: 500,
+      itemCount: 4,
+      itemWidth: 180,
+      contentWidth: 405,
+      staticChromeWidth: 10,
+      overflowChromeWidth: 24,
+    }),
+    { overflowing: false, visibleCount: 4, frameWidth: 415, pageWidth: 405 },
+  );
+
+  assert.deepEqual(
+    fitHorizontalTabsToWidth({
+      availableWidth: 255,
+      itemCount: 5,
+      itemWidth: 75,
+      contentWidth: 375,
+      staticChromeWidth: 10,
+      overflowChromeWidth: 24,
+    }),
+    { overflowing: true, visibleCount: 3, frameWidth: 249, pageWidth: 225 },
+  );
+});
+
 test("reports only directions that still contain horizontally hidden content", () => {
   assert.deepEqual(
     horizontalScrollState({ scrollLeft: 0, clientWidth: 320, scrollWidth: 320 }),

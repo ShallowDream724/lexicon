@@ -14,6 +14,7 @@ export type HorizontalTabLayoutMetrics = {
   availableWidth: number;
   itemCount: number;
   itemWidth: number;
+  contentWidth?: number;
   staticChromeWidth: number;
   overflowChromeWidth: number;
 };
@@ -66,7 +67,10 @@ export function fitHorizontalTabsToWidth(
   }
 
   const availableWidth = Math.max(0, metrics.availableWidth);
-  const allItemsWidth = metrics.itemCount * metrics.itemWidth;
+  const measuredContentWidth = finiteNonNegative(metrics.contentWidth ?? 0);
+  const allItemsWidth = measuredContentWidth > 0
+    ? measuredContentWidth
+    : metrics.itemCount * metrics.itemWidth;
   const naturalWidth = allItemsWidth + metrics.staticChromeWidth;
   if (naturalWidth <= availableWidth + tolerance) {
     return {

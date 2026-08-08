@@ -40,8 +40,8 @@
   );
   --home-recent-column-gap: clamp(.26667rem, calc(-.1098rem + 2.35294vw), .53333rem);
   --home-recent-font-size: clamp(.32rem, calc(.20706rem + .70588vw), .4rem);
-  --home-recent-height: clamp(.58667rem, calc(1.10118rem - 1.88235vw), .8rem);
-  --home-recent-margin-top: clamp(.21333rem, calc(-.31373rem + 3.29412vw), .58667rem);
+  --home-recent-height: .8rem;
+  --home-recent-margin-top: clamp(.21333rem, calc(-.01308rem + 1.41509vw), .37333rem);
   --home-topbar-min-height: clamp(1.6rem, calc(1.11059rem + 3.05882vw), 1.94667rem);
   --home-topbar-padding-bottom: clamp(.2rem, calc(-.00706rem + 1.29412vw), .34667rem);
   --home-topbar-padding-top: clamp(.16rem, calc(-.25412rem + 2.58824vw), .45333rem);
@@ -622,14 +622,14 @@
 }
 
 .search-recent-row {
-  align-items: baseline;
+  align-items: center;
   color: #333a4d;
   display: flex;
-  flex-wrap: wrap;
   font-size: calc(.4rem + var(--reading-font-delta));
-  gap: .26667rem .53333rem;
+  column-gap: .53333rem;
   line-height: .58667rem;
   margin: .58667rem 0 0;
+  min-width: 0;
 }
 
 .header-search-region.is-home .search-recent-row {
@@ -642,14 +642,39 @@
   width: 100%;
 }
 
-.search-recent-row > span:first-child {
+.search-recent-label {
   color: #242942;
   flex: 0 0 auto;
+}
+
+.search-recent-list {
+  -webkit-overflow-scrolling: touch;
+  align-items: center;
+  column-gap: .53333rem;
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
+}
+
+.header-search-region.is-home .search-recent-list {
+  column-gap: var(--home-recent-column-gap);
+  height: 100%;
+}
+
+.search-recent-list::-webkit-scrollbar {
+  display: none;
+  height: 0;
 }
 
 .search-recent-item {
   align-items: center;
   display: inline-flex;
+  flex: 0 0 auto;
   max-width: min(10em, 20ch);
   min-width: 0;
   position: relative;
@@ -661,6 +686,8 @@
   border: 0;
   color: #a0a8ba;
   cursor: pointer;
+  font: inherit;
+  line-height: inherit;
   min-width: 0;
   padding: 0;
   touch-action: manipulation;
@@ -739,7 +766,7 @@
 
 @media (any-pointer: coarse) {
   .search-recent-query {
-    padding: .21333rem 0;
+    padding: .10667rem 0;
   }
 }
 
@@ -4311,8 +4338,7 @@
 
   .search-recent-row {
     font-size: .32rem;
-    flex-wrap: wrap;
-    gap: 0 .26667rem;
+    column-gap: .26667rem;
     height: .8rem;
     margin-top: .21333rem;
     overflow: hidden;
@@ -4320,13 +4346,14 @@
     width: 100%;
   }
 
+  .search-recent-list {
+    column-gap: .26667rem;
+    height: 100%;
+  }
+
   .search-recent-item {
     flex: 0 0 auto;
     max-width: min(8em, 16ch);
-  }
-
-  .search-recent-query {
-    padding: .10667rem 0;
   }
 
   .search-options {

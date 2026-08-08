@@ -66,7 +66,10 @@ export function MobileQuickFind({
     const frame = partFrameRef.current;
     const scroller = partTabsRef.current;
     const trigger = triggerRef.current;
-    const firstPart = scroller?.querySelector<HTMLButtonElement>("[role=tab]");
+    const partElements = scroller
+      ? Array.from(scroller.querySelectorAll<HTMLButtonElement>("[role=tab]"))
+      : [];
+    const firstPart = partElements[0];
     if (!dock || !frame || !scroller || !trigger || !firstPart) {
       setPartLayout(null);
       return;
@@ -110,6 +113,10 @@ export function MobileQuickFind({
           frameStyle.getPropertyValue("--mobile-part-cue-width"),
         );
         const itemWidth = firstPart.getBoundingClientRect().width;
+        const contentWidth = partElements.reduce(
+          (width, part) => width + part.getBoundingClientRect().width,
+          0,
+        );
         if (availableWidth <= 0 || !Number.isFinite(itemWidth) || itemWidth <= 0) {
           return;
         }
@@ -117,6 +124,7 @@ export function MobileQuickFind({
           availableWidth,
           itemCount: model.parts.length,
           itemWidth,
+          contentWidth,
           staticChromeWidth: staticInset * 2,
           overflowChromeWidth: (overflowInset + cueWidth) * 2,
         });
@@ -135,7 +143,7 @@ export function MobileQuickFind({
     const resizeObserver = new ResizeObserver(measure);
     resizeObserver.observe(dock);
     resizeObserver.observe(trigger);
-    resizeObserver.observe(firstPart);
+    partElements.forEach((part) => resizeObserver.observe(part));
     const visualViewport = window.visualViewport;
     window.addEventListener("resize", measure);
     window.addEventListener("orientationchange", measure);

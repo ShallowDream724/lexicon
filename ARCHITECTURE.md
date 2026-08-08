@@ -192,10 +192,11 @@ inner-page tablet sizing never participates in the home flex composition. Header
 derived from the intrinsic search stack, a bounded continuous top inset, and one fixed lower
 inset, so ultra-wide layouts cannot turn flex surplus into empty blue space. The form reserves
 the recent-query row before the first query so that history availability does not move the brand.
-Phone recent queries occupy one visual line; complete flex items that do not fit move into
-an overflow-hidden second line, so truncated word fragments never appear. Intrinsic content
-remains free to expand under text zoom. Brand scale and vertical spacing follow continuous
-width curves so crossing a device breakpoint does not create a visual jump.
+The recent-query label remains fixed while its complete records occupy one independently
+scrollable line with no visible scrollbar. Its reserved interaction height contains coarse-pointer
+targets without clipping when the viewport height changes. Intrinsic content remains free to
+expand under text zoom. Brand scale and vertical spacing follow continuous width curves so
+crossing a device breakpoint does not create a visual jump.
 
 The entry reading shell uses fixed top insets for phone, portrait-tablet, and wider
 compositions, while headword separation grows continuously without an intermediate-width
@@ -333,7 +334,8 @@ relation note is retained. A word-family record that repeats the active headword
 its non-empty note into the headword content instead of appearing as its own derivative.
 
 The mobile part-of-speech control measures its dock rather than assuming a device class.
-A single part remains a non-scrollable, evenly inset capsule. Overflowing entries expose
+A non-overflowing capsule ends after the aggregate rendered width of its labels instead of
+estimating every label from the first one. Overflowing entries expose
 the largest whole number of tabs that fit after reserving the quick-find action and
 scroll cues; selecting the right-hand tab aligns it to the next page's leading edge.
 Available directions receive a low-frequency, reduced-motion-aware outward nudge on their
