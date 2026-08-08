@@ -571,6 +571,7 @@ export function DictionaryWorkspace({
     async (
       rawQuery: string,
       options: {
+        preserveResultPage?: boolean;
         route?: "none" | "push" | "replace";
         targetArticleId?: string;
         scope?: readonly DictionarySearchScope[];
@@ -589,6 +590,11 @@ export function DictionaryWorkspace({
       const scope = reverseLookup
         ? parseChineseSearchScopes(options.scope?.join(","))
         : undefined;
+      const previousResults = searchResultsState.current;
+      const preserveResultPage =
+        options.preserveResultPage === true &&
+        viewState.current === "search-results" &&
+        normalizeSubmittedQuery(previousResults.query) === requestedQuery;
       const requestKey = dictionarySearchRequestKey(requestedQuery, scope);
       if (
         submittedSearchKey.current === requestKey &&
@@ -620,11 +626,13 @@ export function DictionaryWorkspace({
       setSearchError(null);
       setEntryPending(false);
       setPendingSearchLocation(undefined);
-      setView("loading");
+      if (!preserveResultPage) {
+        setView("loading");
+      }
       setSearchResults({
         query: requestedQuery,
         scope,
-        items: [],
+        items: preserveResultPage ? previousResults.items : [],
         pending: true,
         error: null,
         nextOffset: null,
@@ -1212,6 +1220,7 @@ export function DictionaryWorkspace({
                 scope: searchResults.scope,
               })}
               onScopeChange={(scope) => void runSearch(searchResults.query, {
+                preserveResultPage: true,
                 route: "push",
                 scope,
               })}

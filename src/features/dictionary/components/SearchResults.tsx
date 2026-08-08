@@ -94,7 +94,7 @@ export function SearchResults({
         </div>
       ) : null}
 
-      {pending ? <p className="search-results-status" role="status">正在查询</p> : null}
+      {pending ? <p className="visually-hidden" role="status">正在查询</p> : null}
 
       {!pending && error ? (
         <div className="search-results-error" role="alert">
@@ -103,7 +103,7 @@ export function SearchResults({
         </div>
       ) : null}
 
-      {!pending && !error && items.length ? (
+      {!error && items.length ? (
         <ul className="search-results-list" aria-label="词条">
           {items.map((item) => {
             const matches = item.kind === "dictionary" ? item.matches ?? [] : [];

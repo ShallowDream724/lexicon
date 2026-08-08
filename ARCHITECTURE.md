@@ -187,6 +187,10 @@ brand lockup. Tablet and constrained desktop widths collapse it to the brand mar
 the mark and search form in one centered two-column group. Phone layouts restore the full
 lockup above a compact form. The home form is bounded on phones, then its control geometry
 and width grow continuously toward the wide layout instead of jumping at a device breakpoint.
+Home-only variables own its topbar, brand-to-form gap, recent-query row, and blue-region
+compression; inner-page tablet sizing never participates in the home flex composition.
+The blue region pairs its height reduction with an equal top-inset compensation, preserving
+the brand anchor while reducing the unused space below recent queries.
 Phone recent queries occupy one visual line; complete flex items that do not fit move into
 an overflow-hidden second line, so truncated word fragments never appear. The home header's
 minimum height combines dynamic viewport height with viewport width: tall, narrow screens
@@ -253,7 +257,10 @@ candidate limit, so changing scope searches the complete eligible projection ins
 filtering an already truncated browser result. Each semantic ranking tier owns an independent,
 fixed candidate budget. Complete-token matches suppress partial fallback only within their
 own tier, so enabling examples cannot evict or disable term and phrase candidates. All tiers
-then share the existing deterministic scorer, grouping, and pagination boundary.
+then share the existing deterministic scorer, grouping, and pagination boundary. A scope
+change keeps the controls and current result list mounted while the replacement request is
+pending, updates the checked state immediately, and announces progress through a non-visual
+live region. New submitted queries retain the full loading transition.
 
 Result-page navigation keeps a bounded three-query in-memory session cache keyed by the
 canonical query and scope. Each session retains the loaded result window and scroll offset,

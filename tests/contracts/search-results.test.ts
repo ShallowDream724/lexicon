@@ -64,6 +64,31 @@ test("renders scope controls only for Chinese reverse search", () => {
   assert.doesNotMatch(english, /词义与短语/);
 });
 
+test("keeps scope controls and current results mounted during a scope refresh", () => {
+  const item: DictionarySearchItem = {
+    kind: "dictionary",
+    id: "rest",
+    headword: "rest",
+    partsOfSpeech: ["noun"],
+    translationPreview: "休息",
+  };
+  const html = renderToStaticMarkup(createElement(SearchResults, {
+    query: "休息",
+    items: [item],
+    pending: true,
+    scope: ["sense", "phrase", "form", "example"],
+    onScopeChange: () => undefined,
+    onSelect: () => undefined,
+  }));
+
+  assert.match(html, /aria-busy="true"/);
+  assert.match(html, /正在查询/);
+  assert.match(html, /词义与短语/);
+  assert.match(html, /例句/);
+  assert.match(html, /aria-label="词条"/);
+  assert.match(html, />rest</);
+});
+
 test("renders one bounded continuation control for incremental Chinese results", () => {
   const html = renderToStaticMarkup(createElement(SearchResults, {
     query: "休息",
