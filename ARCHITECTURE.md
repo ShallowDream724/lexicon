@@ -317,7 +317,10 @@ A single part remains a non-scrollable, evenly inset capsule. Overflowing entrie
 the largest whole number of tabs that fit after reserving the quick-find action and
 scroll cues; selecting the right-hand tab aligns it to the next page's leading edge.
 Available directions receive a low-frequency, reduced-motion-aware outward nudge on their
-white chevrons; hidden directions expose no cue.
+white chevrons; hidden directions expose no cue. Both cue elements start their animation
+at the same mount phase, while scroll availability controls only visibility. A newly
+available direction therefore joins the existing synchronized beat instead of starting
+an independent animation clock.
 The measurement is bounded by both the dock rectangle and the visual viewport. Resize,
 visual-viewport, orientation, and tab-size observation expand and contract the tab page
 in both directions. Changing entries resets the strip to its first tab, and every

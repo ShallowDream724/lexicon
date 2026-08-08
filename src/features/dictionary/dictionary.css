@@ -3732,11 +3732,11 @@
   width: .26667rem;
 }
 
-.mobile-quick-find-part-tabs-frame.can-scroll-left .mobile-quick-find-scroll-cue.is-left:not(:disabled) svg {
+.mobile-quick-find-scroll-cue.is-left svg {
   animation: mobile-part-cue-left 3.2s ease-in-out infinite;
 }
 
-.mobile-quick-find-part-tabs-frame.can-scroll-right .mobile-quick-find-scroll-cue.is-right:not(:disabled) svg {
+.mobile-quick-find-scroll-cue.is-right svg {
   animation: mobile-part-cue-right 3.2s ease-in-out infinite;
 }
 
@@ -4656,8 +4656,7 @@
     transition: none;
   }
 
-  .mobile-quick-find-part-tabs-frame.can-scroll-left .mobile-quick-find-scroll-cue.is-left:not(:disabled) svg,
-  .mobile-quick-find-part-tabs-frame.can-scroll-right .mobile-quick-find-scroll-cue.is-right:not(:disabled) svg {
+  .mobile-quick-find-scroll-cue svg {
     animation: none;
   }
 
