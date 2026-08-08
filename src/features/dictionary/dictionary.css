@@ -4009,7 +4009,7 @@
   .header-search-region:not(.is-home) {
     column-gap: .32rem;
     display: grid;
-    grid-template-columns: 1.17333rem minmax(0, 20.34667rem) 1.17333rem;
+    grid-template-columns: 1.17333rem minmax(0, 20.34667rem);
     justify-content: center;
   }
 
@@ -4019,9 +4019,9 @@
   }
 
   .header-search-region:not(.is-home) .product-mark {
-    align-self: center;
+    align-self: start;
     grid-column: 1;
-    margin: 0;
+    margin: .29333rem 0 0;
     width: 1.17333rem;
   }
 
@@ -4118,8 +4118,13 @@
 }
 
 @media (max-width: 600px) {
+  .dictionary-header.is-home {
+    min-height: 38.2dvh;
+  }
+
   .header-topbar {
-    padding: .26667rem .37333rem;
+    min-height: 1.6rem;
+    padding: .16rem .37333rem .2rem;
     width: 100%;
   }
 
@@ -4132,8 +4137,11 @@
   }
 
   .header-search-region.is-home {
+    gap: .4rem;
+    padding-bottom: .48rem;
     padding-left: .37333rem;
     padding-right: .37333rem;
+    padding-top: .32rem;
     width: 100%;
   }
 
@@ -4141,6 +4149,10 @@
     align-self: center;
     flex-basis: auto;
     margin: 0 0 .32rem;
+  }
+
+  .header-search-region.is-home .product-mark {
+    margin-bottom: 0;
   }
 
   .search-form {
@@ -4158,9 +4170,83 @@
   }
 
   .search-recent-row {
-    gap: .13333rem .32rem;
-    margin-top: .26667rem;
     font-size: .32rem;
+    flex-wrap: nowrap;
+    gap: .26667rem;
+    margin-top: .21333rem;
+    overflow: hidden;
+    white-space: nowrap;
+    width: 100%;
+  }
+
+  .search-recent-item {
+    flex: 0 0 auto;
+    max-width: min(8em, 16ch);
+  }
+
+  .search-recent-query {
+    padding: .10667rem 0;
+  }
+
+  .search-input-row {
+    border-radius: .21333rem;
+    border-width: .04rem;
+    min-height: 1.2rem;
+    padding: .16rem;
+  }
+
+  .search-leading-icon {
+    height: .42667rem;
+    margin-left: .10667rem;
+    width: .42667rem;
+  }
+
+  .search-input-row input {
+    font-size: .37333rem;
+    margin: 0 .16rem;
+  }
+
+  .search-submit-button {
+    border-radius: .10667rem;
+    font-size: .32rem;
+    padding: .16rem .32rem;
+  }
+
+  .search-clear-button {
+    flex-basis: .53333rem;
+    height: .53333rem;
+    margin-right: .16rem;
+    width: .53333rem;
+  }
+
+  .search-clear-button svg {
+    height: .32rem;
+    width: .32rem;
+  }
+
+  .search-options {
+    border-radius: .21333rem;
+    margin-top: .16rem;
+  }
+
+  .search-option {
+    font-size: .42667rem;
+    gap: .10667rem .26667rem;
+    grid-template-columns: minmax(1.86667rem, auto) minmax(0, 1fr);
+    padding: .26667rem .32rem;
+  }
+
+  .search-option-headword {
+    font-size: .42667rem;
+  }
+
+  .search-option-pos,
+  .search-option-preview {
+    font-size: .29333rem;
+  }
+
+  .search-option.is-exact .search-option-headword {
+    font-size: .53333rem;
   }
 
   .dictionary-shell {
@@ -4423,11 +4509,15 @@
     --search-result-support-size: .4rem;
     --search-result-title-size: .58667rem;
     min-height: 8rem;
-    padding: .8rem .37333rem 2.4rem;
+    padding: .4rem .37333rem 2.4rem;
   }
 
   .search-results h1 {
-    margin-bottom: .64rem;
+    margin-bottom: .8rem;
+  }
+
+  .search-results-scope {
+    margin-top: -.4rem;
   }
 
   .search-result-evidence-list button {
@@ -4490,67 +4580,6 @@
   .header-tool svg {
     height: .42667rem;
     width: .42667rem;
-  }
-
-  .search-input-row {
-    border-width: .04rem;
-    border-radius: .21333rem;
-    min-height: 1.2rem;
-    padding: .16rem;
-  }
-
-  .search-leading-icon {
-    height: .42667rem;
-    margin-left: .10667rem;
-    width: .42667rem;
-  }
-
-  .search-input-row input {
-    font-size: .37333rem;
-    margin: 0 .16rem;
-  }
-
-  .search-submit-button {
-    border-radius: .10667rem;
-    font-size: .32rem;
-    padding: .16rem .32rem;
-  }
-
-  .search-clear-button {
-    flex-basis: .53333rem;
-    height: .53333rem;
-    margin-right: .16rem;
-    width: .53333rem;
-  }
-
-  .search-clear-button svg {
-    height: .32rem;
-    width: .32rem;
-  }
-
-  .search-options {
-    border-radius: .21333rem;
-    margin-top: .16rem;
-  }
-
-  .search-option {
-    font-size: .42667rem;
-    gap: .10667rem .26667rem;
-    grid-template-columns: minmax(1.86667rem, auto) minmax(0, 1fr);
-    padding: .26667rem .32rem;
-  }
-
-  .search-option-headword {
-    font-size: .42667rem;
-  }
-
-  .search-option-pos,
-  .search-option-preview {
-    font-size: .29333rem;
-  }
-
-  .search-option.is-exact .search-option-headword {
-    font-size: .53333rem;
   }
 
   .entry-view {
