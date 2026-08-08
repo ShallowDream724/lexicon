@@ -231,6 +231,12 @@ URL, cancellation boundary, and every continuation page. The API applies it befo
 candidate limit, so changing scope searches the complete eligible projection instead of
 filtering an already truncated browser result.
 
+Result-page navigation keeps a bounded three-query in-memory session cache keyed by the
+canonical query and scope. Each session retains the loaded result window and scroll offset,
+so history navigation from an entry restores both without serializing result bodies into the
+URL, browser history, or persistent storage. Pending continuation requests are normalized to
+a retryable idle state before capture, and older sessions are evicted by least recent use.
+
 Modal resources share one reference-counted viewport lock. Opening an illustration,
 usage panel, quick-find dialog, note editor, or personal-library drawer prevents the
 underlying entry from scrolling while preserving the current page position and

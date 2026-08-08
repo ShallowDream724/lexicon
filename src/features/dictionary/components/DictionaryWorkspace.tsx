@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp } from "lucide-react";
 
 import type { CanonicalEntry } from "../../../../packages/dictionary-schema/src/index";
@@ -35,6 +35,7 @@ import {
   resolveSearchMatches,
 } from "../search-matches";
 import { activeSectionForScroll } from "../scroll-spy-model";
+import { createResultPageSessionStore } from "../result-page-session";
 import {
   parseWorkspaceRoute,
   workspaceRouteUrl,
@@ -76,6 +77,11 @@ type SearchResultsState = {
 
 const initialReverseResultCount = 32;
 const maximumReverseResultCount = 512;
+const maximumCachedResultPages = 3;
+
+function normalizeSubmittedQuery(value: string): string {
+  return value.normalize("NFKC").trim().replace(/\s+/g, " ");
+}
 
 function nextReverseResultCount(offset: number): number {
   return Math.min(Math.max(offset, initialReverseResultCount) * 2, maximumReverseResultCount);
@@ -171,6 +177,97 @@ export function DictionaryWorkspace({
   const entryRequest = useRef<AbortController | null>(null);
   const etymologyNavigationRequest = useRef<AbortController | null>(null);
   const activeAudio = useRef<HTMLAudioElement | null>(null);
+  const viewState = useRef(view);
+  const searchResultsState = useRef(searchResults);
+  const resultPageRestoreFrame = useRef<number | null>(null);
+  const [resultPageSessions] = useState(
+    () => createResultPageSessionStore<SearchResultsState>(maximumCachedResultPages),
+  );
+
+  useLayoutEffect(() => {
+    viewState.current = view;
+    searchResultsState.current = searchResults;
+  }, [searchResults, view]);
+
+  const cancelResultPageScrollRestore = useCallback((): void => {
+    if (resultPageRestoreFrame.current !== null) {
+      window.cancelAnimationFrame(resultPageRestoreFrame.current);
+      resultPageRestoreFrame.current = null;
+    }
+  }, []);
+
+  const scheduleResultPageScrollRestore = useCallback((scrollY: number): void => {
+    cancelResultPageScrollRestore();
+    resultPageRestoreFrame.current = window.requestAnimationFrame(() => {
+      resultPageRestoreFrame.current = window.requestAnimationFrame(() => {
+        resultPageRestoreFrame.current = null;
+        window.scrollTo({ top: scrollY, behavior: "auto" });
+      });
+    });
+  }, [cancelResultPageScrollRestore]);
+
+  const captureResultPageSession = useCallback((): void => {
+    const current = searchResultsState.current;
+    if (
+      viewState.current !== "search-results" ||
+      current.pending ||
+      !current.items.length
+    ) {
+      return;
+    }
+    resultPageSessions.write(
+      dictionarySearchRequestKey(current.query, current.scope),
+      {
+        state: { ...current, loadingMore: false },
+        scrollY: Math.max(0, window.scrollY),
+      },
+    );
+  }, [resultPageSessions]);
+
+  const restoreResultPageSession = useCallback((
+    rawQuery: string,
+    requestedScope?: readonly DictionarySearchScope[],
+  ): boolean => {
+    const requestedQuery = normalizeSubmittedQuery(rawQuery);
+    const scope = isChineseSearchQuery(requestedQuery)
+      ? parseChineseSearchScopes(requestedScope?.join(","))
+      : undefined;
+    const session = resultPageSessions.read(
+      dictionarySearchRequestKey(requestedQuery, scope),
+    );
+    if (!session) {
+      return false;
+    }
+
+    suggestionRequest.current?.abort();
+    suggestionRequest.current = null;
+    submittedSearchRequest.current?.abort();
+    submittedSearchRequest.current = null;
+    submittedSearchKey.current = null;
+    resultPageRequest.current?.abort();
+    resultPageRequest.current = null;
+    entryRequest.current?.abort();
+    entryRequest.current = null;
+    etymologyNavigationRequest.current?.abort();
+    etymologyNavigationRequest.current = null;
+    activeAudio.current?.pause();
+
+    setQuery(session.state.query);
+    setSearchResults({ ...session.state, pending: false, loadingMore: false });
+    setEtymology(undefined);
+    setAutoOpenEtymology(false);
+    setEntryPending(false);
+    setSearchOpen(false);
+    setSearchPending(false);
+    setSuggestions([]);
+    setSearchError(null);
+    setAudioError(null);
+    setPendingSearchLocation(undefined);
+    setDrawer(null);
+    setView("search-results");
+    scheduleResultPageScrollRestore(session.scrollY);
+    return true;
+  }, [resultPageSessions, scheduleResultPageScrollRestore]);
 
   const refreshLearningData = useCallback(async () => {
     const [nextQueryHistory, nextHistory, nextFavorites, nextNotes] = await Promise.all([
@@ -244,6 +341,8 @@ export function DictionaryWorkspace({
         searchLocation?: SearchDocumentLocation;
       } = {},
     ): Promise<boolean | null> => {
+      captureResultPageSession();
+      cancelResultPageScrollRestore();
       suggestionRequest.current?.abort();
       suggestionRequest.current = null;
       etymologyNavigationRequest.current?.abort();
@@ -326,7 +425,7 @@ export function DictionaryWorkspace({
         }
       }
     },
-    [loadEntryLearningState],
+    [cancelResultPageScrollRestore, captureResultPageSession, loadEntryLearningState],
   );
 
   const selectEtymology = useCallback(
@@ -334,6 +433,8 @@ export function DictionaryWorkspace({
       nextEtymology: EtymologyRoute,
       options: { route?: "none" | "push" | "replace"; openFirstArticle?: boolean } = {},
     ): void => {
+      captureResultPageSession();
+      cancelResultPageScrollRestore();
       suggestionRequest.current?.abort();
       suggestionRequest.current = null;
       etymologyNavigationRequest.current?.abort();
@@ -369,7 +470,7 @@ export function DictionaryWorkspace({
       }
       window.scrollTo({ top: 0, behavior: "auto" });
     },
-    [],
+    [cancelResultPageScrollRestore, captureResultPageSession],
   );
 
   const selectSearchTarget = useCallback(
@@ -398,6 +499,8 @@ export function DictionaryWorkspace({
   );
 
   const showHome = useCallback((shouldUpdateRoute: boolean): void => {
+    captureResultPageSession();
+    cancelResultPageScrollRestore();
     suggestionRequest.current?.abort();
     suggestionRequest.current = null;
     submittedSearchRequest.current?.abort();
@@ -433,7 +536,7 @@ export function DictionaryWorkspace({
       window.requestAnimationFrame(() => inputRef.current?.focus());
     }
     window.scrollTo({ top: 0, behavior: "auto" });
-  }, []);
+  }, [cancelResultPageScrollRestore, captureResultPageSession]);
 
   const runSearch = useCallback(
     async (
@@ -444,11 +547,14 @@ export function DictionaryWorkspace({
         scope?: readonly DictionarySearchScope[];
       } = {},
     ): Promise<boolean | null> => {
-      const requestedQuery = rawQuery.normalize("NFKC").trim().replace(/\s+/g, " ");
+      const requestedQuery = normalizeSubmittedQuery(rawQuery);
       if (!requestedQuery) {
         showHome(options.route !== "none");
         return false;
       }
+
+      captureResultPageSession();
+      cancelResultPageScrollRestore();
 
       const reverseLookup = isChineseSearchQuery(requestedQuery);
       const scope = reverseLookup
@@ -600,7 +706,7 @@ export function DictionaryWorkspace({
         }
       }
   },
-    [selectSearchTarget, showHome],
+    [cancelResultPageScrollRestore, captureResultPageSession, selectSearchTarget, showHome],
   );
 
   const loadMoreSearchResults = useCallback(async (): Promise<void> => {
@@ -716,6 +822,7 @@ export function DictionaryWorkspace({
 
   useEffect(() => {
     const syncLocation = () => {
+      captureResultPageSession();
       const route = parseWorkspaceRoute(new URLSearchParams(window.location.search));
       if (route.kind === "entry") {
         setView("loading");
@@ -732,6 +839,9 @@ export function DictionaryWorkspace({
         return;
       }
       if (route.kind === "query") {
+        if (restoreResultPageSession(route.query, route.scope)) {
+          return;
+        }
         updateRoute(workspaceRouteUrl(window.location.pathname, route), "replace");
         void runSearch(route.query, { route: "none", scope: route.scope });
         return;
@@ -753,8 +863,18 @@ export function DictionaryWorkspace({
       resultPageRequest.current?.abort();
       entryRequest.current?.abort();
       etymologyNavigationRequest.current?.abort();
+      cancelResultPageScrollRestore();
     };
-  }, [refreshLearningData, runSearch, selectEntry, selectEtymology, showHome]);
+  }, [
+    cancelResultPageScrollRestore,
+    captureResultPageSession,
+    refreshLearningData,
+    restoreResultPageSession,
+    runSearch,
+    selectEntry,
+    selectEtymology,
+    showHome,
+  ]);
 
   useEffect(() => {
     const normalized = query.trim();
