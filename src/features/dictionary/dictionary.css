@@ -4006,9 +4006,27 @@
     width: 100%;
   }
 
+  .header-search-region:not(.is-home) {
+    column-gap: .32rem;
+    display: grid;
+    grid-template-columns: 1.17333rem minmax(0, 20.34667rem) 1.17333rem;
+    justify-content: center;
+  }
+
   .product-mark {
     flex-basis: 4.8rem;
     margin-left: 0;
+  }
+
+  .header-search-region:not(.is-home) .product-mark {
+    align-self: center;
+    grid-column: 1;
+    margin: 0;
+    width: 1.17333rem;
+  }
+
+  .header-search-region:not(.is-home) .product-mark-copy {
+    display: none;
   }
 
   .search-form {
@@ -4017,6 +4035,13 @@
     margin-right: 0;
     max-width: 20.34667rem;
     width: 0;
+  }
+
+  .header-search-region:not(.is-home) .search-form {
+    grid-column: 2;
+    margin: 0;
+    max-width: none;
+    width: 100%;
   }
 
   .word-page {

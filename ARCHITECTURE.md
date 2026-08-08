@@ -182,6 +182,11 @@ The React layer renders only canonical types. It owns:
 - structured headword patterns, inflections, word families, and derivatives;
 - favorites, notes, history, and display preferences through repository methods.
 
+The search header uses three responsive compositions. Wide layouts keep the horizontal
+brand lockup. Tablet and constrained desktop widths collapse it to the brand mark and place
+the search form between symmetric side tracks, keeping the form centered while it consumes
+the available width. Phone layouts restore the full lockup above the form.
+
 Optional entry resources pass through one registry in
 `src/features/dictionary/resource-model.ts`. The registry determines stable ordering,
 card size, quick-find placement, and opening behavior. Source-specific checks stay in
