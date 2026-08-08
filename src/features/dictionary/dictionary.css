@@ -26,6 +26,7 @@
 }
 
 .dictionary-header {
+  --entry-search-form-width: 14.93333rem;
   background: #e8edf9;
   color: #242942;
 }
@@ -382,10 +383,10 @@
   --search-submit-padding-inline: .61333rem;
   --search-submit-radius: .21333rem;
   margin-left: 1.6rem;
-  max-width: 14.93333rem;
+  max-width: 100%;
   min-width: 0;
   position: relative;
-  width: 14.93333rem;
+  width: var(--entry-search-form-width);
 }
 
 .header-search-region.is-home .search-form {
@@ -4126,10 +4127,9 @@
   }
 
   .header-search-region:not(.is-home) {
-    --entry-search-form-max-width: 20.34667rem;
     column-gap: .32rem;
     display: grid;
-    grid-template-columns: 1.17333rem minmax(0, var(--entry-search-form-max-width));
+    grid-template-columns: 1.17333rem minmax(0, var(--entry-search-form-width));
     justify-content: center;
   }
 
@@ -4152,7 +4152,6 @@
   .header-search-region:not(.is-home) .search-form {
     grid-column: 2;
     margin: 0;
-    max-width: none;
     width: 100%;
   }
 
@@ -4164,10 +4163,6 @@
 }
 
 @media (min-width: 601px) and (max-width: 1024px) and (orientation: portrait) {
-  .header-search-region:not(.is-home) {
-    --entry-search-form-max-width: 15.25333rem;
-  }
-
   .entry-sidebar {
     flex-basis: 3.6rem;
     padding-top: .74667rem;
@@ -4333,7 +4328,6 @@
     --search-submit-radius: .10667rem;
     margin-left: auto;
     margin-right: auto;
-    max-width: none;
     width: 90%;
   }
 
