@@ -294,7 +294,12 @@ export function MobileQuickFind({
       <nav className="mobile-quick-find-dock" aria-label="词条快捷操作" ref={dockRef}>
         {model.parts.length ? (
           <div
-            className={`mobile-quick-find-part-tabs-frame${partLayout?.overflowing ? " is-overflowing" : ""}`}
+            className={[
+              "mobile-quick-find-part-tabs-frame",
+              partLayout?.overflowing ? "is-overflowing" : "",
+              partScroll.canScrollLeft ? "can-scroll-left" : "",
+              partScroll.canScrollRight ? "can-scroll-right" : "",
+            ].filter(Boolean).join(" ")}
             ref={partFrameRef}
             style={partLayout ? {
               flexBasis: partLayout.frameWidth,
