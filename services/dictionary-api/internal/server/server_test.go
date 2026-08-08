@@ -43,7 +43,7 @@ func TestImportRuntimeAPIAndNoLegacyLayout(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &search); err != nil {
 		t.Fatal(err)
 	}
-	if len(search.Items) != 3 || search.Items[0].ID != "exact" || search.Items[1].ID != "one" || search.Items[2].ID != "two" {
+	if len(search.Items) != 3 || search.Items[0].ID != "exact" || search.Items[1].ID != "two" || search.Items[2].ID != "one" {
 		t.Fatalf("unexpected ranking: %#v", search.Items)
 	}
 	if got := search.Items[0]; !reflect.DeepEqual(got.PartsOfSpeech, []string{"noun", "verb"}) || got.TranslationPreview != "字典释义" {
@@ -381,6 +381,18 @@ func TestEtymologyIsOptional(t *testing.T) {
 	}
 }
 
+func TestEnglishPrefixSearchRanksWordsBeforePhrasesByCanonicalLength(t *testing.T) {
+	service := newFixtureServiceWithEtymology(t)
+	response := get(t, service, "/api/v1/search?q=acknowl&limit=10")
+	if response.Code != http.StatusOK {
+		t.Fatalf("search: %d %s", response.Code, response.Body.String())
+	}
+	want := []string{"ack-verb", "acknowledgment", "ack-noun", "ack-phrase"}
+	if got := searchIDs(t, response); !reflect.DeepEqual(got, want) {
+		t.Fatalf("items = %v, want %v", got, want)
+	}
+}
+
 func newFixtureService(t testing.TB) (*server.Service, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -474,10 +486,12 @@ func createEtymologySource(t testing.TB, path string) {
 			INSERT INTO word_index_etymapp (id, word, lowercase, word_ids, summary, related_words) VALUES (2, 'Etymo Only', 'etymo-only', '[502]', '', '');
 			INSERT INTO word_index_etymapp (id, word, lowercase, word_ids, summary, related_words) VALUES (3, 'terribly', 'terribly', '[503]', '', '');
 			INSERT INTO word_index_etymapp (id, word, lowercase, word_ids, summary, related_words) VALUES (4, 'Adam''s apple', 'adam''s apple', '[504]', '', '');
+			INSERT INTO word_index_etymapp (id, word, lowercase, word_ids, summary, related_words) VALUES (5, 'acknowledgment', 'acknowledgment', '[505]', '', '');
 			INSERT INTO vocabulary_etymapp (id, word, type, sort, etymology, property, graph_key) VALUES (501, 'Alpha', 'entry', 1, '<p>Alpha origin</p>', '(origin)', '');
 			INSERT INTO vocabulary_etymapp (id, word, type, sort, etymology, property, graph_key) VALUES (502, 'Etymo Only', 'entry', 1, '<p>Independent origin</p>', '(origin)', '');
 			INSERT INTO vocabulary_etymapp (id, word, type, sort, etymology, property, graph_key) VALUES (503, 'terribly', 'entry', 1, '<p>Terribly origin</p>', '(adv.)', '');
 			INSERT INTO vocabulary_etymapp (id, word, type, sort, etymology, property, graph_key) VALUES (504, 'Adam''s apple', 'entry', 1, '<p>Adam''s apple origin</p>', '(n.)', '');
+			INSERT INTO vocabulary_etymapp (id, word, type, sort, etymology, property, graph_key) VALUES (505, 'acknowledgment', 'entry', 1, '<p>Acknowledgment origin</p>', '(n.)', '');
 	`); err != nil {
 		t.Fatal(err)
 	}
@@ -502,6 +516,9 @@ func createSource(t testing.TB, path string) {
 		{"gratitude", "gratitude", "gratitude", fixtureBody("gratitude")},
 		{"terribly", "ter·ribly", "ter·ribly", fixtureBody("terribly")},
 		{"adams", "Adam’s apple", "Adam’s apple", fixtureBody("adams")},
+		{"ack-phrase", "acknowledgement of country", "acknowledgement of country", fixtureBody("ack-phrase")},
+		{"ack-verb", "ac·know·ledge", "ac·know·ledge", fixtureBody("ack-verb")},
+		{"ack-noun", "ac·know·ledge·ment", "ac·know·ledge·ment", fixtureBody("ack-noun")},
 		{"the", "the", "the", fixtureBody("the")},
 		{"long-a", strings.Repeat("a", 64), strings.Repeat("a", 64), fixtureBody("long-a")},
 	} {

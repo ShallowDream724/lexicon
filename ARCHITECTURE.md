@@ -85,7 +85,8 @@ The service owns runtime storage work:
 
 - opening only the generated runtime database in read-only mode;
 - validating the project schema version at startup;
-- bounded, parameterized search with deterministic ranking;
+- bounded, parameterized search with deterministic exact, word-before-phrase,
+  canonical-length, and lexical ranking;
 - validating the reverse-search sidecar against the primary database fingerprint;
 - exact-segment and bounded FTS candidate retrieval with grouped Chinese-result ranking;
 - decompressing one independently stored entry and returning a stable envelope

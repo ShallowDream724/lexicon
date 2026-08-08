@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"dictionary-api/internal/audio"
 	"dictionary-api/internal/etymology"
@@ -308,17 +309,7 @@ func (s *Service) queryPrefixSuggestions(ctx context.Context, canonical string, 
 	for _, item := range byEntryID {
 		results = append(results, item)
 	}
-	sort.Slice(results, func(left, right int) bool {
-		if results[left].rank != results[right].rank {
-			return results[left].rank < results[right].rank
-		}
-		leftHeadword := strings.ToLower(results[left].Headword)
-		rightHeadword := strings.ToLower(results[right].Headword)
-		if leftHeadword != rightHeadword {
-			return leftHeadword < rightHeadword
-		}
-		return results[left].ID < results[right].ID
-	})
+	sortSuggestions(results)
 	if len(results) > limit {
 		results = results[:limit]
 	}
@@ -329,7 +320,12 @@ func (s *Service) queryPrefixSuggestionsForTerm(ctx context.Context, canonical s
 	prefixEnd := canonical + string(rune(0x10ffff))
 	const statement = `
 	WITH matches AS (
-	  SELECT t.entry_id, MIN(CASE WHEN t.term = ? THEN 0 ELSE 1 END) AS exact_rank
+	  SELECT
+	    t.entry_id,
+	    MIN(CASE WHEN t.term = ? THEN 0 ELSE 1 END) AS exact_rank,
+	    MIN(CASE WHEN instr(t.term, ' ') > 0 THEN 1 ELSE 0 END) AS phrase_rank,
+	    MIN(length(t.term)) AS term_length,
+	    MIN(t.term) AS sort_term
 	  FROM entry_terms t
 	  WHERE t.term >= ? AND t.term < ?
 	  GROUP BY t.entry_id
@@ -339,7 +335,9 @@ func (s *Service) queryPrefixSuggestionsForTerm(ctx context.Context, canonical s
 	JOIN entries e ON e.id = m.entry_id
 	ORDER BY
 	  m.exact_rank,
-	  e.headword COLLATE NOCASE ASC,
+	  m.phrase_rank,
+	  m.term_length,
+	  m.sort_term COLLATE NOCASE ASC,
 	  e.id ASC
 	LIMIT ?`
 	rows, err := s.db.QueryContext(ctx, statement, canonical, canonical, prefixEnd, limit)
@@ -545,12 +543,30 @@ func (s *Service) mergeEtymologySuggestions(ctx context.Context, query string, r
 			ID: result.Term, Kind: etymology.Kind, Headword: result.Headword, PartsOfSpeech: []string{}, rank: rank,
 		})
 	}
-	sort.SliceStable(*results, func(left, right int) bool {
-		leftItem, rightItem := (*results)[left], (*results)[right]
+	sortSuggestions(*results)
+	return nil
+}
+
+func sortSuggestions(items []suggestion) {
+	sort.SliceStable(items, func(left, right int) bool {
+		leftItem, rightItem := items[left], items[right]
 		if leftItem.rank != rightItem.rank {
 			return leftItem.rank < rightItem.rank
 		}
-		leftHeadword, rightHeadword := strings.ToLower(leftItem.Headword), strings.ToLower(rightItem.Headword)
+
+		leftHeadword := termkey.Enhancement(leftItem.Headword)
+		rightHeadword := termkey.Enhancement(rightItem.Headword)
+		leftIsPhrase := strings.ContainsAny(leftHeadword, " \t\r\n")
+		rightIsPhrase := strings.ContainsAny(rightHeadword, " \t\r\n")
+		if leftIsPhrase != rightIsPhrase {
+			return !leftIsPhrase
+		}
+
+		leftLength := utf8.RuneCountInString(leftHeadword)
+		rightLength := utf8.RuneCountInString(rightHeadword)
+		if leftLength != rightLength {
+			return leftLength < rightLength
+		}
 		if leftHeadword != rightHeadword {
 			return leftHeadword < rightHeadword
 		}
@@ -559,7 +575,6 @@ func (s *Service) mergeEtymologySuggestions(ctx context.Context, query string, r
 		}
 		return leftItem.Kind < rightItem.Kind
 	})
-	return nil
 }
 
 func (s *Service) dictionaryTermExists(ctx context.Context, term string) (bool, error) {
