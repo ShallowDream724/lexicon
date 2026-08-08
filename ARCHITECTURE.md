@@ -210,8 +210,10 @@ card size, quick-find placement, and opening behavior. Source-specific checks st
 resource renderers and clients rather than spreading through the entry view. Resource-card
 widths come from one rail-level size contract: featured cards share one bounded width on
 desktop and portrait tablets, while phones explicitly promote them to a full row; native
-dictionary cards retain their compact size. A featured
-card exposes its first article as the card-wide primary action, while article chips are
+dictionary cards retain their compact size. Portrait tablets lay these stable widths into a
+wrapping row: a card moves intact to the next row only when the remaining inline space is too
+small, while additional content grows the card vertically without changing its wrap size. A
+featured card exposes its first article as the card-wide primary action, while article chips are
 independent direct actions for a specific article. Etymology cards retain a book-page
 aspect ratio on desktop and landscape tablets, use the shared bounded horizontal format
 on portrait tablets, and expand to the full row only on phones. Their title and action
