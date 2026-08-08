@@ -194,7 +194,10 @@ continuous width curve so crossing a device breakpoint does not create a visual 
 
 The entry reading shell uses width-clamped top and headword separation. Tablet widths keep
 the compact reading rhythm, while additional space is introduced continuously toward wide
-desktop layouts rather than appearing at an intermediate-width breakpoint.
+desktop layouts rather than appearing at an intermediate-width breakpoint. Its portrait
+tablet composition halves the reading inset and applies separate compact scales to the
+headword, metadata, pronunciation, and part marker; phone and landscape baselines remain
+independent.
 
 Optional entry resources pass through one registry in
 `src/features/dictionary/resource-model.ts`. The registry determines stable ordering,
@@ -214,7 +217,8 @@ source mark on the spine. The footer is an unseparated inline action whose chevr
 follows its label; its narrow-phone typography is enlarged because the hidden heading
 makes the action carry the resource identity. Summary text uses the same semantic
 emphasis runs as the article source, so presentation never infers historical-language
-spans from words.
+spans from words. Card typography is owned by its fixed geometry and does not inherit the
+reading-size preference; the expanded article keeps its independent adjustable scale.
 
 Enhancement article routes keep the primary entry id when one exists. Article links
 with a stable target id resolve that article first and then route through the returned

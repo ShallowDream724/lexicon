@@ -1939,6 +1939,7 @@
 }
 
 .resource-card.etymology-resource-card {
+  --reading-font-delta: 0px;
   align-items: stretch;
   aspect-ratio: 563 / 578;
   cursor: pointer;
@@ -4080,14 +4081,91 @@
 @media (min-width: 601px) and (max-width: 1024px) and (orientation: portrait) {
   .entry-sidebar {
     flex-basis: 3.6rem;
+    padding-top: .74667rem;
   }
 
   .search-form {
     width: auto;
   }
-}
 
-@media (min-width: 601px) and (max-width: 1024px) and (orientation: portrait) {
+  .word-page {
+    padding-top: .74667rem;
+  }
+
+  .headword-block {
+    column-gap: .32rem;
+    padding-right: .8rem;
+    row-gap: .21333rem;
+  }
+
+  .headword-line {
+    gap: .13333rem;
+  }
+
+  .headword-line h1 {
+    font-size: calc(1.28rem + var(--reading-font-delta));
+  }
+
+  .entry-label {
+    font-size: calc(.29333rem + var(--reading-font-delta));
+    height: .58667rem;
+    min-width: .72rem;
+    padding-inline: .13333rem;
+  }
+
+  .entry-label-academic-register {
+    min-width: .58667rem;
+    width: .58667rem;
+  }
+
+  .entry-frequency-key {
+    height: .69333rem;
+    width: .69333rem;
+  }
+
+  .entry-frequency-key svg {
+    height: .45333rem;
+    width: .45333rem;
+  }
+
+  .pronunciation-list {
+    row-gap: .21333rem;
+  }
+
+  .pronunciation {
+    font-size: calc(.42667rem + var(--reading-font-delta));
+    min-height: .74667rem;
+    padding: .13333rem .18667rem;
+  }
+
+  .pronunciation-region {
+    font-size: calc(.32rem + var(--reading-font-delta));
+  }
+
+  .pronunciation .voice-button {
+    height: .48rem;
+    margin-left: .10667rem;
+    width: .48rem;
+  }
+
+  .pronunciation .voice-button svg {
+    height: .37333rem;
+    width: .37333rem;
+  }
+
+  .entry-part-marker {
+    font-size: calc(.64rem + var(--reading-font-delta));
+    line-height: .66667rem;
+    min-height: .72rem;
+    padding: .02667rem .13333rem .02667rem .18667rem;
+  }
+
+  .entry-part-marker::after {
+    border-bottom-width: .36rem;
+    border-left-width: .36rem;
+    border-top-width: .36rem;
+  }
+
   .entry-content-layout {
     gap: .16rem;
     grid-template-columns: minmax(0, 1fr);
