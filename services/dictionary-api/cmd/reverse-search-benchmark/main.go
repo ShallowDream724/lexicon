@@ -24,12 +24,12 @@ type queryResult struct {
 func main() {
 	dictionaryPath := flag.String("db", "./data/dictionary.db", "path to the runtime dictionary database")
 	sidecarPath := flag.String("reverse-search-db", "./data/reverse-search.db", "path to the reverse-search sidecar")
-	queryList := flag.String("queries", "记录,休息,短暂的休息,火山矽肺病,完全受某人控制", "comma-separated benchmark queries")
+	queryList := flag.String("queries", "书,学校,记录,休息,短暂的休息,火山矽肺病,完全受某人控制", "comma-separated benchmark queries")
 	iterations := flag.Int("iterations", 100, "measured iterations per query")
 	limit := flag.Int("limit", 20, "result limit")
 	flag.Parse()
-	if *iterations < 1 || *iterations > 10_000 || *limit < 1 || *limit > 50 {
-		fmt.Fprintln(os.Stderr, "iterations must be in 1..10000 and limit in 1..50")
+	if *iterations < 1 || *iterations > 10_000 || *limit < 1 || *limit > 512 {
+		fmt.Fprintln(os.Stderr, "iterations must be in 1..10000 and limit in 1..512")
 		os.Exit(2)
 	}
 	fingerprint, err := reversesearch.FileSHA256(*dictionaryPath)

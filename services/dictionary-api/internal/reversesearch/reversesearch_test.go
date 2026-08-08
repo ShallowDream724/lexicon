@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -152,6 +153,10 @@ func TestIndexesAndCancellation(t *testing.T) {
 	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'documents_fts'`).Scan(&ftsSQL); err != nil || !strings.Contains(ftsSQL, "detail=none") {
 		t.Fatalf("FTS schema missing: %q, %v", ftsSQL, err)
 	}
+	var exactSegmentsSQL string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'exact_segments'`).Scan(&exactSegmentsSQL); err != nil || !strings.Contains(exactSegmentsSQL, "WITHOUT ROWID") {
+		t.Fatalf("exact-segment index missing: %q, %v", exactSegmentsSQL, err)
+	}
 	db.Close()
 	store, err := Open(target, digest(t, dictionary))
 	if err != nil {
@@ -287,6 +292,149 @@ func TestSearchUsesPartialCandidatesOnlyWhenNoCompleteTokenMatchExists(t *testin
 	got, err = store.Search(context.Background(), "硅，火山", 10)
 	if err != nil || len(got) != 1 || got[0].EntryID != "5" {
 		t.Fatalf("singleton-segment search got %#v, %v", got, err)
+	}
+}
+
+func TestExactSegmentIndexRescuesCanonicalShortTranslations(t *testing.T) {
+	root := t.TempDir()
+	dictionary := filepath.Join(root, "dictionary.db")
+	if err := os.WriteFile(dictionary, []byte("primary"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "reverse.db")
+	documents := make([]SearchDocument, 0, defaultCandidates+17)
+	for index := 0; index < defaultCandidates+16; index++ {
+		document := doc(fmt.Sprintf("d%05d", index), ScopeSense, fmt.Sprintf("volume-%05d", index), "书中的内容")
+		documents = append(documents, document)
+	}
+	exact := doc("z-exact", ScopeSense, "book", "书")
+	exact.Weight = 30
+	documents = append(documents, exact)
+	importSidecar(t, dictionary, target, documents, false)
+	store, err := Open(target, digest(t, dictionary))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	got, err := store.Search(context.Background(), "书", 5)
+	if err != nil || len(got) == 0 || got[0].EntryID != "z-exact" {
+		t.Fatalf("exact short translation was lost outside the FTS window: %#v, %v", got, err)
+	}
+}
+
+func TestConciseCanonicalTranslationsOutrankIncidentalSegments(t *testing.T) {
+	root := t.TempDir()
+	dictionary := filepath.Join(root, "dictionary.db")
+	if err := os.WriteFile(dictionary, []byte("primary"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "reverse.db")
+	importSidecar(t, dictionary, target, []SearchDocument{
+		doc("01", ScopeSense, "true crime", "真实罪案（书、电影等的一种类型）"),
+		doc("02", ScopeSense, "book", "书；书籍"),
+		doc("03", ScopeSense, "A-list", "第一等的；最出名（或成功、重要）的"),
+		doc("04", ScopeSense, "important", "重要的；有重大影响的；有巨大价值的"),
+		doc("05", ScopePhrase, "break", "（学校）期终放假"),
+		doc("06", ScopeSense, "school", "（中、小）学校"),
+	}, false)
+	store, err := Open(target, digest(t, dictionary))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	for query, wanted := range map[string]string{"书": "02", "重要": "04", "学校": "06"} {
+		got, err := store.Search(context.Background(), query, 5)
+		if err != nil || len(got) == 0 || got[0].EntryID != wanted {
+			t.Fatalf("query %q ranked %#v, %v", query, got, err)
+		}
+	}
+}
+
+func TestLongPartialFallbackRejectsWeakAndOppositePolarityMatches(t *testing.T) {
+	root := t.TempDir()
+	dictionary := filepath.Join(root, "dictionary.db")
+	if err := os.WriteFile(dictionary, []byte("primary"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "reverse.db")
+	importSidecar(t, dictionary, target, []SearchDocument{
+		doc("1", ScopeExample, "meeting", "他今天参加会议"),
+		doc("2", ScopeExample, "badly", "事情进展得很不顺利"),
+	}, false)
+	store, err := Open(target, digest(t, dictionary))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	if got, err := store.Search(context.Background(), "他决定推迟会议", 10); err != nil || len(got) != 0 {
+		t.Fatalf("weak long-query fragment was returned: %#v, %v", got, err)
+	}
+	if got, err := store.Search(context.Background(), "事情进展得很顺利", 10); err != nil || len(got) != 0 {
+		t.Fatalf("opposite-polarity fragment was returned: %#v, %v", got, err)
+	}
+}
+
+func TestMixedChineseQueriesRetainASCIIConstraints(t *testing.T) {
+	root := t.TempDir()
+	dictionary := filepath.Join(root, "dictionary.db")
+	if err := os.WriteFile(dictionary, []byte("primary"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "reverse.db")
+	importSidecar(t, dictionary, target, []SearchDocument{
+		doc("1", ScopeSense, "DNA polymerase", "DNA聚合酶"),
+		doc("2", ScopeSense, "polymerase", "聚合酶"),
+	}, false)
+	store, err := Open(target, digest(t, dictionary))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	got, err := store.Search(context.Background(), "DNA聚合酶", 10)
+	if err != nil || len(got) != 1 || got[0].EntryID != "1" {
+		t.Fatalf("mixed query dropped its ASCII constraint: %#v, %v", got, err)
+	}
+	if got, err := store.Search(context.Background(), "RNA聚合酶", 10); err != nil || len(got) != 0 {
+		t.Fatalf("unavailable mixed query returned a weaker Chinese-only match: %#v, %v", got, err)
+	}
+}
+
+func TestSearchPageReturnsStableNonOverlappingWindows(t *testing.T) {
+	root := t.TempDir()
+	dictionary := filepath.Join(root, "dictionary.db")
+	if err := os.WriteFile(dictionary, []byte("primary"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "reverse.db")
+	documents := make([]SearchDocument, 0, 70)
+	for index := 0; index < 70; index++ {
+		documents = append(documents, doc(fmt.Sprintf("%03d", index), ScopeSense, fmt.Sprintf("entry-%03d", index), "共同释义"))
+	}
+	importSidecar(t, dictionary, target, documents, false)
+	store, err := Open(target, digest(t, dictionary))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	first, err := store.SearchPage(context.Background(), "共同释义", 0, 32)
+	if err != nil || len(first.Groups) != 32 || !first.HasMore || first.NextOffset != 32 {
+		t.Fatalf("first page = %#v, %v", first, err)
+	}
+	second, err := store.SearchPage(context.Background(), "共同释义", first.NextOffset, 32)
+	if err != nil || len(second.Groups) != 32 || !second.HasMore || second.NextOffset != 64 {
+		t.Fatalf("second page = %#v, %v", second, err)
+	}
+	seen := make(map[string]struct{}, 64)
+	for _, group := range append(first.Groups, second.Groups...) {
+		if _, duplicate := seen[group.EntryID]; duplicate {
+			t.Fatalf("entry %q repeated across pages", group.EntryID)
+		}
+		seen[group.EntryID] = struct{}{}
 	}
 }
 

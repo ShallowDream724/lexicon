@@ -11,18 +11,22 @@ import (
 	"sort"
 	"strings"
 
+	"golang.org/x/text/unicode/norm"
+
 	_ "modernc.org/sqlite"
 )
 
 type Store struct{ db *sql.DB }
 
 type candidate struct {
-	document SearchDocument
-	bm25     float64
-	score    float64
-	exact    bool
-	coverage float64
-	longest  int
+	id               int64
+	document         SearchDocument
+	bm25             float64
+	score            float64
+	exact            bool
+	coverage         float64
+	longest          int
+	negationMismatch bool
 }
 
 // Open validates that the sidecar was built from the current primary dictionary.
@@ -62,7 +66,7 @@ func validateStore(db *sql.DB, expectedPrimarySHA256 string) error {
 			return fmt.Errorf("reverse-search metadata %q does not match", key)
 		}
 	}
-	for _, key := range []string{"source_version", "document_count"} {
+	for _, key := range []string{"source_version", "document_count", "segment_count"} {
 		var value string
 		if err := db.QueryRow(`SELECT value FROM metadata WHERE key = ?`, key).Scan(&value); err != nil || strings.TrimSpace(value) == "" {
 			return fmt.Errorf("reverse-search metadata %q is missing or empty", key)
@@ -80,6 +84,14 @@ func validateStore(db *sql.DB, expectedPrimarySHA256 string) error {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM documents_fts`).Scan(&indexedCount); err != nil || indexedCount != count {
 		return errors.New("reverse-search full-text index is missing or incomplete")
 	}
+	var segmentCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM exact_segments`).Scan(&segmentCount); err != nil || segmentCount < 1 {
+		return errors.New("reverse-search exact-segment index is missing or empty")
+	}
+	var storedSegmentCount string
+	if err := db.QueryRow(`SELECT value FROM metadata WHERE key = 'segment_count'`).Scan(&storedSegmentCount); err != nil || storedSegmentCount != fmt.Sprintf("%d", segmentCount) {
+		return errors.New("reverse-search exact-segment count metadata is invalid")
+	}
 	return nil
 }
 
@@ -95,21 +107,47 @@ func (s *Store) Close() error {
 func (s *Store) Available() bool { return s != nil && s.db != nil }
 
 func (s *Store) Search(ctx context.Context, query string, limit int) ([]Group, error) {
+	page, err := s.SearchPage(ctx, query, 0, limit)
+	return page.Groups, err
+}
+
+func (s *Store) SearchPage(ctx context.Context, query string, offset, limit int) (Page, error) {
+	empty := Page{Groups: []Group{}}
 	if s == nil || s.db == nil || limit < 1 {
-		return []Group{}, nil
+		return empty, nil
+	}
+	if offset < 0 {
+		return empty, errors.New("reverse-search offset must not be negative")
 	}
 	if len([]rune(query)) > maxQueryRunes {
-		return nil, fmt.Errorf("reverse-search query exceeds %d characters", maxQueryRunes)
+		return empty, fmt.Errorf("reverse-search query exceeds %d characters", maxQueryRunes)
 	}
-	if limit > maxResults {
-		limit = maxResults
+	if offset >= maxResults {
+		return empty, nil
 	}
+	if limit > maxResults-offset {
+		limit = maxResults - offset
+	}
+	groupLimit := offset + limit
+	if groupLimit < maxResults {
+		groupLimit++
+	}
+	querySequences := cjkSequences(query)
 	queryRunes := cjkRunes(query)
+	asciiTerms := asciiQueryTerms(query)
 	searchTokens := queryTokens(query)
 	if len(queryRunes) == 0 || len(searchTokens) == 0 {
-		return []Group{}, nil
+		return empty, nil
 	}
 	matcher := newCommonRunMatcher(queryRunes)
+	exactCandidates := []candidate{}
+	if len(querySequences) == 1 {
+		var err error
+		exactCandidates, err = s.searchExactCandidates(ctx, string(querySequences[0]), queryRunes, matcher)
+		if err != nil {
+			return empty, err
+		}
+	}
 	if len(searchTokens) > 1 {
 		candidates, err := s.searchCandidates(
 			ctx,
@@ -118,17 +156,35 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]Group, e
 			matcher,
 		)
 		if err != nil {
-			return nil, err
+			return empty, err
 		}
-		if groups := groupCandidates(queryRunes, candidates, limit); len(groups) > 0 {
-			return groups, nil
+		candidates = filterCandidatesByASCII(mergeCandidates(candidates, exactCandidates), asciiTerms)
+		if groups := groupCandidates(queryRunes, candidates, groupLimit); len(groups) > 0 {
+			return paginateGroups(groups, offset, limit), nil
 		}
 	}
 	candidates, err := s.searchCandidates(ctx, matchExpression(searchTokens), queryRunes, matcher)
 	if err != nil {
-		return nil, err
+		return empty, err
 	}
-	return groupCandidates(queryRunes, candidates, limit), nil
+	candidates = filterCandidatesByASCII(mergeCandidates(candidates, exactCandidates), asciiTerms)
+	return paginateGroups(groupCandidates(queryRunes, candidates, groupLimit), offset, limit), nil
+}
+
+func paginateGroups(groups []Group, offset, limit int) Page {
+	if offset >= len(groups) {
+		return Page{Groups: []Group{}}
+	}
+	end := offset + limit
+	if end > len(groups) {
+		end = len(groups)
+	}
+	page := Page{Groups: groups[offset:end]}
+	if end < len(groups) {
+		page.HasMore = true
+		page.NextOffset = end
+	}
+	return page
 }
 
 func (s *Store) searchCandidates(
@@ -138,8 +194,8 @@ func (s *Store) searchCandidates(
 	matcher commonRunMatcher,
 ) ([]candidate, error) {
 	rows, err := s.db.QueryContext(ctx, `
-			SELECT d.entry_id, d.headword, d.scope, d.english_text, d.chinese_text,
-			       d.section, d.part, d.owner_id, d.path_json, d.weight, bm25(documents_fts)
+				SELECT d.id, d.entry_id, d.headword, d.scope, d.english_text, d.chinese_text,
+				       d.section, d.part, d.owner_id, d.path_json, d.weight, bm25(documents_fts)
 		FROM documents_fts
 		JOIN documents d ON d.id = documents_fts.rowid
 			WHERE documents_fts MATCH ?
@@ -148,6 +204,35 @@ func (s *Store) searchCandidates(
 	if err != nil {
 		return nil, err
 	}
+	return scanCandidates(ctx, rows, queryRunes, matcher)
+}
+
+func (s *Store) searchExactCandidates(
+	ctx context.Context,
+	normalized string,
+	queryRunes []rune,
+	matcher commonRunMatcher,
+) ([]candidate, error) {
+	rows, err := s.db.QueryContext(ctx, `
+			SELECT d.id, d.entry_id, d.headword, d.scope, d.english_text, d.chinese_text,
+			       d.section, d.part, d.owner_id, d.path_json, d.weight, 0.0
+			FROM exact_segments x
+			JOIN documents d ON d.id = x.document_id
+			WHERE x.normalized = ?
+			ORDER BY d.weight DESC, d.entry_id, d.id
+			LIMIT ?`, normalized, defaultCandidates)
+	if err != nil {
+		return nil, err
+	}
+	return scanCandidates(ctx, rows, queryRunes, matcher)
+}
+
+func scanCandidates(
+	ctx context.Context,
+	rows *sql.Rows,
+	queryRunes []rune,
+	matcher commonRunMatcher,
+) ([]candidate, error) {
 	defer rows.Close()
 	candidates := make([]candidate, 0, 32)
 	for rows.Next() {
@@ -156,13 +241,13 @@ func (s *Store) searchCandidates(
 		}
 		var c candidate
 		var pathJSON string
-		if err := rows.Scan(&c.document.EntryID, &c.document.Headword, &c.document.Scope, &c.document.EnglishText, &c.document.ChineseText, &c.document.Location.Section, &c.document.Location.Part, &c.document.Location.OwnerID, &pathJSON, &c.document.Weight, &c.bm25); err != nil {
+		if err := rows.Scan(&c.id, &c.document.EntryID, &c.document.Headword, &c.document.Scope, &c.document.EnglishText, &c.document.ChineseText, &c.document.Location.Section, &c.document.Location.Part, &c.document.Location.OwnerID, &pathJSON, &c.document.Weight, &c.bm25); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(pathJSON), &c.document.Location.Path); err != nil {
 			return nil, fmt.Errorf("invalid stored location path: %w", err)
 		}
-		c.score, c.exact, c.coverage, c.longest = scoreCandidate(queryRunes, matcher, c.document, c.bm25)
+		c.score, c.exact, c.coverage, c.longest, c.negationMismatch = scoreCandidate(queryRunes, matcher, c.document, c.bm25)
 		candidates = append(candidates, c)
 	}
 	if err := rows.Err(); err != nil {
@@ -174,45 +259,111 @@ func (s *Store) searchCandidates(
 	return candidates, nil
 }
 
+func mergeCandidates(primary, additional []candidate) []candidate {
+	if len(additional) == 0 {
+		return primary
+	}
+	seen := make(map[int64]struct{}, len(primary)+len(additional))
+	for _, item := range primary {
+		seen[item.id] = struct{}{}
+	}
+	for _, item := range additional {
+		if _, exists := seen[item.id]; exists {
+			continue
+		}
+		seen[item.id] = struct{}{}
+		primary = append(primary, item)
+	}
+	return primary
+}
+
+func filterCandidatesByASCII(candidates []candidate, terms []string) []candidate {
+	if len(terms) == 0 {
+		return candidates
+	}
+	filtered := candidates[:0]
+	for _, item := range candidates {
+		searchable := strings.ToLower(norm.NFKC.String(strings.Join([]string{
+			item.document.Headword,
+			item.document.EnglishText,
+			item.document.ChineseText,
+		}, " ")))
+		matched := true
+		for _, term := range terms {
+			if !strings.Contains(searchable, term) {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
 func scoreCandidate(
 	queryRunes []rune,
 	matcher commonRunMatcher,
 	document SearchDocument,
 	bm25 float64,
-) (float64, bool, float64, int) {
+) (float64, bool, float64, int, bool) {
 	sequences := cjkSequences(document.ChineseText)
 	if len(sequences) == 0 {
-		return math.Inf(-1), false, 0, 0
+		return math.Inf(-1), false, 0, 0, false
 	}
 	exact := false
 	longest := 0
+	polarityMatchAtLongest := false
+	queryNegation := hasNegation(queryRunes)
 	for _, sequence := range sequences {
 		if strings.Contains(string(sequence), string(queryRunes)) {
 			exact = true
 		}
-		if matched := matcher.longest(sequence); matched > longest {
+		matched := matcher.longest(sequence)
+		polarityMatches := hasNegation(sequence) == queryNegation
+		if matched > longest {
 			longest = matched
+			polarityMatchAtLongest = polarityMatches
+		} else if matched == longest && polarityMatches {
+			polarityMatchAtLongest = true
 		}
 	}
+	negationMismatch := longest > 0 && !polarityMatchAtLongest
 	bigramCoverage := coverageSequences(queryRunes, sequences)
-	segmentExact, segmentBoundary, compactness := segmentMatchQuality(queryRunes, sequences)
+	segmentExact, grammaticalExtension, segmentBoundary, compactness, positionQuality := segmentMatchQuality(queryRunes, sequences)
+	totalRunes := 0
+	for _, sequence := range sequences {
+		totalRunes += len(sequence)
+	}
+	overallCompactness := float64(len(queryRunes)) / float64(totalRunes)
 	score := float64(document.Weight) - bm25
 	if exact {
 		score += 100
 	}
 	if segmentExact {
 		score += 90
+	} else if grammaticalExtension {
+		score += 100
 	} else if segmentBoundary {
 		score += 25
 	}
 	score += compactness * 40
+	score += overallCompactness * 120
+	score += positionQuality * 60
+	if exactMatchOnlyInsideBrackets(document.ChineseText, queryRunes) {
+		score -= 90
+	}
 	score += bigramCoverage * 30
 	score += float64(longest) * 3
-	return score, exact, bigramCoverage, longest
+	if negationMismatch {
+		score -= 45
+	}
+	return score, exact, bigramCoverage, longest, negationMismatch
 }
 
-func segmentMatchQuality(query []rune, sequences [][]rune) (exact, boundary bool, compactness float64) {
-	for _, sequence := range sequences {
+func segmentMatchQuality(query []rune, sequences [][]rune) (exact, grammaticalExtension, boundary bool, compactness, positionQuality float64) {
+	for index, sequence := range sequences {
 		start := runeSliceIndex(sequence, query)
 		if start < 0 {
 			continue
@@ -221,14 +372,24 @@ func segmentMatchQuality(query []rune, sequences [][]rune) (exact, boundary bool
 		if ratio > compactness {
 			compactness = ratio
 		}
+		position := 1 / float64(index+1)
+		if position > positionQuality {
+			positionQuality = position
+		}
 		if len(sequence) == len(query) {
 			exact = true
+		}
+		if len(sequence) == len(query)+1 && start == 0 {
+			switch sequence[len(query)] {
+			case '的', '地', '得':
+				grammaticalExtension = true
+			}
 		}
 		if start == 0 || start+len(query) == len(sequence) {
 			boundary = true
 		}
 	}
-	return exact, boundary, compactness
+	return exact, grammaticalExtension, boundary, compactness, positionQuality
 }
 
 func runeSliceIndex(target, query []rune) int {
@@ -306,9 +467,10 @@ func groupCandidates(query []rune, candidates []candidate, limit int) []Group {
 		candidates = filtered
 	}
 	if len(query) >= 4 {
+		minimumRun := minimumPartialRun(len(query))
 		highCoverage := candidates[:0]
 		for _, candidate := range candidates {
-			if candidate.exact || candidate.coverage >= .6 {
+			if candidate.exact || (!candidate.negationMismatch && candidate.coverage >= .6 && candidate.longest >= minimumRun) {
 				highCoverage = append(highCoverage, candidate)
 			}
 		}
@@ -317,13 +479,13 @@ func groupCandidates(query []rune, candidates []candidate, limit int) []Group {
 		} else {
 			longest := 0
 			for _, candidate := range candidates {
-				if candidate.longest > longest {
+				if !candidate.negationMismatch && candidate.longest > longest {
 					longest = candidate.longest
 				}
 			}
 			filtered = candidates[:0]
 			for _, candidate := range candidates {
-				if longest >= 2 && candidate.longest == longest {
+				if longest >= minimumRun && !candidate.negationMismatch && candidate.longest == longest {
 					filtered = append(filtered, candidate)
 				}
 			}
@@ -357,4 +519,12 @@ func groupCandidates(query []rune, candidates []candidate, limit int) []Group {
 		groups[index].Matches = append(groups[index].Matches, Match{Scope: candidate.document.Scope, English: candidate.document.EnglishText, Chinese: candidate.document.ChineseText, Location: candidate.document.Location})
 	}
 	return groups
+}
+
+func minimumPartialRun(queryLength int) int {
+	minimum := (queryLength + 1) / 2
+	if minimum < 3 {
+		return 3
+	}
+	return minimum
 }

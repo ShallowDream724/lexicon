@@ -136,6 +136,10 @@ async function build(options: Options): Promise<void> {
   const exporterDone = completion(exporter, "dictionary envelope export");
   const importerDone = completion(importer, "reverse-search import");
   let processFailure: unknown;
+  importer.stdin.on("error", (error) => {
+    processFailure ??= error;
+    exporter.kill();
+  });
   void exporterDone.catch((error) => {
     processFailure = error;
     importer.stdin.destroy();

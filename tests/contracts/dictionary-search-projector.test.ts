@@ -206,7 +206,7 @@ function entryFixture(): CanonicalEntry {
 test("projects canonical bilingual content recursively with stable document locations", () => {
   const documents = projectCanonicalEntrySearchDocuments(entryFixture());
   searchDocumentsSchema.parse(documents);
-  assert.equal(SEARCH_DOCUMENT_SCHEMA_VERSION, "1.0");
+  assert.equal(SEARCH_DOCUMENT_SCHEMA_VERSION, "1.1");
 
   const rootSense = documents.find((document) => document.location.ownerId === "sense-root");
   assert.deepEqual(rootSense?.location, {
@@ -235,6 +235,20 @@ test("projects canonical bilingual content recursively with stable document loca
 	  assert.equal(nested?.location.part, "noun");
 	  assert.deepEqual(nested?.location.path, ["subentries", "0", "senses", "0"]);
   assert.equal(documents.some((document) => document.chineseText.includes("原始中文不得进入索引")), false);
+});
+
+test("uses canonical proficiency and frequency labels as a source-neutral ranking prior", () => {
+  const common = entryFixture();
+  common.labels = [
+    { text: "A1", kind: "level", raw },
+    { text: "3000", kind: "frequency", raw },
+  ];
+  const advanced = entryFixture();
+  advanced.labels = [{ text: "C1", kind: "level", raw }];
+
+  const commonSense = projectCanonicalEntrySearchDocuments(common).find((document) => document.scope === "sense");
+  const advancedSense = projectCanonicalEntrySearchDocuments(advanced).find((document) => document.scope === "sense");
+  assert.equal((commonSense?.weight ?? 0) > (advancedSense?.weight ?? 0), true);
 });
 
 test("keeps identical text at distinct locations and omits content without Chinese", () => {

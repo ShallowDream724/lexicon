@@ -81,6 +81,105 @@ func cjkRunes(value string) []rune {
 	return runes
 }
 
+func hasNegation(values []rune) bool {
+	for _, value := range values {
+		switch value {
+		case '不', '没', '无', '未', '非', '莫', '别', '勿':
+			return true
+		}
+	}
+	return false
+}
+
+func exactMatchOnlyInsideBrackets(value string, query []rune) bool {
+	if len(query) == 0 {
+		return false
+	}
+	values := []rune(norm.NFKC.String(value))
+	depth := 0
+	inside, outside := false, false
+	for index, value := range values {
+		if isOpeningBracket(value) {
+			depth++
+			continue
+		}
+		if isClosingBracket(value) {
+			if depth > 0 {
+				depth--
+			}
+			continue
+		}
+		if index+len(query) > len(values) {
+			continue
+		}
+		matched := true
+		for offset, wanted := range query {
+			actual := values[index+offset]
+			if actual == '矽' {
+				actual = '硅'
+			}
+			if actual != wanted {
+				matched = false
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		if depth > 0 {
+			inside = true
+		} else {
+			outside = true
+		}
+	}
+	return inside && !outside
+}
+
+func asciiQueryTerms(value string) []string {
+	value = strings.ToLower(norm.NFKC.String(value))
+	terms := make([]string, 0, 2)
+	seen := make(map[string]struct{}, 2)
+	start := -1
+	flush := func(end int) {
+		if start < 0 {
+			return
+		}
+		term := value[start:end]
+		if _, exists := seen[term]; !exists {
+			seen[term] = struct{}{}
+			terms = append(terms, term)
+		}
+		start = -1
+	}
+	for index, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') {
+			if start < 0 {
+				start = index
+			}
+			continue
+		}
+		flush(index)
+	}
+	flush(len(value))
+	return terms
+}
+
+func isOpeningBracket(value rune) bool {
+	switch value {
+	case '(', '[', '{', '<', '【', '〔', '《', '〈', '「', '『':
+		return true
+	}
+	return false
+}
+
+func isClosingBracket(value rune) bool {
+	switch value {
+	case ')', ']', '}', '>', '】', '〕', '》', '〉', '」', '』':
+		return true
+	}
+	return false
+}
+
 // Tokens are ASCII-only, making MATCH construction independent of SQLite tokenizers.
 func tokens(value string) []string {
 	sequences := cjkSequences(value)

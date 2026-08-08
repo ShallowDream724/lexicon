@@ -4,12 +4,12 @@ package reversesearch
 import "io"
 
 const (
-	SchemaVersion     = 1
-	ProjectionVersion = "1.0"
+	SchemaVersion     = 2
+	ProjectionVersion = "1.1"
 	NormalizerVersion = "nfkc-cjk-v1"
 	defaultPageSize   = 8192
-	defaultCandidates = 512
-	maxResults        = 50
+	defaultCandidates = 4096
+	maxResults        = 512
 	maxMatches        = 3
 	maxQueryRunes     = 200
 	maxLineBytes      = 1 << 20
@@ -78,4 +78,10 @@ type Group struct {
 	EntryID  string
 	Headword string
 	Matches  []Match
+}
+
+type Page struct {
+	Groups     []Group
+	NextOffset int
+	HasMore    bool
 }

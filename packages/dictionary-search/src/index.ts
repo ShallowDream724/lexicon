@@ -12,7 +12,7 @@ import type {
   CanonicalText,
 } from "../../dictionary-schema/src/index";
 
-export const SEARCH_DOCUMENT_SCHEMA_VERSION = "1.0" as const;
+export const SEARCH_DOCUMENT_SCHEMA_VERSION = "1.1" as const;
 
 export const SEARCH_DOCUMENT_SCOPES = [
   "sense",
@@ -31,8 +31,8 @@ export const SEARCH_DOCUMENT_SECTIONS = [
 ] as const;
 
 export const SEARCH_DOCUMENT_WEIGHTS = {
-  sense: 100,
-  phrase: 100,
+  sense: 160,
+  phrase: 160,
   usage: 60,
   form: 60,
   example: 30,
@@ -105,6 +105,7 @@ interface ProjectionContext {
   dictionaryId: string;
   entryId: string;
   headword: string;
+  entryWeight: number;
   documents?: SearchDocument[];
   signatures?: Set<string>;
   locations?: WeakMap<object, SearchDocumentLocation>;
@@ -154,7 +155,7 @@ function addDocument(context: ProjectionContext, candidate: DocumentCandidate): 
     englishText: candidate.englishText,
     chineseText: candidate.chineseText,
     location: candidateLocation(candidate),
-    weight: SEARCH_DOCUMENT_WEIGHTS[candidate.scope],
+    weight: SEARCH_DOCUMENT_WEIGHTS[candidate.scope] + context.entryWeight,
   };
   const signature = JSON.stringify(document);
   if (!context.signatures.has(signature)) {
@@ -538,6 +539,29 @@ function entryPart(entry: CanonicalEntry, inheritedPart?: string): string | unde
 	  return parts.length === 1 ? parts[0] : inheritedPart;
 }
 
+const cefrSearchWeights: Readonly<Record<string, number>> = {
+  A1: 160,
+  A2: 120,
+  B1: 85,
+  B2: 50,
+  C1: 25,
+  C2: 10,
+};
+
+function entrySearchWeight(entry: CanonicalEntry): number {
+  let levelWeight = 0;
+  let frequencyWeight = 0;
+  for (const label of entry.labels) {
+    if (label.kind === "level") {
+      levelWeight = Math.max(levelWeight, cefrSearchWeights[label.text.trim().toUpperCase()] ?? 0);
+    } else if (label.kind === "frequency") {
+      const value = label.text.replace(/\D/gu, "");
+      frequencyWeight = Math.max(frequencyWeight, value === "3000" ? 40 : value === "5000" ? 20 : 0);
+    }
+  }
+  return levelWeight + frequencyWeight;
+}
+
 function projectEntry(
 	context: ProjectionContext,
 	entry: CanonicalEntry,
@@ -586,6 +610,7 @@ export function projectCanonicalEntrySearchDocuments(entry: CanonicalEntry): Sea
     dictionaryId: entry.dictionaryId,
     entryId: entry.id,
     headword: entry.headword,
+    entryWeight: entrySearchWeight(entry),
     documents: [],
     signatures: new Set<string>(),
   };
@@ -600,6 +625,7 @@ export function indexCanonicalEntrySearchLocations(entry: CanonicalEntry): Canon
     dictionaryId: entry.dictionaryId,
     entryId: entry.id,
     headword: entry.headword,
+    entryWeight: 0,
     locations,
   };
   projectEntry(context, entry, []);

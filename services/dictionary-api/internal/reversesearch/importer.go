@@ -77,17 +77,17 @@ func Import(ctx context.Context, config ImportConfig) error {
 	if err := applySchema(ctx, db); err != nil {
 		return err
 	}
-	count, err := streamDocuments(ctx, db, config.Documents)
+	documentCount, segmentCount, err := streamDocuments(ctx, db, config.Documents)
 	if err != nil {
 		return err
 	}
-	if count == 0 {
+	if documentCount == 0 {
 		return errors.New("reverse-search projection contains no documents")
 	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO documents_fts(documents_fts) VALUES('optimize')`); err != nil {
 		return fmt.Errorf("optimize reverse-search index: %w", err)
 	}
-	if err := writeMetadata(ctx, db, config, primarySHA, count); err != nil {
+	if err := writeMetadata(ctx, db, config, primarySHA, documentCount, segmentCount); err != nil {
 		return err
 	}
 	if _, err := db.ExecContext(ctx, "VACUUM"); err != nil {
@@ -128,6 +128,11 @@ func applySchema(ctx context.Context, db *sql.DB) error {
 			weight INTEGER NOT NULL CHECK(weight BETWEEN -1000000 AND 1000000)
 		)`,
 		`CREATE INDEX documents_by_entry ON documents(entry_id, id)`,
+		`CREATE TABLE exact_segments (
+				normalized TEXT NOT NULL CHECK(length(normalized) BETWEEN 1 AND 200),
+				document_id INTEGER NOT NULL,
+				PRIMARY KEY(normalized, document_id)
+			) WITHOUT ROWID`,
 		`CREATE VIRTUAL TABLE documents_fts USING fts5(tokens, content='', detail=none)`,
 	}
 	for _, statement := range statements {
@@ -138,53 +143,74 @@ func applySchema(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-func streamDocuments(ctx context.Context, db *sql.DB, source io.Reader) (int, error) {
+func streamDocuments(ctx context.Context, db *sql.DB, source io.Reader) (int, int, error) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	defer tx.Rollback()
 	insertDocument, err := tx.PrepareContext(ctx, `INSERT INTO documents (dictionary_id, entry_id, scope, headword, english_text, chinese_text, section, part, owner_id, path_json, weight) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	defer insertDocument.Close()
 	insertFTS, err := tx.PrepareContext(ctx, `INSERT INTO documents_fts(rowid, tokens) VALUES (?, ?)`)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	defer insertFTS.Close()
+	insertExactSegment, err := tx.PrepareContext(ctx, `INSERT INTO exact_segments(normalized, document_id) VALUES (?, ?)`)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer insertExactSegment.Close()
 
 	reader := bufio.NewReaderSize(source, maxLineBytes+1)
 	count := 0
+	segmentCount := 0
 	lastEntry := ""
 	for lineNumber := 1; ; lineNumber++ {
 		line, readErr := reader.ReadBytes('\n')
 		if len(line) > maxLineBytes {
-			return 0, fmt.Errorf("projection line %d exceeds %d bytes", lineNumber, maxLineBytes)
+			return 0, 0, fmt.Errorf("projection line %d exceeds %d bytes", lineNumber, maxLineBytes)
 		}
 		if len(line) > 0 {
 			line = bytesTrimSpace(line)
 			if len(line) > 0 {
 				document, err := decodeDocument(line)
 				if err != nil {
-					return 0, fmt.Errorf("projection line %d: %w", lineNumber, err)
+					return 0, 0, fmt.Errorf("projection line %d: %w", lineNumber, err)
 				}
 				if document.EntryID < lastEntry {
-					return 0, fmt.Errorf("projection line %d is out of order by entryId", lineNumber)
+					return 0, 0, fmt.Errorf("projection line %d is out of order by entryId", lineNumber)
 				}
 				lastEntry = document.EntryID
 				pathJSON, _ := json.Marshal(document.Location.Path)
 				result, err := insertDocument.ExecContext(ctx, document.DictionaryID, document.EntryID, document.Scope, document.Headword, document.EnglishText, document.ChineseText, document.Location.Section, document.Location.Part, document.Location.OwnerID, string(pathJSON), document.Weight)
 				if err != nil {
-					return 0, err
+					return 0, 0, err
 				}
 				id, err := result.LastInsertId()
 				if err != nil {
-					return 0, err
+					return 0, 0, err
 				}
 				if _, err := insertFTS.ExecContext(ctx, id, strings.Join(tokens(document.ChineseText), " ")); err != nil {
-					return 0, err
+					return 0, 0, err
+				}
+				seenSegments := make(map[string]struct{})
+				for _, sequence := range cjkSequences(document.ChineseText) {
+					if len(sequence) > maxQueryRunes {
+						continue
+					}
+					normalized := string(sequence)
+					if _, exists := seenSegments[normalized]; exists {
+						continue
+					}
+					seenSegments[normalized] = struct{}{}
+					if _, err := insertExactSegment.ExecContext(ctx, normalized, id); err != nil {
+						return 0, 0, err
+					}
+					segmentCount++
 				}
 				count++
 			}
@@ -193,13 +219,13 @@ func streamDocuments(ctx context.Context, db *sql.DB, source io.Reader) (int, er
 			break
 		}
 		if readErr != nil {
-			return 0, readErr
+			return 0, 0, readErr
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	return count, nil
+	return count, segmentCount, nil
 }
 
 func decodeDocument(line []byte) (SearchDocument, error) {
@@ -257,7 +283,7 @@ func validSection(value Section) bool {
 	return value == SectionDefinitions || value == SectionIdioms || value == SectionPhrasalVerbs || value == SectionDerivedForms || value == SectionGrammarUsage
 }
 
-func writeMetadata(ctx context.Context, db *sql.DB, config ImportConfig, primarySHA string, count int) error {
+func writeMetadata(ctx context.Context, db *sql.DB, config ImportConfig, primarySHA string, documentCount, segmentCount int) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -266,9 +292,10 @@ func writeMetadata(ctx context.Context, db *sql.DB, config ImportConfig, primary
 	values := map[string]string{
 		"schema_version": strconv.Itoa(SchemaVersion), "projection_version": config.ProjectionVersion,
 		"normalizer_version": NormalizerVersion, "primary_sha256": primarySHA,
-		"source_version": config.SourceVersion, "document_count": strconv.Itoa(count),
+		"source_version": config.SourceVersion, "document_count": strconv.Itoa(documentCount),
+		"segment_count": strconv.Itoa(segmentCount),
 	}
-	for _, key := range []string{"schema_version", "projection_version", "normalizer_version", "primary_sha256", "source_version", "document_count"} {
+	for _, key := range []string{"schema_version", "projection_version", "normalizer_version", "primary_sha256", "source_version", "document_count", "segment_count"} {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO metadata(key, value) VALUES (?, ?)`, key, values[key]); err != nil {
 			return err
 		}
