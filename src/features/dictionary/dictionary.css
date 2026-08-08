@@ -33,7 +33,7 @@
 .dictionary-header.is-home {
   display: flex;
   flex-direction: column;
-  min-height: 50dvh;
+  min-height: min(50dvh, calc(1.7rem + 20dvh + 10vw));
 }
 
 .header-topbar {
@@ -317,11 +317,11 @@
   align-items: center;
   flex-direction: column;
   flex: 1 1 auto;
-  gap: .64rem;
+  gap: clamp(.4rem, calc(.16rem + 1.5vw), .64rem);
   justify-content: center;
   min-height: 0;
-  padding-bottom: 1.2rem;
-  padding-top: .64rem;
+  padding-bottom: clamp(.48rem, calc(-.24rem + 4.5vw), 1.2rem);
+  padding-top: clamp(.32rem, 2vw, .64rem);
   width: 95%;
 }
 
@@ -334,17 +334,17 @@
 
 .header-search-region.is-home .product-mark-icon,
 .header-search-region.is-home .product-mark-icon img {
-  flex-basis: 1.6rem;
-  height: 1.6rem;
-  width: 1.6rem;
+  flex-basis: clamp(1.28rem, calc(.96rem + 2vw), 1.6rem);
+  height: clamp(1.28rem, calc(.96rem + 2vw), 1.6rem);
+  width: clamp(1.28rem, calc(.96rem + 2vw), 1.6rem);
 }
 
 .header-search-region.is-home .product-mark-copy strong {
-  font-size: .8rem;
+  font-size: clamp(.64rem, calc(.48rem + 1vw), .8rem);
 }
 
 .header-search-region.is-home .product-mark-copy span {
-  font-size: .29333rem;
+  font-size: clamp(.24rem, calc(.2rem + .25vw), .29333rem);
 }
 
 .header-search-region.is-home .search-form {
@@ -4150,10 +4150,6 @@
 }
 
 @media (max-width: 600px) {
-  .dictionary-header.is-home {
-    min-height: 38.2dvh;
-  }
-
   .header-topbar {
     min-height: 1.6rem;
     padding: .16rem .37333rem .2rem;

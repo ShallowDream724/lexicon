@@ -185,8 +185,12 @@ The React layer renders only canonical types. It owns:
 The search header uses three responsive compositions. Wide layouts keep the horizontal
 brand lockup. Tablet and constrained desktop widths collapse it to the brand mark and place
 the mark and search form in one centered two-column group. Phone layouts restore the full
-lockup above a compact form, keep recent queries on one clipped line, and use a content-safe
-golden-ratio header height instead of reserving half of the viewport.
+lockup above a compact form and keep recent queries on one clipped line. The home header's
+minimum height combines dynamic viewport height with viewport width: tall, narrow screens
+use roughly one third of the page, progressively wider screens gain more breathing room,
+and the blue region never reserves more than half of the viewport. Its intrinsic content
+remains free to expand under text zoom. Brand scale and vertical spacing follow the same
+continuous width curve so crossing a device breakpoint does not create a visual jump.
 
 Optional entry resources pass through one registry in
 `src/features/dictionary/resource-model.ts`. The registry determines stable ordering,
