@@ -354,7 +354,11 @@ export function DictionaryWorkspace({
         return false;
       }
 
-      if (submittedSearchQuery.current === requestedQuery) {
+      if (
+        submittedSearchQuery.current === requestedQuery &&
+        submittedSearchRequest.current &&
+        !submittedSearchRequest.current.signal.aborted
+      ) {
         return null;
       }
 
@@ -463,9 +467,9 @@ export function DictionaryWorkspace({
       } finally {
         if (submittedSearchRequest.current === controller) {
           submittedSearchRequest.current = null;
-        }
-        if (submittedSearchQuery.current === requestedQuery) {
-          submittedSearchQuery.current = null;
+          if (submittedSearchQuery.current === requestedQuery) {
+            submittedSearchQuery.current = null;
+          }
         }
       }
   },

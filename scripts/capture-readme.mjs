@@ -52,7 +52,12 @@ async function prepareEntryPage(browser, viewport) {
   const page = await context.newPage();
   await page.goto(`${baseUrl}/?q=round`, { waitUntil: "domcontentloaded" });
   await page.locator(".headword-line h1").filter({ hasText: "round" }).waitFor();
-  await page.locator(".entry-inflected-form").filter({ hasText: "roundest" }).waitFor();
+  const inflectionLine = page.locator(".entry-inflected-forms").filter({ hasText: "roundest" });
+  await inflectionLine.waitFor();
+  const inflectionText = (await inflectionLine.innerText()).replace(/\s+/g, " ").trim();
+  if (inflectionText !== "(comparative rounder, superlative roundest)") {
+    throw new Error(`Unexpected round inflection line: ${inflectionText}`);
+  }
   await page.locator(".etymology-resource-card").waitFor();
   await page.addStyleTag({
     content: `
