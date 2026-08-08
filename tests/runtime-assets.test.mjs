@@ -13,7 +13,7 @@ test("runtime release manifest pins the complete runtime asset set", async () =>
   const dictionary = manifest.assets.find((asset) => asset.file === "dictionary.db");
   const reverseSearch = manifest.assets.find((asset) => asset.file === "reverse-search.db");
   assert.equal(dictionary.runtimeSchema, 3);
-  assert.equal(reverseSearch.runtimeSchema, 1);
+  assert.equal(reverseSearch.runtimeSchema, 2);
   assert.equal(reverseSearch.records, 197538);
   assert.equal(reverseSearch.primarySha256, dictionary.sha256);
   const audio = manifest.assets.find((asset) => asset.kind === "headword-audio");

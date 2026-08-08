@@ -72,6 +72,10 @@ Indexed lookup and independently compressed entries let the server return only t
 
 索引查询与独立压缩词条让服务器只返回当前选择的结果。打开网站或安装 PWA 时，不会在后台悄悄下载整部词典，也不会下载 1.06 GiB 的发音包。
 
+Broad Chinese searches open with 32 ranked entries and can progressively reveal up to 512. Each step requests only the additional page, keeping the first result fast while leaving room for deeper exploration.
+
+范围较广的中文查询会先展示 32 个排序结果，并可逐步展开至 512 个；每次只请求新增的一页，兼顾首屏速度与继续查找的空间。
+
 The released dataset contains 40,974 bilingual entries projected into 197,538 Chinese search records, 46,773 searchable etymology terms across 51,716 articles, and 128,010 usable headword MP3 assets. Storage design, query plans, and reproducible benchmarks are documented in [STORAGE_FORMAT.md](STORAGE_FORMAT.md).
 
 参考数据集包含 40,974 个双语词条及其 197,538 条中文反查记录、覆盖 51,716 篇文章的 46,773 个可搜索词源词语，以及 128,010 个可用词头 MP3。存储设计、查询计划与可复现基准见 [STORAGE_FORMAT.md](STORAGE_FORMAT.md)。
@@ -89,9 +93,9 @@ npm ci
 npm run data:download
 ```
 
-The download is about 1.22 GiB. It retrieves the versioned [runtime-data-v1 Release](https://github.com/ShallowDream724/lexicon/releases/tag/runtime-data-v1), verifies every file against `runtime-assets.json`, and creates the exact layout used by local development and the included Compose deployment:
+The download is about 1.23 GiB. It retrieves the versioned [runtime-data-v1 Release](https://github.com/ShallowDream724/lexicon/releases/tag/runtime-data-v1), verifies every file against `runtime-assets.json`, and creates the exact layout used by local development and the included Compose deployment:
 
-完整下载量约为 1.22 GiB。命令会获取带版本的 [runtime-data-v1 Release](https://github.com/ShallowDream724/lexicon/releases/tag/runtime-data-v1)，依据 `runtime-assets.json` 校验每个文件，并创建本地开发与随附 Compose 共用的数据目录：
+完整下载量约为 1.23 GiB。命令会获取带版本的 [runtime-data-v1 Release](https://github.com/ShallowDream724/lexicon/releases/tag/runtime-data-v1)，依据 `runtime-assets.json` 校验每个文件，并创建本地开发与随附 Compose 共用的数据目录：
 
 ```text
 data/

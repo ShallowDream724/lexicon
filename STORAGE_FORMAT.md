@@ -127,19 +127,20 @@ into an external dependency.
 
 ## Chinese Reverse-Search Sidecar
 
-Chinese lookup is a derived, project-owned SQLite sidecar with three structures:
+Chinese lookup is a derived, project-owned SQLite sidecar with four structures:
 
 ```text
 metadata       schema, normalizer, projection, source, count, and primary fingerprint
 documents      display evidence, grouping identity, weight, and canonical location
+exact_segments deduplicated normalized segments for complete-match lookup
 documents_fts  contentless FTS5 candidate index using detail=none
 ```
 
 The sidecar is generated from validated `CanonicalEntry` values through the shared
-`SearchDocument` projector. The current full build contains 197,538 documents from
-40,974 entries in a 76,914,688-byte file. Repeating the same projection and import
-produced the byte-identical SHA-256
-`8cfc801f69c216c4a45e36a74397dab3a85b1a5dec70b36bb500c61144662412`.
+`SearchDocument` projector. The current full build contains 197,538 documents and 368,319
+exact segments from 40,974 entries in an 86,327,296-byte file. Repeating the same
+projection and import produced the byte-identical SHA-256
+`8e8fb45c3dc7e6a68720f3195ede607b382974b4a29b3047cf4ac2213f1c1da9`.
 
 Normalization applies Unicode NFKC, collapses punctuation and whitespace boundaries,
 and maps the observed Chinese spelling variant `矽` to `硅`. The FTS payload contains
@@ -148,15 +149,23 @@ SQLite tokenizer. Each normalized query segment uses bigrams when possible and r
 an explicit unigram when that segment contains one character. A query with one Chinese
 character excludes example-only matches.
 
-Multi-bigram queries first retrieve at most 512 candidates that contain every query token.
-The bounded OR retrieval runs only when that precision tier has no usable result, allowing
-partial semantic fallback without letting common fragments evict complete matches. The
-selected candidate tier then receives bounded Go refinement.
-Scoring combines semantic scope weight, BM25, complete Chinese segments, segment
-boundaries, bigram coverage, compactness, and the longest contiguous common run. Scoring
-never joins text across punctuation or whitespace boundaries. Results are grouped by
-entry with deterministic ties, at most 50 groups, and at most three evidence records per
-entry. Both the HTTP endpoint and the store reject queries longer than 200 characters.
+Single-segment queries also probe the `exact_segments` primary key, preserving complete
+short meanings even when frequent terms fill the FTS window. FTS queries retrieve at most
+4,096 documents. Multi-token lookup tries the all-token tier first; bounded OR retrieval
+runs only when that tier has no usable result. The selected candidates then receive
+bounded Go refinement.
+
+Scoring combines semantic scope, source-neutral CEFR and frequency labels, BM25, complete
+Chinese segments, segment boundaries, compactness, position, bigram coverage, and the
+longest contiguous common run. Parenthetical-only matches are demoted. Long partial
+matches require a contiguous run covering about half the query, and lightweight polarity
+checking rejects misleading negated fallbacks. Mixed Chinese and ASCII or numeric queries
+retain every ASCII or numeric constraint. Scoring never joins text across punctuation or
+whitespace boundaries. Results are grouped with deterministic ties into a stable window of
+at most 512 entries and at most three evidence records per entry. The HTTP endpoint returns
+32 groups by default, accepts pages of at most 256, and exposes `nextOffset` for progressive
+32, 64, 128, 256, and 512 cumulative result counts. Both the HTTP endpoint and the store
+reject queries longer than 200 characters.
 
 The sidecar metadata stores the SHA-256 of its exact primary runtime database. The API
 checks that fingerprint before accepting the index, so canonical paths and entry content
@@ -164,15 +173,17 @@ cannot silently drift. The primary database and reverse-search sidecar must be r
 and replaced as one pair. Omitting the sidecar disables Chinese reverse search while
 leaving English exact, prefix, correction, entry, and enhancement lookup available.
 
-Representative 100-request samples with a result limit of 20 measured:
+Representative 100-request samples with a result limit of 32 measured:
 
 | Query | Result groups | p50 | p95 | p99 |
 | --- | ---: | ---: | ---: | ---: |
-| `记录` | 20 | 2.00 ms | 2.91 ms | 3.04 ms |
-| `休息` | 20 | 2.00 ms | 2.78 ms | 3.58 ms |
-| `短暂的休息` | 2 | 0.00 ms | 1.14 ms | 1.59 ms |
-| `火山矽肺病` | 1 | 1.00 ms | 1.53 ms | 2.60 ms |
-| `完全受某人控制` | 2 | 0.56 ms | 1.02 ms | 1.07 ms |
+| `书` | 32 | 29.61 ms | 35.98 ms | 44.38 ms |
+| `学校` | 32 | 10.78 ms | 13.93 ms | 16.07 ms |
+| `记录` | 32 | 2.57 ms | 3.68 ms | 4.53 ms |
+| `休息` | 32 | 2.53 ms | 3.54 ms | 4.08 ms |
+| `短暂的休息` | 2 | 0.52 ms | 1.02 ms | 1.11 ms |
+| `火山矽肺病` | 1 | 1.07 ms | 2.00 ms | 2.39 ms |
+| `完全受某人控制` | 2 | 1.00 ms | 1.50 ms | 2.00 ms |
 
 Run the same bounded benchmark from the repository root:
 
@@ -181,7 +192,7 @@ npm run reverse-search:benchmark -- \
   -db ../../data/dictionary.db \
   -reverse-search-db ../../data/reverse-search.db \
   -iterations 100 \
-  -limit 20
+  -limit 32
 ```
 
 Paths after `--` are relative to `services/dictionary-api` because the root command uses

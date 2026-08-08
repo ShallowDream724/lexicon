@@ -87,7 +87,7 @@ The service owns runtime storage work:
 - validating the project schema version at startup;
 - bounded, parameterized search with deterministic ranking;
 - validating the reverse-search sidecar against the primary database fingerprint;
-- bounded FTS candidate retrieval and grouped Chinese-result ranking;
+- exact-segment and bounded FTS candidate retrieval with grouped Chinese-result ranking;
 - decompressing one independently stored entry and returning a stable envelope
   around the unmodified entry JSON;
 - indexing the pronunciation archive once and streaming individual assets;
@@ -159,9 +159,10 @@ and navigation components remain unchanged. Preserved `raw` data is deliberately
 indexed because it may contain transport fields or content the UI cannot display.
 
 The build script streams projected documents into the Go importer. The importer validates
-ordering and bounds, creates a new SQLite file transactionally, and atomically replaces an
-existing sidecar only when explicitly requested. Supplementary resources keep their own
-versioned search providers and merge with primary results at the API boundary.
+ordering and bounds, creates a deduplicated exact-segment B-tree beside the contentless FTS
+projection, builds a new SQLite file transactionally, and atomically replaces an existing
+sidecar only when explicitly requested. Supplementary resources keep their own versioned
+search providers and merge with primary results at the API boundary.
 
 ### React Application
 
@@ -328,7 +329,7 @@ All endpoints use `/api/v1`. Errors have a stable code, message, and request id.
 
 ```text
 GET /api/v1/health
-GET /api/v1/search?q=<query>&limit=<bounded integer>
+GET /api/v1/search?q=<query>&limit=<bounded integer>&offset=<Chinese results only>
 GET /api/v1/entries/<url-encoded entry id>
 GET /api/v1/enhancements/etymology/terms/<url-encoded term>
 GET /api/v1/enhancements/etymology/articles/<url-encoded article id>
@@ -339,7 +340,9 @@ GET /api/v1/media/illustration?key=<url-encoded asset key>
 
 Chinese search items additionally include up to three bounded evidence records. Each
 record contains `scope`, `englishText`, `chineseText`, and a validated `location`. English
-search items retain their existing compact response shape.
+search items retain their existing compact response shape. Chinese requests accept an
+optional `offset`; their default page contains 32 groups, a page contains at most 256, and
+`nextOffset` is returned only while more of the stable 512-group result window remains.
 
 The entry endpoint returns the source envelope consumed by the registered adapter:
 
@@ -359,11 +362,14 @@ requests as distinct outcomes.
 
 - Search limits are enforced on both client and server.
 - Chinese queries are limited to 200 characters in both the HTTP and store boundaries.
-- Multi-bigram reverse search first retrieves at most 512 candidates containing every
-  query token. The existing bounded OR retrieval runs only when that precision tier has
-  no usable result. Go refinement respects normalized Chinese segment boundaries, uses
-  deterministic tie-breaks, returns at most 50 entry groups, and retains at most three
-  evidence records per entry.
+- A one-segment reverse query probes the exact-segment B-tree so a complete short meaning
+  cannot be displaced by common FTS terms. FTS tiers retrieve at most 4,096 documents;
+  multi-token lookup tries the all-token tier first and uses bounded OR retrieval only when
+  it has no usable result. Go refinement respects normalized Chinese segment boundaries,
+  preserves ASCII and numeric constraints in mixed queries, uses deterministic tie-breaks,
+  and returns at most 512 entry groups with three evidence records per entry.
+- Chinese result pages begin at 32 groups and expand cumulatively to 64, 128, 256, then
+  512. Each request transfers only the next page, and route changes cancel in-flight pages.
 - Exact and prefix results are ranked in SQL; the browser never filters the full
   dictionary.
 - One-edit spelling correction runs only after an empty exact/prefix result for a

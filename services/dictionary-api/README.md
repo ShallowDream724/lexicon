@@ -97,6 +97,7 @@ Endpoints:
 ```text
 GET /api/v1/health
 GET /api/v1/search?q=word&limit=20
+GET /api/v1/search?q=中文&limit=32&offset=0
 GET /api/v1/entries/{id}
 GET /api/v1/enhancements/etymology/terms/{term}
 GET /api/v1/enhancements/etymology/articles/{id}
@@ -109,7 +110,10 @@ Each search item contains `kind`, `id`, `headword`, `partsOfSpeech`, and
 `translationPreview`. Chinese reverse-search items also contain up to three `matches`
 with semantic scope, English and Chinese evidence text, and a canonical location used by
 the browser for part-of-speech switching and exact navigation. Primary dictionary items use `kind: "dictionary"`; terms found
-only in an enabled enhancement use their resource kind. Errors contain a stable code,
+only in an enabled enhancement use their resource kind. Chinese responses include
+`nextOffset` while more results remain in the stable 512-group window; they default to 32
+groups and accept a page size of at most 256. English responses retain their 20-result
+default and 50-result maximum. Errors contain a stable code,
 message, and request id; the same request id is returned in `X-Request-ID`.
 
 ## Storage
@@ -148,12 +152,15 @@ Existing runtime dictionaries remain compatible through a bounded set of exact i
 apostrophe variants.
 
 The optional reverse-search sidecar stores visible bilingual projections separately from
-compressed entry payloads. Its contentless FTS5 index first tries a bounded all-token
-candidate tier, then uses bounded OR retrieval only when no usable complete-token result
-exists. Go refinement respects Chinese segment boundaries, applies deterministic semantic
-ranking, and returns at most three evidence records per entry. Query length is capped at 200
-characters in the HTTP handler and the store. The sidecar metadata validates schema,
-projection, normalizer, document count, and primary database fingerprint before use.
+compressed entry payloads. A deduplicated exact-segment B-tree protects complete short
+meanings from FTS displacement. The contentless FTS5 index retrieves at most 4,096
+documents, first through a bounded all-token tier and then through bounded OR retrieval
+only when no usable complete-token result exists. Go refinement respects Chinese segment
+boundaries and mixed ASCII constraints, applies deterministic semantic ranking, and returns
+at most 512 entry groups with three evidence records per entry. Query length is capped at
+200 characters in the HTTP handler and the store. The sidecar metadata validates schema,
+projection, normalizer, document and segment counts, and primary database fingerprint
+before use.
 
 ## Container
 

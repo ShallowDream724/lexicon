@@ -32,7 +32,7 @@ The measured production assets are:
 | Asset | Stored size | Runtime treatment |
 | --- | ---: | --- |
 | Runtime SQLite schema v3 | 53,952,512 bytes | opened read-only |
-| Reverse-search sidecar schema v1 | 76,914,688 bytes | opened read-only; bounded FTS candidates and grouped refinement |
+| Reverse-search sidecar schema v2 | 86,327,296 bytes | opened read-only; exact-segment lookup, bounded FTS, and grouped refinement |
 | Etymology sidecar schema v3 | 45,400,064 bytes | opened read-only; articles decoded on demand |
 | Headword pronunciation ZIP | 1,135,490,706 bytes | indexed once, streamed without extraction |
 | Usable headword MP3 assets | 128,010 files / 1,143,628,003 bytes | not extracted |
