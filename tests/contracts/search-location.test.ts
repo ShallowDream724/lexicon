@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   findSearchLocationElement,
+  revealSearchLocation,
   searchLocationAttributes,
   searchLocationContains,
   searchLocationPathKey,
@@ -72,4 +73,56 @@ test("prefers the matching owner and never selects a conflicting exact path", ()
     ownerId: "sense",
     path: ["senses", "0", "usage", "0"],
   }, root), preciseChild);
+});
+
+test("starts the full target highlight only after scrolling settles", (context) => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  const attributes = new Map<string, string>();
+  let scrollOptions: ScrollIntoViewOptions | undefined;
+  const ownerDocument = new EventTarget() as unknown as Document;
+  Object.defineProperty(ownerDocument, "defaultView", { value: null });
+  const target = {
+    dataset: { searchPath: "senses/0/examples/0", searchOwnerId: "example" },
+    offsetWidth: 240,
+    ownerDocument,
+    removeAttribute(name: string) {
+      attributes.delete(name);
+    },
+    scrollIntoView(options: ScrollIntoViewOptions) {
+      scrollOptions = options;
+    },
+    setAttribute(name: string, value: string) {
+      attributes.set(name, value);
+    },
+  } as unknown as HTMLElement;
+  const root = {
+    querySelectorAll(selector: string) {
+      return selector === "[data-search-path]" ? [target] : [];
+    },
+  } as unknown as ParentNode;
+
+  assert.equal(revealSearchLocation({
+    section: "definitions",
+    ownerId: "example",
+    path: ["senses", "0", "examples", "0"],
+  }, root, {
+    highlightDurationMs: 3_000,
+    scrollSettleMs: 120,
+  }), target);
+  assert.deepEqual(scrollOptions, { behavior: "smooth", block: "start" });
+  assert.equal(attributes.has("data-search-highlight"), false);
+
+  context.mock.timers.tick(100);
+  ownerDocument.dispatchEvent(new Event("scroll"));
+  context.mock.timers.tick(119);
+  assert.equal(attributes.has("data-search-highlight"), false);
+
+  context.mock.timers.tick(1);
+  assert.equal(attributes.get("data-search-highlight"), "true");
+
+  context.mock.timers.tick(2_999);
+  assert.equal(attributes.get("data-search-highlight"), "true");
+  context.mock.timers.tick(1);
+  assert.equal(attributes.has("data-search-highlight"), false);
+  context.mock.timers.reset();
 });

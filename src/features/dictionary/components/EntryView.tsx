@@ -56,7 +56,7 @@ import {
   type EntryResource,
 } from "../resource-model";
 import {
-  scrollToSearchLocation,
+  revealSearchLocation,
   searchLocationAttributes,
   searchLocationContains,
   searchLocationPathAttributes,
@@ -1601,7 +1601,7 @@ export function EntryView({
     }
 
     const frame = window.requestAnimationFrame(() => {
-      scrollToSearchLocation(searchLocation);
+      revealSearchLocation(searchLocation);
       onSearchLocationSettled?.(searchLocation);
     });
     return () => window.cancelAnimationFrame(frame);

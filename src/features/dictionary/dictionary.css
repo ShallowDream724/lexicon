@@ -3345,6 +3345,25 @@
   scroll-margin-top: 2.4rem;
 }
 
+[data-search-highlight="true"] {
+  animation: search-location-highlight 3s cubic-bezier(.2, .7, .25, 1);
+  outline: .05333rem solid transparent;
+  outline-offset: .08rem;
+}
+
+@keyframes search-location-highlight {
+  0%,
+  16% {
+    filter: drop-shadow(0 0 .16rem rgb(239 133 0 / 32%));
+    outline-color: rgb(239 133 0 / 88%);
+  }
+
+  100% {
+    filter: none;
+    outline-color: transparent;
+  }
+}
+
 .search-results-status,
 .search-results-empty,
 .search-results-error {
@@ -4363,5 +4382,11 @@
   .search-pending-icon {
     animation: none;
     transition: none;
+  }
+
+  [data-search-highlight="true"] {
+    animation: none;
+    filter: none;
+    outline-color: rgb(239 133 0 / 88%);
   }
 }

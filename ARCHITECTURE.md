@@ -219,7 +219,9 @@ English exact, prefix, correction, and etymology search keep their existing orch
 A query containing Han characters uses the reverse-search sidecar and always remains on a
 grouped results page, even when one entry matches. Each evidence row carries its canonical
 location. Selecting it loads the entry, switches to the matching part of speech, opens a
-registered resource when needed, and scrolls to the most specific rendered path. Owner and
+registered resource when needed, scrolls to the most specific rendered path, and marks that
+target with one transient three-second highlight after scrolling settles. Repeated selections
+replace the previous pending or active highlight through the same location service. Owner and
 section checks prevent repeated source ids from opening an unrelated resource; older or
 coarser locations fall back to their owner and then their section.
 

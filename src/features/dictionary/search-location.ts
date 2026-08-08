@@ -5,6 +5,17 @@ export type SearchLocationAttributes = {
   "data-search-path"?: string;
 };
 
+const SEARCH_LOCATION_HIGHLIGHT_DURATION_MS = 3_000;
+const SEARCH_LOCATION_SCROLL_SETTLE_MS = 120;
+
+const searchLocationHighlightAttribute = "data-search-highlight";
+let cancelActiveSearchLocationReveal: (() => void) | null = null;
+
+type RevealSearchLocationOptions = {
+  highlightDurationMs?: number;
+  scrollSettleMs?: number;
+};
+
 export function searchLocationPathKey(path: readonly string[]): string {
   return path.map((segment) => encodeURIComponent(segment)).join("/");
 }
@@ -105,11 +116,73 @@ export function findSearchLocationElement(
     (location.section === "grammar-usage" ? elementById(root, "definitions") : null);
 }
 
-export function scrollToSearchLocation(
+function scheduleSearchLocationHighlight(
+  element: HTMLElement,
+  options: RevealSearchLocationOptions,
+): void {
+  cancelActiveSearchLocationReveal?.();
+  const ownerDocument = element.ownerDocument;
+  const listenerController = new AbortController();
+  const settleMs = options.scrollSettleMs ?? SEARCH_LOCATION_SCROLL_SETTLE_MS;
+  const highlightDurationMs = options.highlightDurationMs ?? SEARCH_LOCATION_HIGHLIGHT_DURATION_MS;
+  let settleTimeout: ReturnType<typeof globalThis.setTimeout> | null = null;
+  let highlightTimeout: ReturnType<typeof globalThis.setTimeout> | null = null;
+  let active = true;
+
+  const cancel = () => {
+    if (!active) {
+      return;
+    }
+    active = false;
+    listenerController.abort();
+    if (settleTimeout) {
+      globalThis.clearTimeout(settleTimeout);
+    }
+    if (highlightTimeout) {
+      globalThis.clearTimeout(highlightTimeout);
+    }
+    element.removeAttribute(searchLocationHighlightAttribute);
+    if (cancelActiveSearchLocationReveal === cancel) {
+      cancelActiveSearchLocationReveal = null;
+    }
+  };
+  const highlight = () => {
+    listenerController.abort();
+    element.removeAttribute(searchLocationHighlightAttribute);
+    void element.offsetWidth;
+    element.setAttribute(searchLocationHighlightAttribute, "true");
+    highlightTimeout = globalThis.setTimeout(cancel, highlightDurationMs);
+  };
+  function schedule() {
+    if (!active) {
+      return;
+    }
+    if (settleTimeout) {
+      globalThis.clearTimeout(settleTimeout);
+    }
+    settleTimeout = globalThis.setTimeout(highlight, settleMs);
+  }
+
+  const listenerOptions = {
+    capture: true,
+    passive: true,
+    signal: listenerController.signal,
+  };
+  ownerDocument?.addEventListener("scroll", schedule, listenerOptions);
+  ownerDocument?.defaultView?.addEventListener("scroll", schedule, listenerOptions);
+  cancelActiveSearchLocationReveal = cancel;
+  schedule();
+}
+
+export function revealSearchLocation(
   location: SearchDocumentLocation,
   root: ParentNode = document,
+  options: RevealSearchLocationOptions = {},
 ): HTMLElement | null {
   const target = findSearchLocationElement(location, root);
-  target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (target) {
+    scheduleSearchLocationHighlight(target, options);
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
   return target;
 }
