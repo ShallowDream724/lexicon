@@ -198,7 +198,7 @@ func streamDocuments(ctx context.Context, db *sql.DB, source io.Reader) (int, in
 				}
 				seenSegments := make(map[string]struct{})
 				for _, sequence := range cjkSequences(document.ChineseText) {
-					if len(sequence) > maxQueryRunes {
+					if len(sequence) > MaxQueryRunes {
 						continue
 					}
 					normalized := string(sequence)

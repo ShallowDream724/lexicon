@@ -138,8 +138,14 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, http.StatusBadRequest, "invalid_query", "q must not be empty")
 		return
 	}
-	if len([]rune(query)) > 200 {
-		s.writeError(w, r, http.StatusBadRequest, "invalid_query", "q must be 200 characters or fewer")
+	if utf8.RuneCountInString(query) > reversesearch.MaxQueryRunes {
+		s.writeError(
+			w,
+			r,
+			http.StatusBadRequest,
+			"query_too_long",
+			fmt.Sprintf("q must be %d characters or fewer", reversesearch.MaxQueryRunes),
+		)
 		return
 	}
 	scopeValues, hasScope := parameters["scope"]

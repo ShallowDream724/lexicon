@@ -11,7 +11,7 @@ const (
 	defaultCandidates = 4096
 	maxResults        = 512
 	maxMatches        = 3
-	maxQueryRunes     = 200
+	MaxQueryRunes     = 200
 	maxLineBytes      = 1 << 20
 	maxIDBytes        = 256
 	maxTextBytes      = 32 << 10

@@ -129,6 +129,20 @@ export class DictionaryClientError extends Error {
   }
 }
 
+export const dictionarySearchQueryLimit = 200;
+export const dictionarySearchQueryTooLongCode = "query_too_long";
+
+function assertSearchQueryLength(query: string): void {
+  if (Array.from(query).length <= dictionarySearchQueryLimit) {
+    return;
+  }
+  throw new DictionaryClientError(
+    `Dictionary queries are limited to ${dictionarySearchQueryLimit} characters.`,
+    400,
+    dictionarySearchQueryTooLongCode,
+  );
+}
+
 function apiRoot(): string {
   return resolveDictionaryApiRoot(
     process.env.NEXT_PUBLIC_DICTIONARY_API_URL,
@@ -180,6 +194,8 @@ export const dictionaryClient = {
       return [];
     }
 
+    assertSearchQueryLength(normalized);
+
     const url = apiUrl("search");
     url.searchParams.set("q", normalized);
     url.searchParams.set("limit", String(Math.min(Math.max(options.limit ?? 10, 1), 20)));
@@ -203,6 +219,8 @@ export const dictionaryClient = {
     if (!normalized) {
       return { items: [], nextOffset: null };
     }
+
+    assertSearchQueryLength(normalized);
 
     const url = apiUrl("search");
     url.searchParams.set("q", normalized);

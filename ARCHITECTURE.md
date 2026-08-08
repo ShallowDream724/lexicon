@@ -461,8 +461,9 @@ requests as distinct outcomes.
 
 ## Performance Rules
 
-- Search limits are enforced on both client and server.
-- Chinese queries are limited to 200 characters in both the HTTP and store boundaries.
+- Search result limits are enforced on both client and server.
+- Search queries are limited to 200 Unicode characters in the client, HTTP handler, and
+  reverse-search store; `query_too_long` remains distinct from a service failure.
 - A one-segment reverse query probes the exact-segment B-tree so a complete short meaning
   cannot be displaced by common FTS terms. Each selected semantic ranking tier retrieves at
   most 4,096 documents, with at most three independently bounded pools. Multi-token lookup

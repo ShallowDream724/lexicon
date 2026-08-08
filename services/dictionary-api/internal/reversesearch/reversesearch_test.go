@@ -463,7 +463,7 @@ func TestSearchPageReturnsStableNonOverlappingWindows(t *testing.T) {
 
 func TestSearchRejectsOversizedDirectQueries(t *testing.T) {
 	store := &Store{db: &sql.DB{}}
-	if _, err := store.Search(context.Background(), strings.Repeat("中", maxQueryRunes+1), allOptions(10)); err == nil {
+	if _, err := store.Search(context.Background(), strings.Repeat("中", MaxQueryRunes+1), allOptions(10)); err == nil {
 		t.Fatal("oversized direct query was accepted")
 	}
 }

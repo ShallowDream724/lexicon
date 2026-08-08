@@ -35,6 +35,7 @@ import {
   normalizeSearchQuery,
   resolveSearchMatches,
 } from "../search-matches";
+import { dictionarySearchErrorMessage } from "../search-errors";
 import { activeSectionForScroll } from "../scroll-spy-model";
 import { createResultPageSessionStore } from "../result-page-session";
 import {
@@ -719,7 +720,7 @@ export function DictionaryWorkspace({
           scope,
           items: [],
           pending: false,
-          error: "词典服务暂不可用",
+          error: dictionarySearchErrorMessage(error),
           nextOffset: null,
           loadingMore: false,
           loadMoreError: null,
@@ -938,7 +939,7 @@ export function DictionaryWorkspace({
         .catch((error) => {
           if (!isAbortError(error) && suggestionRequest.current === controller) {
             setSuggestions([]);
-            setSearchError("词典服务暂不可用");
+            setSearchError(dictionarySearchErrorMessage(error));
           }
         })
         .finally(() => {

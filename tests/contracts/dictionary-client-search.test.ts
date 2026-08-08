@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  DictionaryClientError,
   dictionaryClient,
+  dictionarySearchQueryLimit,
+  dictionarySearchQueryTooLongCode,
   parseSearchPage,
   parseSearchTargets,
 } from "../../src/lib/dictionary-client/client";
+import { dictionarySearchErrorMessage } from "../../src/features/dictionary/search-errors";
 
 test("parses optional reverse-search evidence without changing English search items", () => {
   const [english, chinese] = parseSearchTargets({
@@ -97,4 +101,30 @@ test("serializes one canonical scope for every Chinese page and omits it for Eng
   assert.equal(requests[1]?.searchParams.get("scope"), "sense,phrase,form,usage,example");
   assert.equal(requests[1]?.searchParams.get("offset"), "32");
   assert.equal(requests[2]?.searchParams.has("scope"), false);
+});
+
+test("rejects oversized search text before a request and reports an input error", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestCount = 0;
+  globalThis.fetch = async () => {
+    requestCount += 1;
+    return new Response(JSON.stringify({ items: [] }), { status: 200 });
+  };
+
+  try {
+    await dictionaryClient.search("中".repeat(dictionarySearchQueryLimit));
+    await assert.rejects(
+      dictionaryClient.searchPage("中".repeat(dictionarySearchQueryLimit + 1)),
+      (error) => {
+        assert.ok(error instanceof DictionaryClientError);
+        assert.equal(error.code, dictionarySearchQueryTooLongCode);
+        assert.equal(dictionarySearchErrorMessage(error), "查询内容最多 200 个字符，请缩短后重试");
+        return true;
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(requestCount, 1);
 });

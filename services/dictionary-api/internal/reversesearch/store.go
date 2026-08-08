@@ -129,8 +129,8 @@ func (s *Store) SearchPage(ctx context.Context, query string, options Options) (
 	if offset < 0 {
 		return empty, errors.New("reverse-search offset must not be negative")
 	}
-	if len([]rune(query)) > maxQueryRunes {
-		return empty, fmt.Errorf("reverse-search query exceeds %d characters", maxQueryRunes)
+	if len([]rune(query)) > MaxQueryRunes {
+		return empty, fmt.Errorf("reverse-search query exceeds %d characters", MaxQueryRunes)
 	}
 	if offset >= maxResults {
 		return empty, nil

@@ -22,6 +22,7 @@ import (
 	"dictionary-api/internal/etymology"
 	"dictionary-api/internal/importer"
 	"dictionary-api/internal/payload"
+	"dictionary-api/internal/reversesearch"
 	"dictionary-api/internal/schema"
 	"dictionary-api/internal/server"
 	_ "modernc.org/sqlite"
@@ -208,6 +209,10 @@ func TestSearchRejectsMalformedBoundsAndIsStable(t *testing.T) {
 		if recorder := get(t, svc, target); recorder.Code != http.StatusBadRequest {
 			t.Errorf("%s: got %d", target, recorder.Code)
 		}
+	}
+	oversized := get(t, svc, "/api/v1/search?q="+url.QueryEscape(strings.Repeat("中", reversesearch.MaxQueryRunes+1)))
+	if oversized.Code != http.StatusBadRequest || !strings.Contains(oversized.Body.String(), `"code":"query_too_long"`) {
+		t.Fatalf("oversized query: %d %s", oversized.Code, oversized.Body.String())
 	}
 	if recorder := get(t, svc, "/api/v1/entries/missing"); recorder.Code != http.StatusNotFound {
 		t.Fatalf("missing entry: %d", recorder.Code)
