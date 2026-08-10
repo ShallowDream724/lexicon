@@ -1,0 +1,19 @@
+[
+  {"query":"明明不太愿意，最后还是承认这件事是真的","intent":"勉强承认事实","mustHit":["admit","concede"]},
+  {"query":"这顿饭只能算过得去，谈不上有多好","intent":"评价尚可但不优秀","mustHit":["acceptable","right"]},
+  {"query":"东西打碎了，但完全不是有意的","intent":"说明损坏纯属意外","mustHit":["accident","unintentional"]},
+  {"query":"没想清楚，一冲动就这么做了","intent":"描述凭冲动行事","mustHit":["impulse","impulsive"]},
+  {"query":"过了一会才猛然发现，原来自己一直都错了","intent":"突然意识到错误","mustHit":["come","realize","flash"]},
+  {"query":"把自己犯错的责任甩给同事","intent":"推卸责任","mustHit":["shift","buck"]},
+  {"query":"无论发生什么，我们明天都会离开","intent":"表达不管怎样结果不变","mustHit":["case","event"]},
+  {"query":"信里似乎藏着一层没有明说的意思","intent":"寻找言外之意","mustHit":["hidden","implicit"]},
+  {"query":"做决定前，把好处和坏处都比较一下","intent":"权衡利弊","mustHit":["weigh","set"]},
+  {"query":"把这段话写得简短、清楚又有力","intent":"寻找言简意赅的表达","mustHit":["concise","succinct","brevity"]},
+  {"query":"这个细节很值得琢磨，越想越有意思","intent":"寻找耐人寻味的表达","mustHit":["interesting","intriguing","thought-provoking"]},
+  {"query":"作品风格前所未有，特别有原创性","intent":"寻找独树一帜的表达","mustHit":["praise","original","distinctive"]},
+  {"query":"技术已经很好，还要继续打磨到更完美","intent":"寻找精益求精的表达","mustHit":["perfect","refine","polish"]},
+  {"query":"两个人的观点完全相反，没有一点接近","intent":"寻找大相径庭的表达","mustHit":["diametrically","opposed"]},
+  {"query":"我真的没想让你受伤","intent":"否认故意伤害","mustHit":["hurt","mean"]},
+  {"query":"明知不该争吵，却怎么都控制不住自己","intent":"寻找忍不住做某事的表达","mustHit":["help"]},
+  {"query":"两部分放在一起互相补足，整体效果更好","intent":"寻找相辅相成的动词","mustHit":["complement"]}
+]
