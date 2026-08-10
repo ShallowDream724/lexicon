@@ -20,7 +20,9 @@ npm ci
 npm run lint
 npm run typecheck
 npm run test:contracts
+npm run test:assets
 npm run test:api
+npm run semantic-search:test
 npm run build
 npm run test:web
 ```
@@ -28,6 +30,11 @@ npm run test:web
 Adapter changes also require a complete source-corpus audit using the command in
 `ADAPTER_GUIDE.md`. Tests should cover semantic behavior or a real regression; avoid
 assertions that only mirror implementation details.
+
+Semantic projection, model-contract, query-template, or fusion changes require the
+deterministic quality suites and a recorded full-sidecar comparison before publishing a
+replacement runtime asset. Provider credentials and real endpoints remain local environment
+configuration.
 
 ## Documentation
 

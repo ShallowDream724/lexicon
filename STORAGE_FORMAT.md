@@ -180,7 +180,8 @@ HTTP endpoint and the store reject queries longer than 200 characters.
 The sidecar metadata stores the SHA-256 of its exact primary runtime database. The API
 checks that fingerprint before accepting the index, so canonical paths and entry content
 cannot silently drift. The primary database and reverse-search sidecar must be released
-and replaced as one pair. Omitting the sidecar makes Chinese queries return
+and replaced as one pair; an enabled semantic sidecar is a third member of that
+compatibility unit. Omitting the reverse-search sidecar makes Chinese queries return
 `503 reverse_search_unavailable` while leaving English exact, prefix, correction, entry, and
 enhancement lookup available.
 
@@ -208,6 +209,59 @@ npm run reverse-search:benchmark -- \
 
 Paths after `--` are relative to `services/dictionary-api` because the root command uses
 Go's `-C` option.
+
+## Semantic Search Sidecar
+
+Semantic Chinese lookup is derived from the visible `SearchDocument` projection and stored
+in a second read-only SQLite sidecar:
+
+```text
+metadata       database fingerprints, model contract, projection, counts, and build identity
+texts          one normalized scope mask per unique visible Chinese text
+documents      source-neutral evidence and canonical locations keyed by text id
+vector_blocks  contiguous symmetric-int8 vector blocks
+```
+
+The current schema 1 build groups 188,851 documents into 178,382 unique text vectors with
+1,024 dimensions. It covers 2,139,356 Chinese characters and occupies 251,174,912 bytes.
+Its SHA-256 is
+`4bb445efbc8ddce2eaf02a386b6531e514544a5c7f65beb1bbe31cfec0d3ad40`.
+Metadata pins the primary runtime SHA-256, reverse-search SHA-256, corpus fingerprint,
+source projection 1.2, semantic projection 1.0, model key
+`qwen3-embedding-4b-1024-v1`, query template, provider options, and every vector-format
+parameter. The API rejects an incompatible combination before serving requests.
+
+Document vectors are L2-normalized during import, cached as float16 only in ignored build
+state, then quantized to `round(clamp(value * 127, -127, 127))`. The runtime loads the
+resulting 174.2 MiB int8 matrix and compact scope masks once. Each uncached query is
+normalized and quantized in the same way, scanned by at most four workers, and reduced
+through bounded per-worker heaps. Depending on the requested page, 192 to 4,096 text ids
+reach SQLite evidence projection. No approximate-nearest-neighbor graph, native extension,
+or runtime model is required.
+
+The released model was selected on a deterministic same-corpus comparison. Qwen3 Embedding
+4B reached 88.1% Hit@1, 100% Hit@3, and 0.938 MRR on that selection suite, ahead of the
+tested Qwen3 8B, text-embedding-3-large, compact Qwen, BGE-M3, and
+text-embedding-3-small routes. On the full 67-query suite, float16 retrieval reached 55.2%
+Hit@1, 100% Recall@32, and 0.660 MRR. The exact runtime int8 path reached 58.2% Hit@1,
+100% Recall@32, and 0.672 MRR.
+
+The production build used 1,677,023 document input tokens and 2,000 quality-evaluation
+tokens. With the measured provider's 4x input multiplier, total recorded usage was
+6,716,092 weighted units. One quality query averaged 29.85 input tokens including its
+instruction, or 119.4 weighted units at the same multiplier. A resumable checkpoint and
+pre-request reservations keep rebuilds and provider quota bounded.
+
+Loopback end-to-end probes measured 0.66-1.42 seconds for a first provider-backed query and
+roughly 20-75 ms for complete warm hybrid requests. The semantic-enabled Windows API process
+used 385.5 MiB of working-set memory and 421.2 MiB of private memory after real queries;
+these figures also include the pronunciation ZIP index and normal Go/SQLite state.
+
+The dense rank is not returned directly. The API combines it with the complete bounded
+lexical rank through reciprocal-rank fusion and protects exact Chinese segments before
+stable pagination. Query-vector and page LRUs avoid repeat provider calls; provider errors
+return the lexical page. See [SEMANTIC_SEARCH.md](SEMANTIC_SEARCH.md) for the build command,
+runtime contract, model comparison, and configuration.
 
 ## Pronunciation Archive
 

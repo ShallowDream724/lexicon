@@ -96,6 +96,26 @@ sidecar, never attached to `CanonicalEntry` responses or retained in browser sta
 The request-time scope filter selects any non-empty subset in canonical order
 `sense,phrase,form,usage,example`; the product default is definitions, phrases, and forms.
 
+## Semantic Search Projection
+
+Semantic Chinese search consumes the same `SearchDocument` stream and introduces no
+adapter-facing fields. The build boundary groups documents by exact visible `chineseText`,
+embeds each unique text once, and stores a scope bit mask beside the vector. Every original
+document remains attached to that text id so a semantic hit can recover its English evidence,
+entry id, headword, weight, and canonical location without reconstructing paths.
+
+The semantic sidecar is an immutable derived model with its own schema version. Its metadata
+pins the exact primary and reverse-search database fingerprints, canonical source projection,
+semantic projection, corpus fingerprint, model key, dimensions, normalization,
+quantization, query template, and provider-specific document/query options. The runtime
+accepts only a query embedder whose model key and dimensions match that contract.
+
+The current projection embeds only visible Chinese text. English headwords remain grouping
+and display metadata, while English spelling and typo lookup stay in their purpose-built
+indexes. Other similarity products, including English concept search, example recommendation,
+and study scheduling, require independent projections because their retrieval unit and
+quality contract differ.
+
 ## Enhancement Resources
 
 Optional sources that enrich an entry without redefining it use the independent

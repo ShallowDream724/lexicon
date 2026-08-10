@@ -103,11 +103,12 @@ async function prepareEntryPage(browser, viewport) {
 
 async function captureReverseSearch(browser, viewport) {
   const { context, page } = await createPage(browser, viewport);
-  await page.goto(`${baseUrl}/?q=${encodeURIComponent("放弃")}`, { waitUntil: "domcontentloaded" });
+  const query = "能吸收水汽、保持干燥的颗粒状硅胶";
+  await page.goto(`${baseUrl}/?q=${encodeURIComponent(query)}`, { waitUntil: "domcontentloaded" });
   const firstHeadword = page.locator(".search-result-item strong").first();
   await firstHeadword.waitFor();
   const firstHeadwordText = (await firstHeadword.innerText()).trim();
-  if (firstHeadwordText.replace(/[·‧]/g, "") !== "abandon") {
+  if (firstHeadwordText.replace(/[·‧]/g, "") !== "silica gel") {
     throw new Error(`Unexpected first reverse-search result: ${firstHeadwordText}`);
   }
   await stabilizePage(page);

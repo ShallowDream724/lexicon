@@ -29,6 +29,21 @@
       "primarySha256": "f6ac9d3e20482112b24ca4142481e5b5ba78efbc9cbca85299e0ac4fc86e22d5"
     },
     {
+      "kind": "database",
+      "file": "semantic-search.db",
+      "bytes": 251174912,
+      "sha256": "4bb445efbc8ddce2eaf02a386b6531e514544a5c7f65beb1bbe31cfec0d3ad40",
+      "runtimeSchema": 1,
+      "records": 178382,
+      "documents": 188851,
+      "primarySha256": "f6ac9d3e20482112b24ca4142481e5b5ba78efbc9cbca85299e0ac4fc86e22d5",
+      "reverseSearchSha256": "5f5b0d024141d6be17e76ef62a83206a2ca750984cd793bc52094b6a8298aaf5",
+      "model": "Qwen/Qwen3-Embedding-4B",
+      "modelKey": "qwen3-embedding-4b-1024-v1",
+      "dimensions": 1024,
+      "quantization": "symmetric-int8-127"
+    },
+    {
       "kind": "headword-audio",
       "file": "headword-audio.zip",
       "bytes": 1135490706,

@@ -65,7 +65,9 @@ Adapters do not implement Chinese search. The shared projector in
 `packages/dictionary-search` recursively reads canonical headword usage, senses,
 subsenses, examples, phrases, forms, usage segments, and grammar or usage boxes. A new
 source mapped to those existing fields is included in the next reverse-search build
-without source-specific search code.
+without source-specific search code. The semantic builder consumes that generated document
+stream, so the same visible Chinese content also enters the next semantic sidecar rebuild
+without adapter or UI changes.
 
 Every projected record carries a canonical section, part of speech, owner id when
 available, and stable object path. The renderer uses the same traversal to attach DOM

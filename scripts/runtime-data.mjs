@@ -50,15 +50,48 @@ export function validateManifest(value) {
     if (names.has(asset.file)) {
       throw new Error(`runtime asset manifest repeats ${asset.file}`);
     }
+    if (
+      asset.file === "semantic-search.db" &&
+      (
+        !Number.isSafeInteger(asset.documents) ||
+        asset.documents <= 0 ||
+        typeof asset.primarySha256 !== "string" ||
+        !sha256Pattern.test(asset.primarySha256) ||
+        typeof asset.reverseSearchSha256 !== "string" ||
+        !sha256Pattern.test(asset.reverseSearchSha256) ||
+        typeof asset.model !== "string" ||
+        asset.model.trim() === "" ||
+        typeof asset.modelKey !== "string" ||
+        asset.modelKey.trim() === "" ||
+        !Number.isSafeInteger(asset.dimensions) ||
+        asset.dimensions <= 0 ||
+        asset.dimensions > 4096 ||
+        asset.quantization !== "symmetric-int8-127"
+      )
+    ) {
+      throw new Error("runtime asset manifest contains an invalid semantic-search sidecar");
+    }
     names.add(asset.file);
   }
   const dictionary = value.assets.find((asset) => asset.file === "dictionary.db");
   const reverseSearch = value.assets.find((asset) => asset.file === "reverse-search.db");
+  const semanticSearch = value.assets.find((asset) => asset.file === "semantic-search.db");
   if (
     reverseSearch &&
     (!dictionary || reverseSearch.primarySha256 !== dictionary.sha256)
   ) {
     throw new Error("reverse-search.db must identify the bundled dictionary.db fingerprint");
+  }
+  if (
+    semanticSearch &&
+    (
+      !dictionary ||
+      !reverseSearch ||
+      semanticSearch.primarySha256 !== dictionary.sha256 ||
+      semanticSearch.reverseSearchSha256 !== reverseSearch.sha256
+    )
+  ) {
+    throw new Error("semantic-search.db must identify the bundled dictionary and reverse-search fingerprints");
   }
   return value;
 }

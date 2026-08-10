@@ -16,6 +16,12 @@
 # python tooling
 __pycache__/
 *.py[cod]
+*.npy
+*.npz
+*.pt
+*.safetensors
+*.f16
+checkpoint.json
 
 # next.js
 /.next/

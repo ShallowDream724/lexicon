@@ -15,8 +15,10 @@ TLS reverse proxy on ports 80 and 443
 Go dictionary API
    +-- primary runtime SQLite, read-only
    +-- Chinese reverse-search SQLite, read-only
+   +-- semantic-search SQLite, read-only
    +-- etymology sidecar SQLite, read-only
    +-- pronunciation ZIP, read-only
+   +-- optional outbound query-embedding provider
 ```
 
 The browser calls a same-origin `/api/v1` path. The repository's Compose file uses Caddy to
@@ -34,6 +36,7 @@ The measured production assets are:
 | --- | ---: | --- |
 | Runtime SQLite schema v3 | 53,952,512 bytes | opened read-only |
 | Reverse-search sidecar schema v3 | 69,894,144 bytes | opened read-only; scoped exact lookup, bounded FTS, OpenCC normalization, and grouped refinement |
+| Semantic-search sidecar schema v1 | 251,174,912 bytes | 178,382 int8 vectors loaded once; evidence read from SQLite on demand |
 | Etymology sidecar schema v3 | 45,400,064 bytes | opened read-only; articles decoded on demand |
 | Headword pronunciation ZIP | 1,135,490,706 bytes | indexed once, streamed without extraction |
 | Usable headword MP3 assets | 128,010 files / 1,143,628,003 bytes | not extracted |
@@ -44,10 +47,12 @@ and avoids creating hundreds of thousands of filesystem entries. Entry payloads 
 use independent Zstandard frames with a shared dictionary; recompressing the database
 as one archive would lose random access.
 
-A full-archive local probe measured API readiness in about 1.2 seconds, a 125 MiB
-working set, and 156 MiB of private memory. A sampled 8,377-byte MP3 streamed in 3.6 ms.
-These numbers exclude the Next.js and Caddy containers and serve as a sizing reference,
-not a cross-platform guarantee.
+A full-archive probe without semantic search measured API readiness in about 1.2 seconds,
+a 125 MiB working set, and 156 MiB of private memory. After loading semantic search and
+serving real queries, the measured Windows API process used 385.5 MiB of working-set memory
+and 421.2 MiB of private memory. The 174 MiB resident int8 matrix accounts for most of the
+increase. A sampled 8,377-byte MP3 streamed in 3.6 ms. These numbers exclude the Next.js and
+Caddy containers and serve as a sizing reference, not a cross-platform guarantee.
 
 The current PWA application shell is about 1.07 MiB across 26 precache entries. It is a
 browser-side budget and does not change server asset capacity. Entry JSON, audio, images,
@@ -63,7 +68,7 @@ and one normal rebuild; ten GiB leaves room for build cache and atomic asset rep
 - Ports 80 and 443 reachable when automatic HTTPS is used.
 - A domain with an A or AAAA record pointing to the server, or plain HTTP by IP for a
   private deployment.
-- The four released runtime assets downloaded through the project manifest.
+- The five released runtime assets downloaded through the project manifest.
 
 ## Prepare Assets
 
@@ -81,19 +86,22 @@ data/
   dictionary.db
   etymology.db
   reverse-search.db
+  semantic-search.db
   headword-audio.zip
 ```
 
-All three runtime databases pass importer schema and integrity validation before release.
-The reverse-search sidecar additionally pins the exact primary database SHA-256. The audio
+All four runtime databases pass schema and integrity validation before release. The
+reverse-search sidecar pins the exact primary database SHA-256; the semantic sidecar pins
+both of those database fingerprints and its embedding contract. The audio
 archive passes its pinned size and SHA-256 checks and retains its original ZIP body.
 Run `npm run data:verify` after transferring the asset set through a mirror or backup. The
-included Compose expects all four files. A custom Compose may omit the reverse-search
+included Compose expects all five files. A custom Compose may omit the reverse-search
 environment variable and mount when Chinese lookup is not needed. It may independently omit
-the etymology or audio configuration; English search and entry lookup continue without
-those optional resources.
+the semantic, etymology, or audio configuration. Semantic search also stays disabled until
+an embedding endpoint and credential are configured; the complete lexical Chinese path,
+English search, and entry lookup continue without it.
 
-Make all four files readable by the Docker daemon and keep them immutable during normal
+Make all five files readable by the Docker daemon and keep them immutable during normal
 operation. Content assets never enter an image or Git commit.
 
 ## Configure
@@ -124,6 +132,23 @@ illustration sources are optional and accept only HTTP or HTTPS URLs. Illustrati
 URL templates can use `{key}`, `{prefix1}`, `{prefix3}`, and `{prefix5}` path tokens;
 a separate thumbnail template avoids loading full images in compact resource cards.
 
+To enable the released semantic index, set the OpenAI-compatible endpoint and credential in
+the private environment file. Keep the bundled model and model-key defaults together:
+
+```text
+DICTIONARY_SEMANTIC_BASE_URL=https://provider.example/v1
+DICTIONARY_SEMANTIC_API_KEY=replace-with-your-key
+DICTIONARY_SEMANTIC_MODEL=Qwen/Qwen3-Embedding-4B
+DICTIONARY_SEMANTIC_MODEL_KEY=qwen3-embedding-4b-1024-v1
+DICTIONARY_SEMANTIC_TIMEOUT=5s
+DICTIONARY_SEMANTIC_CACHE=128
+```
+
+The base URL and credential are never included in the image, runtime manifest, or Git
+history. Leaving either empty disables only semantic retrieval. A different embedding space
+requires rebuilding `semantic-search.db` and assigning a new model key; see
+[SEMANTIC_SEARCH.md](SEMANTIC_SEARCH.md).
+
 ## Start
 
 Build and start all three services:
@@ -150,7 +175,10 @@ validates the primary database and every configured optional asset before it beg
 serving traffic. A configured etymology path that has not been populated yet is logged
 and disabled. When the reverse-search sidecar is absent, Chinese queries return
 `503 reverse_search_unavailable`; a present but invalid sidecar or a primary fingerprint
-mismatch stops startup.
+mismatch stops startup. Semantic search is enabled only when its sidecar, compatible runtime
+model settings, endpoint, and credential are all present. A configured but incompatible
+semantic sidecar stops startup; request-time provider failures fall back to lexical Chinese
+results.
 
 ## Existing Reverse Proxy
 
@@ -174,7 +202,21 @@ services:
 ```
 
 Keep the primary database, etymology database, and pronunciation archive environment and
-mount pairs alongside it when those capabilities are enabled.
+mount pairs alongside it when those capabilities are enabled. Semantic retrieval adds its
+own read-only sidecar mount and keeps the provider settings in the private environment:
+
+```yaml
+services:
+  dictionary-api:
+    environment:
+      DICTIONARY_SEMANTIC_SEARCH_DB_PATH: /var/lib/lexicon/semantic-search.db
+      DICTIONARY_SEMANTIC_BASE_URL: ${DICTIONARY_SEMANTIC_BASE_URL:-}
+      DICTIONARY_SEMANTIC_API_KEY: ${DICTIONARY_SEMANTIC_API_KEY:-}
+      DICTIONARY_SEMANTIC_MODEL: ${DICTIONARY_SEMANTIC_MODEL:-Qwen/Qwen3-Embedding-4B}
+      DICTIONARY_SEMANTIC_MODEL_KEY: ${DICTIONARY_SEMANTIC_MODEL_KEY:-qwen3-embedding-4b-1024-v1}
+    volumes:
+      - ./data/semantic-search.db:/var/lib/lexicon/semantic-search.db:ro
+```
 
 The proxy must support streaming responses and preserve query strings, response content
 types, `Cache-Control`, and `Service-Worker-Allowed`. Do not enable proxy caching for
@@ -229,7 +271,8 @@ origins; these deployment-specific values do not belong in the public repository
 
 Replace runtime assets only with fully imported and audited files of supported schema
 versions. `dictionary.db` and `reverse-search.db` are one release unit: stop the API,
-replace both through atomic renames, and restart only after their manifest checks pass.
+replace them together with the compatible `semantic-search.db` through atomic renames, and
+restart only after their manifest checks pass.
 The etymology database and audio archive can be replaced independently while the API is
 stopped so SQLite metadata and the ZIP central directory are reloaded.
 

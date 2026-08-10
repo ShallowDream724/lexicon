@@ -11,7 +11,7 @@
     <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.24-2f7f8f" alt="Go 1.24"></a>
   </p>
 
-  <p><strong>40,974 entries · 188,851 Chinese search records · 51,716 etymology articles · 128,010 headword pronunciations</strong><br><strong>40,974 个词条 · 188,851 条中文反查记录 · 51,716 篇词源文章 · 128,010 个词头发音</strong></p>
+  <p><strong>40,974 entries · 188,851 Chinese search records · 178,382 semantic vectors · 51,716 etymology articles · 128,010 headword pronunciations</strong><br><strong>40,974 个词条 · 188,851 条中文反查记录 · 178,382 个语义向量 · 51,716 篇词源文章 · 128,010 个词头发音</strong></p>
 </div>
 
 <img src="docs/readme/hero-desktop.webp" width="100%" alt="Lexicon desktop entry view / Lexicon 桌面端词条页面">
@@ -20,9 +20,9 @@
 
 **找到真正想查的那个词**
 
-Search by spelling when you know the English word. When only a Chinese meaning comes to mind, Lexicon returns likely English entries and places the matching definition, phrase, form, usage note, or example directly beneath each result. The evidence stays visible, so the result order is understandable at a glance.
+Search by spelling when you know the English word. When only a Chinese meaning comes to mind, Lexicon combines literal evidence with semantic intent to find likely English entries. A short description can reach the right term even when it does not repeat the dictionary translation word for word. The matching definition, phrase, form, usage note, or example stays directly beneath each result, so the order remains understandable at a glance.
 
-知道英文时直接按拼写查询；只记得中文意思时，也可以反查可能的英文词条。命中的词义、短语、词形、用法或例句会直接列在每个结果下方，排序依据一眼可见。
+知道英文时直接按拼写查询；只记得中文意思时，Lexicon 会把字面命中与语义意图结合起来。即使输入的是一段没有照抄词典释义的描述，也有机会找到真正想查的词。命中的词义、短语、词形、用法或例句会直接列在每个结果下方，排序依据一眼可见。
 
 Selecting an evidence line opens the correct entry, switches to the right part of speech, and highlights the exact content after scrolling finishes. Broad searches begin with 32 results and can progressively reveal up to 512 without making the first request carry the full list.
 
@@ -86,12 +86,13 @@ Indexed lookup, bounded candidate pools, and independently compressed entries le
 | --- | ---: | ---: |
 | Core bilingual dictionary<br>双语主词典 | 40,974 entries<br>40,974 个词条 | 51.5 MiB |
 | Chinese reverse search<br>中文反查 | 188,851 documents · 347,486 exact segments<br>188,851 条文档 · 347,486 个精确片段 | 66.7 MiB |
+| Semantic intent search<br>语义意图检索 | 178,382 vectors · 1,024 dimensions<br>178,382 个向量 · 1,024 维 | 239.5 MiB |
 | Etymology enhancement<br>词源扩展 | 46,773 terms · 51,716 articles<br>46,773 个词语 · 51,716 篇文章 | 43.3 MiB |
 | Headword pronunciation<br>词头发音 | 128,010 MP3 assets<br>128,010 个 MP3 | 1.06 GiB |
 
-The current reverse-search sidecar answers representative multi-character queries in roughly 0.6–2.5 ms at p95 on the documented reference machine; an intentionally broad one-character query remains below 42 ms at p95. Reproducible storage and benchmark details live in [STORAGE_FORMAT.md](STORAGE_FORMAT.md).
+The local reverse-search sidecar answers representative multi-character queries in roughly 0.6–2.5 ms at p95 on the documented reference machine; an intentionally broad one-character query remains below 42 ms at p95. Semantic search is reserved for explicit multi-character submissions: recorded first calls took 0.66–1.42 seconds, while repeated queries and pagination reused the cached vector and completed in roughly 20–75 ms. Reproducible storage, quality, and cost details live in [STORAGE_FORMAT.md](STORAGE_FORMAT.md) and [SEMANTIC_SEARCH.md](SEMANTIC_SEARCH.md).
 
-在文档记录的参考环境中，当前中文反查侧库的典型多字查询 p95 约为 0.6–2.5 ms；刻意选择的宽泛单字查询 p95 仍低于 42 ms。可复现的存储与基准细节见 [STORAGE_FORMAT.md](STORAGE_FORMAT.md)。
+在文档记录的参考环境中，本地中文反查侧库的典型多字查询 p95 约为 0.6–2.5 ms；刻意选择的宽泛单字查询 p95 仍低于 42 ms。语义检索只在用户明确提交多字中文时触发：实测首次调用上游约需 0.66–1.42 秒，重复查询与分页会复用缓存向量，完整请求约为 20–75 ms。可复现的存储、质量与成本细节见 [STORAGE_FORMAT.md](STORAGE_FORMAT.md) 和 [SEMANTIC_SEARCH.md](SEMANTIC_SEARCH.md)。
 
 ## Quick start
 
@@ -106,21 +107,22 @@ npm ci
 npm run data:download
 ```
 
-The download is about 1.22 GiB. It retrieves the versioned [runtime-data-v1 Release](https://github.com/ShallowDream724/lexicon/releases/tag/runtime-data-v1), verifies every file against `runtime-assets.json`, and creates the shared runtime layout:
+The download is about 1.45 GiB. It retrieves the versioned [runtime-data-v1 Release](https://github.com/ShallowDream724/lexicon/releases/tag/runtime-data-v1), verifies every file against `runtime-assets.json`, and creates the shared runtime layout:
 
-完整下载量约为 1.22 GiB。命令会获取带版本的 [runtime-data-v1 Release](https://github.com/ShallowDream724/lexicon/releases/tag/runtime-data-v1)，依据 `runtime-assets.json` 校验每个文件，并创建统一的运行目录：
+完整下载量约为 1.45 GiB。命令会获取带版本的 [runtime-data-v1 Release](https://github.com/ShallowDream724/lexicon/releases/tag/runtime-data-v1)，依据 `runtime-assets.json` 校验每个文件，并创建统一的运行目录：
 
 ```text
 data/
   dictionary.db
   etymology.db
   reverse-search.db
+  semantic-search.db
   headword-audio.zip
 ```
 
-Keep `headword-audio.zip` packed. For manually transferred assets, place all four files at these paths and run `npm run data:verify`. The reverse-search sidecar is fingerprinted to the primary dictionary, so those two databases must be updated together.
+Keep `headword-audio.zip` packed. For manually transferred assets, place all five files at these paths and run `npm run data:verify`. The semantic sidecar is fingerprinted to both the primary dictionary and reverse-search sidecar, so all three databases must be updated together.
 
-`headword-audio.zip` 无需解压。手动传输资源时，请把四个文件放到上述路径，并运行 `npm run data:verify`。中文反查侧库带有主词典指纹，因此这两个数据库必须配套更新。
+`headword-audio.zip` 无需解压。手动传输资源时，请把五个文件放到上述路径，并运行 `npm run data:verify`。语义侧库同时带有主词典与中文反查侧库的指纹，因此这三个数据库必须配套更新。
 
 Start the API and web application in separate terminals:
 
@@ -137,6 +139,10 @@ npm run dev
 Open `http://localhost:3000`. The web application calls `http://localhost:8787/api/v1` by default. `LEXICON_DATA_BASE_URL` selects another asset mirror, and `LEXICON_DATA_DIR` selects another local data directory.
 
 打开 `http://localhost:3000`。Web 应用默认调用 `http://localhost:8787/api/v1`。可通过 `LEXICON_DATA_BASE_URL` 选择其他资源镜像，通过 `LEXICON_DATA_DIR` 选择其他本地数据目录。
+
+Semantic intent search is optional at runtime. Configure an OpenAI-compatible embeddings endpoint and a model compatible with the released sidecar to enable it; without those settings, Chinese lookup keeps its complete local lexical path. The released contract, one-command rebuild, provider options, quota guard, and measured quality are documented in [SEMANTIC_SEARCH.md](SEMANTIC_SEARCH.md).
+
+语义意图检索在运行时可选。配置与发布侧库兼容的 OpenAI 格式 Embeddings 接口和模型即可启用；未配置时，中文反查仍会完整使用本地字面检索。发布契约、一键重建、接口选项、额度保护与实测质量见 [SEMANTIC_SEARCH.md](SEMANTIC_SEARCH.md)。
 
 For self-hosted Docker deployment, configure the reference environment and start the bundled web, API, and reverse-proxy services. HTTPS, proxy, asset, update, and rollback notes are in [DEPLOYMENT.md](DEPLOYMENT.md).
 
@@ -158,7 +164,7 @@ The interface reads one canonical entry model. Import adapters, Chinese search p
 | Document<br>文档 | Scope<br>内容 |
 | --- | --- |
 | [ARCHITECTURE.md](ARCHITECTURE.md) · [DATA_MODEL.md](DATA_MODEL.md) | Module ownership and dictionary contracts<br>模块职责与词典契约 |
-| [ADAPTER_GUIDE.md](ADAPTER_GUIDE.md) · [STORAGE_FORMAT.md](STORAGE_FORMAT.md) | Source adapters, indexing, compression, and migration<br>数据源适配、索引、压缩与迁移 |
+| [ADAPTER_GUIDE.md](ADAPTER_GUIDE.md) · [STORAGE_FORMAT.md](STORAGE_FORMAT.md) · [SEMANTIC_SEARCH.md](SEMANTIC_SEARCH.md) | Source adapters, lexical and semantic indexing, compression, and migration<br>数据源适配、字面与语义索引、压缩与迁移 |
 | [PWA.md](PWA.md) · [DEPLOYMENT.md](DEPLOYMENT.md) | Installation, cache boundaries, self-hosting, and updates<br>安装、缓存边界、自托管与更新 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Development workflow and release checks<br>开发流程与发布检查 |
 

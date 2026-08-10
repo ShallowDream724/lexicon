@@ -8,7 +8,7 @@ test("runtime release manifest pins the complete runtime asset set", async () =>
   const manifest = validateManifest(JSON.parse(await readFile(new URL("../runtime-assets.json", import.meta.url), "utf8")));
   assert.deepEqual(
     manifest.assets.map((asset) => asset.file),
-    ["dictionary.db", "etymology.db", "reverse-search.db", "headword-audio.zip"],
+    ["dictionary.db", "etymology.db", "reverse-search.db", "semantic-search.db", "headword-audio.zip"],
   );
   const dictionary = manifest.assets.find((asset) => asset.file === "dictionary.db");
   const reverseSearch = manifest.assets.find((asset) => asset.file === "reverse-search.db");
@@ -18,9 +18,48 @@ test("runtime release manifest pins the complete runtime asset set", async () =>
   assert.equal(reverseSearch.bytes, 69894144);
   assert.equal(reverseSearch.sha256, "5f5b0d024141d6be17e76ef62a83206a2ca750984cd793bc52094b6a8298aaf5");
   assert.equal(reverseSearch.primarySha256, dictionary.sha256);
+  const semanticSearch = manifest.assets.find((asset) => asset.file === "semantic-search.db");
+  assert.equal(semanticSearch.runtimeSchema, 1);
+  assert.equal(semanticSearch.records, 178382);
+  assert.equal(semanticSearch.documents, 188851);
+  assert.equal(semanticSearch.bytes, 251174912);
+  assert.equal(semanticSearch.sha256, "4bb445efbc8ddce2eaf02a386b6531e514544a5c7f65beb1bbe31cfec0d3ad40");
+  assert.equal(semanticSearch.primarySha256, dictionary.sha256);
+  assert.equal(semanticSearch.reverseSearchSha256, reverseSearch.sha256);
+  assert.equal(semanticSearch.modelKey, "qwen3-embedding-4b-1024-v1");
+  assert.equal(semanticSearch.dimensions, 1024);
   const audio = manifest.assets.find((asset) => asset.kind === "headword-audio");
   assert.equal(audio.records, 128010);
   assert.ok(audio.bytes > 1024 ** 3);
+});
+
+test("runtime release manifest rejects a semantic sidecar built from another search corpus", () => {
+  assert.throws(() =>
+    validateManifest({
+      schemaVersion: 2,
+      releaseTag: "test",
+      baseUrl: "https://example.test/",
+      assets: [
+        { kind: "database", file: "dictionary.db", bytes: 1, records: 1, runtimeSchema: 1, sha256: "0".repeat(64) },
+        { kind: "database", file: "reverse-search.db", bytes: 1, records: 1, runtimeSchema: 1, sha256: "1".repeat(64), primarySha256: "0".repeat(64) },
+        {
+          kind: "database",
+          file: "semantic-search.db",
+          bytes: 1,
+          records: 1,
+          documents: 1,
+          runtimeSchema: 1,
+          sha256: "2".repeat(64),
+          primarySha256: "0".repeat(64),
+          reverseSearchSha256: "3".repeat(64),
+          model: "test-model",
+          modelKey: "test-model-v1",
+          dimensions: 1,
+          quantization: "symmetric-int8-127",
+        },
+      ],
+    }),
+  );
 });
 
 test("runtime release manifest rejects a reverse-search sidecar built from another primary database", () => {

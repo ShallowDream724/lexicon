@@ -28,7 +28,9 @@ One-way importers  ----  project-owned runtime SQLite + enhancement sidecars
         +--------------  media manifest and pronunciation archive
         |
         v
-Go source service  <----  immutable reverse-search sidecar
+Go source service  <----  immutable reverse-search + semantic sidecars
+        ^
+        +--------------  optional OpenAI-compatible query embedding
         |
         +--------------  /api/v1/search, /entries, /enhancements, /media
         |
@@ -40,7 +42,7 @@ CanonicalEntry v1
         |
         +---- React dictionary renderer
         |
-        +---- offline SearchDocument projection ----> immutable reverse-search sidecar
+        +---- offline SearchDocument projection ----> immutable lexical + semantic sidecars
         |
         +---- IndexedDB learning data: query history, visits, favorites, notes, preferences
 
@@ -90,6 +92,9 @@ The service owns runtime storage work:
 - validating the reverse-search sidecar against the primary database fingerprint;
 - exact-segment and bounded FTS candidate retrieval, followed by deterministic grouped
   Chinese-result ranking;
+- validating the semantic sidecar against both database fingerprints and its model contract;
+- bounded resident int8 retrieval, query-vector caching, and deterministic lexical-semantic
+  fusion for explicitly submitted Chinese intent queries;
 - decompressing one independently stored entry and returning a stable envelope
   around the unmodified entry JSON;
 - indexing the pronunciation archive once and streaming individual assets;
@@ -110,6 +115,22 @@ normalizer version, source version, document count, and SHA-256 of the exact pri
 runtime database. A missing sidecar returns `503 reverse_search_unavailable` for Chinese
 queries. A configured but incompatible sidecar fails startup so evidence locations cannot
 drift from entry data.
+
+Semantic Chinese search derives a second immutable sidecar from that same canonical
+reverse-search projection. It stores one vector per unique visible Chinese text plus the
+source-neutral evidence needed to recover entry locations. Metadata pins the primary and
+reverse-search SHA-256 values, semantic projection version, corpus fingerprint, model key,
+dimensions, query template, provider task options, scope set, and quantization. The API
+loads int8 vectors into a bounded resident array and keeps evidence in read-only SQLite.
+Replacing the primary or reverse-search database therefore also requires a compatible
+semantic rebuild.
+
+Only the query vector crosses the optional OpenAI-compatible provider boundary. Document
+vectors are built once and distributed as a release asset. The provider model name is a
+deployment routing value; the project-owned model key identifies a compatible embedding
+space. Missing provider configuration disables semantic retrieval while preserving the
+complete lexical Chinese path. Provider failures during a request degrade to that lexical
+page rather than failing dictionary search.
 
 Primary search and enhancement association share one server-side term-key boundary.
 Dictionary keys remove source display syllable separators; enhancement keys additionally
@@ -255,6 +276,13 @@ target with one transient three-second highlight after scrolling settles. Repeat
 replace the previous pending or active highlight through the same location service. Owner and
 section checks prevent repeated source ids from opening an unrelated resource; older or
 coarser locations fall back to their owner and then their section.
+
+Chinese suggestions remain a debounced lexical request. An explicit submission containing
+at least two Han characters and no more than 200 Unicode characters opts into hybrid mode.
+The server retrieves the complete bounded lexical and dense windows, protects exact Chinese
+segments, combines independent ranks with reciprocal-rank fusion, and paginates the stable
+merged window. Query-vector and page caches are server-owned; browser scope changes and
+continuation requests keep the hybrid mode but never hold vectors in client state.
 
 Chinese results default to definitions, phrases, and forms. Users may include usage notes
 or examples through one canonical scope control. Scope is part of the request identity,
@@ -426,12 +454,13 @@ note editing is never interrupted by an automatic mid-session refresh.
 
 All endpoints use `/api/v1`. Errors have a stable code, message, and request id.
 `GET /api/v1/health` reports `capabilities.chineseReverseSearch`,
-`capabilities.etymology`, and `capabilities.headwordAudio` so callers can distinguish
+`capabilities.semanticSearch`, `capabilities.etymology`, and
+`capabilities.headwordAudio` so callers can distinguish
 enabled optional resources from unavailable ones.
 
 ```text
 GET /api/v1/health
-GET /api/v1/search?q=<query>&limit=<bounded integer>&offset=<Chinese results only>&scope=<Chinese scopes>
+GET /api/v1/search?q=<query>&limit=<bounded integer>&offset=<Chinese results only>&scope=<Chinese scopes>&mode=<lexical|hybrid>
 GET /api/v1/entries/<url-encoded entry id>
 GET /api/v1/enhancements/etymology/terms/<url-encoded term>
 GET /api/v1/enhancements/etymology/articles/<url-encoded article id>
@@ -448,7 +477,8 @@ optional `offset`; their default page contains 32 groups, a page contains at mos
 Their optional comma-separated `scope` uses the stable order
 `sense,phrase,form,usage,example`; omission defaults to `sense,phrase,form`. Empty,
 repeated, whitespace-bearing, or unknown values are rejected, and English requests reject
-the parameter.
+the parameter. `mode=hybrid` is accepted only as an explicit opt-in; ineligible queries use
+the lexical path, and an unavailable semantic provider does not remove lexical results.
 
 The entry endpoint returns the source envelope consumed by the registered adapter:
 
@@ -487,6 +517,17 @@ requests as distinct outcomes.
   not increase corroboration.
 - Traditional-to-simplified conversion uses one process-wide, race-safe converter. A query
   is normalized once before its CJK sequences, runes, and FTS tokens are derived.
+- Semantic document vectors use L2-normalized symmetric int8 storage. Startup validates a
+  512 MiB resident-vector ceiling; the bundled 178,382 by 1,024 matrix occupies about
+  174 MiB. One uncached query scans it with at most four workers and keeps at most 4,096
+  text candidates before evidence projection.
+- Semantic queries require at least two Han characters. Typing suggestions, English lookup,
+  one-character Chinese lookup, invalid input, and oversized input never call the provider.
+  Identical concurrent queries share one call; bounded vector and page LRUs avoid another
+  call for repeated queries, scope changes, and pagination.
+- The embedding request has a deployment-configured timeout, validates the model key and
+  dimensions against sidecar metadata, caps response bytes, rejects malformed or non-finite
+  vectors, and degrades to lexical retrieval on request-time failure.
 - Exact and prefix results are ranked in SQL; the browser never filters the full
   dictionary.
 - One-edit spelling correction runs only after an empty exact/prefix result for a
@@ -536,12 +577,14 @@ The minimum release gate is:
    invalid JSON, and concatenated navigation metadata.
 4. Deterministic reverse-search projection/import checks, primary fingerprint validation,
    representative relevance cases, and bounded latency benchmarks.
-5. TypeScript compilation and production build.
-6. Browser workflows for search, entry navigation, playback, favorite, note,
+5. Semantic builder resume, budget, metadata, quantization, runtime scan, cache, fusion,
+   provider-failure, and representative intent-quality checks.
+6. TypeScript compilation and production build.
+7. Browser workflows for search, entry navigation, playback, favorite, note,
    history, and refresh persistence.
-7. Screenshots at desktop, tablet portrait, tablet landscape, and phone viewports,
+8. Screenshots at desktop, tablet portrait, tablet landscape, and phone viewports,
    with overflow, overlap, sticky navigation, and media-state checks.
-8. Manifest, install-icon, Service Worker header, precache-boundary, update-lifecycle,
+9. Manifest, install-icon, Service Worker header, precache-boundary, update-lifecycle,
    and offline-navigation checks against standalone production output.
 
 ## Data Delivery
@@ -568,9 +611,10 @@ Browser
 TLS reverse proxy
    +---- /api/v1/* ---- Go API container
    |                         +---- read-only runtime SQLite
-   |                         +---- read-only reverse-search sidecar
+   |                         +---- read-only reverse-search + semantic sidecars
    |                         +---- read-only enhancement sidecars
    |                         +---- read-only pronunciation ZIP
+   |                         +---- optional outbound query-embedding provider
    |
    +---- all other paths --- standalone Next.js container
 ```

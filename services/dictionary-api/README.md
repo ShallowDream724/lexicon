@@ -1,7 +1,8 @@
 # Dictionary API
 
 Read-only local HTTP service for a generated dictionary database, its derived Chinese
-reverse-search sidecar, optional enhancement sidecars, and a headword pronunciation archive.
+reverse-search and semantic sidecars, optional enhancement sidecars, and a headword
+pronunciation archive.
 
 The same binary runs locally or in the server container. Content files are mounted at
 runtime and are never copied into the image.
@@ -52,6 +53,21 @@ sidecar records the exact primary database SHA-256 and is rejected at API startu
 two files do not match. Rebuilding a primary database therefore requires rebuilding and
 publishing its reverse-search sidecar.
 
+Build a semantic sidecar from the same canonical reverse-search projection through any
+compatible OpenAI-format embeddings endpoint:
+
+```sh
+export OPENAI_BASE_URL=https://provider.example/v1
+export OPENAI_API_KEY=replace-with-your-key
+npm run semantic-search:build
+```
+
+The default command embeds every unique visible Chinese text, runs the quality suites, and
+atomically writes `data/semantic-search.db`. Build state under `work/semantic-search` is
+resumable and fingerprinted to the exact corpus, model, dimensions, query template, and
+provider task options. Detailed custom-model and quota options are in the root
+[semantic-search guide](../../SEMANTIC_SEARCH.md).
+
 ## Run
 
 ```sh
@@ -59,6 +75,7 @@ go run ./cmd/dictionary-api \
   -db ./data/dictionary.db \
   -etymology-db ./data/etymology.db \
   -reverse-search-db ./data/reverse-search.db \
+  -semantic-search-db ./data/semantic-search.db \
   -audio-zip ./data/headword-audio.zip \
   -example-audio-base-url https://media.example.test/audio/examples/ \
   -illustration-url-template 'https://media.example.test/images/{key}.png' \
@@ -83,6 +100,13 @@ API environment variables:
 DICTIONARY_RUNTIME_DB_PATH
 DICTIONARY_ETYMOLOGY_DB_PATH
 DICTIONARY_REVERSE_SEARCH_DB_PATH
+DICTIONARY_SEMANTIC_SEARCH_DB_PATH
+DICTIONARY_SEMANTIC_BASE_URL
+DICTIONARY_SEMANTIC_API_KEY
+DICTIONARY_SEMANTIC_MODEL
+DICTIONARY_SEMANTIC_MODEL_KEY
+DICTIONARY_SEMANTIC_TIMEOUT
+DICTIONARY_SEMANTIC_CACHE
 DICTIONARY_AUDIO_ZIP_PATH
 DICTIONARY_EXAMPLE_AUDIO_BASE_URL
 DICTIONARY_ILLUSTRATION_BASE_URL
@@ -97,7 +121,7 @@ Endpoints:
 ```text
 GET /api/v1/health
 GET /api/v1/search?q=word&limit=20
-GET /api/v1/search?q=中文&limit=32&offset=0&scope=sense,phrase,form
+GET /api/v1/search?q=中文&limit=32&offset=0&scope=sense,phrase,form&mode=hybrid
 GET /api/v1/entries/{id}
 GET /api/v1/enhancements/etymology/terms/{term}
 GET /api/v1/enhancements/etymology/articles/{id}
@@ -116,13 +140,21 @@ groups and accept a page size of at most 256. English responses retain their 20-
 default and 50-result maximum. Errors contain a stable code,
 message, and request id; the same request id is returned in `X-Request-ID`.
 `GET /api/v1/health` exposes `capabilities.chineseReverseSearch`,
-`capabilities.etymology`, and `capabilities.headwordAudio` for optional runtime resources.
+`capabilities.semanticSearch`, `capabilities.etymology`, and
+`capabilities.headwordAudio` for optional runtime resources.
 
 Chinese `scope` accepts a non-empty comma-separated subset of
 `sense,phrase,form,usage,example`; omission defaults to `sense,phrase,form`. Scope is applied
 inside both exact and FTS SQL before the bounded candidate limit. Unknown, repeated query
 parameters, empty values, and whitespace-bearing lists return `400 invalid_scope`; English
 search rejects the parameter.
+
+`mode` accepts `lexical` or `hybrid` and defaults to `lexical`. Hybrid mode runs only when
+the query contains at least two Han characters and stays within the 200-character limit.
+It embeds the normalized query once, retrieves dense candidates from the bundled int8
+matrix, then protects exact Chinese evidence and combines lexical and semantic ranks before
+pagination. One-character Chinese and English requests remain lexical. Provider errors,
+timeouts, and invalid responses return the complete lexical page.
 
 ## Storage
 
@@ -185,10 +217,23 @@ When the reverse-search sidecar is not configured, Chinese search returns
 `503 reverse_search_unavailable`. English search, entries, enhancements, and configured media
 remain available.
 
+The optional semantic sidecar stores one 1,024-dimensional symmetric-int8 vector per unique
+visible Chinese text and retains source-neutral evidence in SQLite. Its metadata pins the
+exact primary and reverse-search fingerprints, model key, query contract, source projection,
+and corpus fingerprint. The runtime loads the vector matrix once, scans it with at most four
+workers, and bounds evidence projection to 4,096 text candidates. Separate bounded LRUs
+cache query vectors and complete pages; identical concurrent queries share one embedding
+request. The released 178,382-vector matrix occupies about 174 MiB in memory.
+
+Semantic retrieval remains disabled unless the sidecar and all provider settings are present.
+The provider model name may vary across equivalent routes, while the model key and dimensions
+must match the sidecar. A configured but incompatible sidecar fails startup. Credentials and
+real provider origins belong only in process environment or a private deployment file.
+
 ## Container
 
 From the repository root, prepare `data/dictionary.db`, `data/etymology.db`,
-`data/reverse-search.db`, and `data/headword-audio.zip`, then use the Compose definition
+`data/reverse-search.db`, `data/semantic-search.db`, and `data/headword-audio.zip`, then use the Compose definition
 in `deploy/server`. It
 mounts all files read-only, listens only on the private container network, and publishes
 no API host port. Configure an exact HTTPS frontend origin before starting the service. The
