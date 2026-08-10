@@ -191,6 +191,10 @@ func TestSearchScopeValidationDefaultsAndDeduplication(t *testing.T) {
 }
 
 func newFixtureServiceWithReverseSearch(t testing.TB) *server.Service {
+	return newFixtureServiceWithReverseSearchAndSemantic(t, nil)
+}
+
+func newFixtureServiceWithReverseSearchAndSemantic(t testing.TB, semantic server.SemanticSearcher) *server.Service {
 	t.Helper()
 	directory := t.TempDir()
 	sourcePath := filepath.Join(directory, "source.db")
@@ -261,7 +265,7 @@ func newFixtureServiceWithReverseSearch(t testing.TB) *server.Service {
 	}
 	service := server.New(db, nil, server.Config{
 		SourceVersion: "fixture-v1", PayloadCodec: codec, ReverseSearch: reverseStore,
-		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		SemanticSearch: semantic, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	t.Cleanup(func() {
 		if err := service.Close(); err != nil {
