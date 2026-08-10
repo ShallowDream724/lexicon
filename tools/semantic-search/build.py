@@ -212,6 +212,13 @@ def _cost_report(document_usage: dict[str, Any], ledger: UsageLedger, multiplier
     return {"documents": {**document_usage, "weightedUnits": int(document_usage["promptTokens"]) * multiplier}, "quality": {"promptTokens": quality_tokens, "requests": quality_requests, "weightedUnits": quality_tokens * multiplier, "unmetered": bool(total["unmetered"]) and not bool(document_usage.get("unmetered"))}, "total": total, "budgetPolicy": "preflight-estimate-with-pre-request-reservations"}
 
 
+def quality_reservation_tokens(inputs: list[str], safety_factor: float) -> int:
+    """Use UTF-8 byte length as a tokenizer-independent upper bound per input."""
+    if not inputs or safety_factor < 1:
+        raise ValueError("quality inputs and safety factor are invalid")
+    return math.ceil(sum(len(value.encode("utf-8")) for value in inputs) * safety_factor)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build a runtime-compatible semantic-search sidecar from visible Chinese reverse-search documents.")
     parser.add_argument("--reverse-db", type=Path, default=Path("data/reverse-search.db"))
@@ -270,13 +277,15 @@ def main() -> None:
         fingerprint = build_fingerprint(corpus, args.primary_db, args.model_key, args.provider_model, args.dimensions, args.query_template, args.document_extra, args.query_extra)
         matrix, document_usage, ledger = build_cached_vectors(args, corpus, fingerprint)
         sidecar = args.sidecar or args.output_dir / "semantic-search.db"
-        metadata = write_sidecar(sidecar, corpus, matrix, args.dimensions, args.primary_db, args.model_key, args.provider_model, args.query_template, args.query_extra, args.block_size)
+        metadata = write_sidecar(sidecar, corpus, matrix, args.dimensions, args.primary_db, args.model_key, args.provider_model, args.query_template, args.document_extra, args.query_extra, args.block_size)
         quality = None
         if args.quality_file:
             provider = _provider_from_args(args, ledger, args.query_extra)
-            plan = json.loads(_checkpoint_path(args.output_dir).read_text(encoding="utf-8"))["preflight"]
             def embed_quality(texts: list[str]) -> np.ndarray:
-                reserve = math.ceil(int(plan["tokensPerText"]) * len(texts) * args.budget_safety_factor)
+                reserve = quality_reservation_tokens(texts, args.budget_safety_factor)
+                snapshot = ledger.snapshot()
+                if args.max_weighted_units is not None and (float(snapshot["promptTokens"]) + float(snapshot["reservedPromptTokens"]) + reserve) * args.input_multiplier > args.max_weighted_units:
+                    raise ValueError("quality request reservation exceeds the configured budget")
                 return provider.embed(texts, reserve).vectors
             quality = evaluate(corpus, matrix, embed_quality, load_quality(args.quality_file), args.query_template, args.top_k)
             write_json_atomic(args.output_dir / "quality.json", quality)

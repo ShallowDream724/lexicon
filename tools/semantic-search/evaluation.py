@@ -32,24 +32,26 @@ def load_quality(paths: list[Path]) -> list[dict[str, object]]:
     return cases
 
 
-def _scores(matrix: np.memmap, query: np.ndarray, runtime_int8: bool, block_size: int = 8192) -> np.ndarray:
-    values = np.empty(matrix.shape[0], dtype=np.int32 if runtime_int8 else np.float32)
-    if runtime_int8:
-        query_i8 = quantize_block(query.reshape(1, -1))[0].astype(np.int32)
-        for start in range(0, len(matrix), block_size):
-            block = quantize_block(matrix[start:start + block_size]).astype(np.int32)
-            values[start:start + len(block)] = block @ query_i8
-    else:
-        query_f32 = np.asarray(query, dtype=np.float32)
-        for start in range(0, len(matrix), block_size):
-            block = np.asarray(matrix[start:start + block_size], dtype=np.float32)
-            values[start:start + len(block)] = block @ query_f32
-    return values
+def score_matrices(matrix: np.memmap, queries: np.ndarray, block_size: int = 8192) -> tuple[np.ndarray, np.ndarray]:
+    """Compute all float and runtime-int8 query scores in one document pass."""
+    query_f32 = np.asarray(queries, dtype=np.float32)
+    if query_f32.ndim != 2 or query_f32.shape[1] != matrix.shape[1]:
+        raise ValueError("quality query vectors do not match cached vector dimensions")
+    float_scores = np.empty((matrix.shape[0], query_f32.shape[0]), dtype=np.float32)
+    int8_scores = np.empty((matrix.shape[0], query_f32.shape[0]), dtype=np.int32)
+    query_i8 = quantize_block(query_f32).astype(np.int32)
+    for start in range(0, len(matrix), block_size):
+        end = min(start + block_size, len(matrix))
+        document_f32 = np.asarray(matrix[start:end], dtype=np.float32)
+        float_scores[start:end] = document_f32 @ query_f32.T
+        document_i8 = quantize_block(matrix[start:end]).astype(np.int32)
+        int8_scores[start:end] = document_i8 @ query_i8.T
+    return float_scores, int8_scores
 
 
-def rank(corpus: Corpus, matrix: np.memmap, query: np.ndarray, expected: set[str], top_k: int, runtime_int8: bool) -> int | None:
+def rank(corpus: Corpus, scores: np.ndarray, expected: set[str], top_k: int) -> int | None:
     # Stable sort makes score ties deterministic by text ID, matching sidecar order.
-    order = np.argsort(-_scores(matrix, query, runtime_int8), kind="stable")
+    order = np.argsort(-scores, kind="stable")
     seen: set[str] = set()
     position = 0
     for index in order:
@@ -74,13 +76,12 @@ def summarize(ranks: list[int | None], top_k: int) -> dict[str, float | int]:
 def evaluate(corpus: Corpus, matrix: np.memmap, query_embed: Callable[[list[str]], np.ndarray], cases: list[dict[str, object]], query_template: str, top_k: int) -> dict[str, object]:
     queries = [query_template.replace("{query}", str(item["query"])) for item in cases]
     query_vectors = np.asarray(query_embed(queries), dtype=np.float32)
-    if query_vectors.shape != (len(cases), matrix.shape[1]):
-        raise ValueError("quality query vectors do not match cached vector dimensions")
+    float_scores, int8_scores = score_matrices(matrix, query_vectors)
     float_ranks, int8_ranks, rows = [], [], []
-    for item, query in zip(cases, query_vectors, strict=True):
+    for index, item in enumerate(cases):
         expected = {str(value).casefold() for value in item["mustHit"]}
-        float_rank = rank(corpus, matrix, query, expected, top_k, False)
-        int8_rank = rank(corpus, matrix, query, expected, top_k, True)
+        float_rank = rank(corpus, float_scores[:, index], expected, top_k)
+        int8_rank = rank(corpus, int8_scores[:, index], expected, top_k)
         float_ranks.append(float_rank)
         int8_ranks.append(int8_rank)
         rows.append({"query": item["query"], "mustHit": item["mustHit"], "float16Rank": float_rank, "runtimeInt8Rank": int8_rank})

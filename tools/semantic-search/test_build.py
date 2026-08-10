@@ -19,7 +19,7 @@ sys.path.insert(0, str(HERE))
 
 import build
 from corpus import SCOPE_BITS, load_corpus
-from evaluation import evaluate, load_quality
+from evaluation import evaluate, load_quality, score_matrices
 from provider import OpenAIEmbeddingProvider, ProviderError, UsageLedger
 from sidecar import quantize_block, write_sidecar
 
@@ -117,8 +117,8 @@ class SemanticBuildTest(unittest.TestCase):
         finally:
             build._provider_from_args = original
         self.assertLess(len(resumed), len(corpus.texts)); self.assertTrue(np.allclose(matrix[0], [1.0, 0.0]))
-        sidecar = output / "semantic.db"; metadata = write_sidecar(sidecar, corpus, matrix, 2, self.primary, "key", "provider", "Q: {query}", {"input_type": "query"}, 1)
-        self.assertEqual(metadata["projection_version"], "1.0"); self.assertEqual(metadata["query_extra_json"], '{"input_type":"query"}')
+        sidecar = output / "semantic.db"; metadata = write_sidecar(sidecar, corpus, matrix, 2, self.primary, "key", "provider", "Q: {query}", {"input_type": "document"}, {"input_type": "query"}, 1)
+        self.assertEqual(metadata["projection_version"], "1.0"); self.assertEqual(metadata["query_extra_json"], '{"input_type":"query"}'); self.assertEqual(metadata["document_extra_json"], '{"input_type":"document"}')
         db = sqlite3.connect(sidecar)
         try:
             self.assertEqual(db.execute("PRAGMA page_size").fetchone()[0], 8192); self.assertEqual(db.execute("SELECT COUNT(*) FROM vector_blocks").fetchone()[0], len(corpus.texts)); self.assertEqual(db.execute("SELECT COUNT(*) FROM documents").fetchone()[0], 6)
@@ -127,12 +127,22 @@ class SemanticBuildTest(unittest.TestCase):
     def test_runtime_int8_evaluation_and_fingerprint(self) -> None:
         corpus, matrix_path = load_corpus(self.reverse), self.root / "vectors.f16"; build._initialise_matrix(matrix_path, 5, 2)
         matrix = build.open_matrix(matrix_path, 5, 2, "r+"); matrix[:] = np.asarray([[1, 0], [0, 1], [0.7, 0.7], [-1, 0], [0, -1]], dtype=np.float16); matrix.flush()
-        result = evaluate(corpus, matrix, lambda _: np.asarray([[1, 0]], dtype=np.float32), [{"query": "first", "mustHit": ["engrossing", "alpha"]}], "Q: {query}", 4)
+        queries = np.asarray([[1, 0], [0, 1]], dtype=np.float32)
+        float_scores, int8_scores = score_matrices(matrix, queries, block_size=2)
+        np.testing.assert_allclose(float_scores, np.asarray(matrix, dtype=np.float32) @ queries.T)
+        np.testing.assert_array_equal(int8_scores, quantize_block(matrix).astype(np.int32) @ quantize_block(queries).astype(np.int32).T)
+        result = evaluate(corpus, matrix, lambda _: queries[:1], [{"query": "first", "mustHit": ["engrossing", "alpha"]}], "Q: {query}", 4)
         self.assertEqual(result["float16"]["hitAt1"], 1.0); self.assertEqual(result["runtimeInt8"]["hitAt1"], 1.0)
         self.assertEqual(quantize_block(np.asarray([[0.5, -0.5]], dtype=np.float32)).tolist(), [[64, -64]])
         first = build.build_fingerprint(corpus, self.primary, "key", "model", 2, "Q: {query}", {}, {})
         second = build.build_fingerprint(corpus, self.primary, "key", "model", 2, "Q: {query}", {"input_type": "document"}, {})
         self.assertNotEqual(first, second)
+
+    def test_quality_reservation_uses_templated_utf8_input(self) -> None:
+        templated = "Instruct: retrieve a dictionary answer\nQuery: " + "中文描述" * 10
+        reserve = build.quality_reservation_tokens([templated], 1.15)
+        self.assertGreater(reserve, 10)  # Above a one-token-per-document preflight average.
+        self.assertEqual(reserve, int(np.ceil(len(templated.encode("utf-8")) * 1.15)))
 
     def test_quality_files_preserve_order_and_reject_duplicates(self) -> None:
         first, second = self.root / "one.json", self.root / "two.json"

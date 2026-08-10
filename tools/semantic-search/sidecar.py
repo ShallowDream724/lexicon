@@ -27,7 +27,7 @@ def quantize_block(vectors: np.ndarray) -> np.ndarray:
     return np.rint(np.clip(array * 127.0, -127.0, 127.0)).astype(np.int8)
 
 
-def write_sidecar(path: Path, corpus: Corpus, vectors: np.ndarray, dimensions: int, primary_db: Path, model_key: str, provider_model: str, query_template: str, query_extra: dict[str, Any], block_size: int = 4096) -> dict[str, str]:
+def write_sidecar(path: Path, corpus: Corpus, vectors: np.ndarray, dimensions: int, primary_db: Path, model_key: str, provider_model: str, query_template: str, document_extra: dict[str, Any], query_extra: dict[str, Any], block_size: int = 4096) -> dict[str, str]:
     if dimensions < 1 or block_size < 1 or vectors.shape != (len(corpus.texts), dimensions):
         raise ValueError("sidecar vectors or dimensions are invalid")
     if query_template.count("{query}") != 1 or any(token in query_template.replace("{query}", "") for token in "{}"):
@@ -50,6 +50,7 @@ def write_sidecar(path: Path, corpus: Corpus, vectors: np.ndarray, dimensions: i
         "scope_set": ",".join(scopes),
         "block_size": str(block_size),
         "query_template": query_template,
+        "document_extra_json": json.dumps(document_extra, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
         "query_extra_json": json.dumps(query_extra, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
         "corpus_fingerprint": corpus.corpus_fingerprint,
         "source_schema_version": corpus.reverse_metadata.get("schema_version", ""),
