@@ -33,4 +33,8 @@ test("scope toggles retain at least one category and invalidate an older request
     dictionarySearchRequestKey("休息", terms),
     dictionarySearchRequestKey("休息", withUsage),
   );
+  assert.notEqual(
+    dictionarySearchRequestKey("休息", terms),
+    dictionarySearchRequestKey("休息", terms, "hybrid"),
+  );
 });

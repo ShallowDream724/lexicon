@@ -73,6 +73,7 @@ export function toggleSearchScopeCategory(
 export function dictionarySearchRequestKey(
   query: string,
   scopes: Iterable<string> | undefined,
+  mode?: "hybrid",
 ): string {
-  return `${query}\u0000${scopes ? serializeDictionarySearchScopes(scopes) : ""}`;
+  return `${query}\u0000${scopes ? serializeDictionarySearchScopes(scopes) : ""}\u0000${mode ?? ""}`;
 }

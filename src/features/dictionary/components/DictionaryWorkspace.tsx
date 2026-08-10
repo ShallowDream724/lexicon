@@ -19,6 +19,7 @@ import {
   parseChineseSearchScopes,
   type DictionarySearchScope,
 } from "../../../lib/dictionary-client/search-scope";
+import { isHybridSearchEligible } from "../../../lib/dictionary-client/search-mode";
 import {
   learningData,
   type FavoriteRecord,
@@ -69,6 +70,7 @@ type DictionaryWorkspaceProps = {
 type SearchResultsState = {
   query: string;
   scope?: DictionarySearchScope[];
+  mode?: "hybrid";
   items: SearchTarget[];
   pending: boolean;
   error: string | null;
@@ -222,7 +224,7 @@ export function DictionaryWorkspace({
       return;
     }
     resultPageSessions.write(
-      dictionarySearchRequestKey(current.query, current.scope),
+      dictionarySearchRequestKey(current.query, current.scope, current.mode),
       {
         state: { ...current, loadingMore: false },
         scrollY: Math.max(0, window.scrollY),
@@ -238,8 +240,9 @@ export function DictionaryWorkspace({
     const scope = isChineseSearchQuery(requestedQuery)
       ? parseChineseSearchScopes(requestedScope?.join(","))
       : undefined;
+    const mode = isHybridSearchEligible(requestedQuery) ? "hybrid" : undefined;
     const session = resultPageSessions.read(
-      dictionarySearchRequestKey(requestedQuery, scope),
+      dictionarySearchRequestKey(requestedQuery, scope, mode),
     );
     if (!session) {
       return false;
@@ -591,12 +594,13 @@ export function DictionaryWorkspace({
       const scope = reverseLookup
         ? parseChineseSearchScopes(options.scope?.join(","))
         : undefined;
+      const mode = isHybridSearchEligible(requestedQuery) ? "hybrid" : undefined;
       const previousResults = searchResultsState.current;
       const preserveResultPage =
         options.preserveResultPage === true &&
         viewState.current === "search-results" &&
         normalizeSubmittedQuery(previousResults.query) === requestedQuery;
-      const requestKey = dictionarySearchRequestKey(requestedQuery, scope);
+      const requestKey = dictionarySearchRequestKey(requestedQuery, scope, mode);
       if (
         submittedSearchKey.current === requestKey &&
         submittedSearchRequest.current &&
@@ -633,6 +637,7 @@ export function DictionaryWorkspace({
       setSearchResults({
         query: requestedQuery,
         scope,
+        mode,
         items: preserveResultPage ? previousResults.items : [],
         pending: true,
         error: null,
@@ -646,6 +651,7 @@ export function DictionaryWorkspace({
           ? await dictionaryClient.searchPage(requestedQuery, {
               limit: initialReverseResultCount,
               scope,
+              mode,
               signal: controller.signal,
             })
           : {
@@ -687,6 +693,7 @@ export function DictionaryWorkspace({
         setSearchResults({
           query: requestedQuery,
           scope,
+          mode,
           items: resolution.items,
           pending: false,
           error: null,
@@ -718,6 +725,7 @@ export function DictionaryWorkspace({
         setSearchResults({
           query: requestedQuery,
           scope,
+          mode,
           items: [],
           pending: false,
           error: dictionarySearchErrorMessage(error),
@@ -750,6 +758,7 @@ export function DictionaryWorkspace({
   const loadMoreSearchResults = useCallback(async (): Promise<void> => {
     const requestedQuery = searchResults.query;
     const scope = searchResults.scope;
+    const mode = searchResults.mode;
     const offset = searchResults.nextOffset;
     if (
       offset === null ||
@@ -775,6 +784,7 @@ export function DictionaryWorkspace({
         limit: targetCount - offset,
         offset,
         scope,
+        mode,
         signal: controller.signal,
       });
       if (resultPageRequest.current !== controller || controller.signal.aborted) {
@@ -784,8 +794,8 @@ export function DictionaryWorkspace({
         if (
           current.query !== requestedQuery ||
           current.nextOffset !== offset ||
-          dictionarySearchRequestKey(current.query, current.scope) !==
-            dictionarySearchRequestKey(requestedQuery, scope)
+          dictionarySearchRequestKey(current.query, current.scope, current.mode) !==
+            dictionarySearchRequestKey(requestedQuery, scope, mode)
         ) {
           return current;
         }
@@ -809,8 +819,8 @@ export function DictionaryWorkspace({
       if (!isAbortError(error) && resultPageRequest.current === controller) {
         setSearchResults((current) =>
           current.query === requestedQuery
-            && dictionarySearchRequestKey(current.query, current.scope) ===
-              dictionarySearchRequestKey(requestedQuery, scope)
+            && dictionarySearchRequestKey(current.query, current.scope, current.mode) ===
+              dictionarySearchRequestKey(requestedQuery, scope, mode)
             ? { ...current, loadMoreError: "更多结果暂时无法加载" }
             : current,
         );
@@ -820,8 +830,8 @@ export function DictionaryWorkspace({
         resultPageRequest.current = null;
         setSearchResults((current) =>
           current.query === requestedQuery
-            && dictionarySearchRequestKey(current.query, current.scope) ===
-              dictionarySearchRequestKey(requestedQuery, scope)
+            && dictionarySearchRequestKey(current.query, current.scope, current.mode) ===
+              dictionarySearchRequestKey(requestedQuery, scope, mode)
             ? { ...current, loadingMore: false }
             : current,
         );

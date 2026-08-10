@@ -25,6 +25,10 @@ import {
   serializeDictionarySearchScopes,
   type DictionarySearchScope,
 } from "./search-scope";
+import {
+  dictionarySearchQueryLimit,
+  type DictionarySearchMode,
+} from "./search-mode";
 import type { SearchTarget } from "./search-target";
 
 const dictionarySearchMatchSchema = z.object({
@@ -129,7 +133,7 @@ export class DictionaryClientError extends Error {
   }
 }
 
-export const dictionarySearchQueryLimit = 200;
+export { dictionarySearchQueryLimit } from "./search-mode";
 export const dictionarySearchQueryTooLongCode = "query_too_long";
 
 function assertSearchQueryLength(query: string): void {
@@ -187,7 +191,12 @@ const adapter = new BundledBilingualAdapter({ dictionaryId: "core-english-zh" })
 export const dictionaryClient = {
   async search(
     query: string,
-    options: { limit?: number; scope?: readonly DictionarySearchScope[]; signal?: AbortSignal } = {},
+    options: {
+      limit?: number;
+      scope?: readonly DictionarySearchScope[];
+      mode?: DictionarySearchMode;
+      signal?: AbortSignal;
+    } = {},
   ): Promise<SearchTarget[]> {
     const normalized = query.trim();
     if (!normalized) {
@@ -202,6 +211,9 @@ export const dictionaryClient = {
     if (options.scope?.length && isChineseSearchQuery(normalized)) {
       url.searchParams.set("scope", serializeDictionarySearchScopes(options.scope));
     }
+    if (options.mode === "hybrid") {
+      url.searchParams.set("mode", options.mode);
+    }
     const payload = await getJson(url, options.signal);
     return parseSearchTargets(payload);
   },
@@ -212,6 +224,7 @@ export const dictionaryClient = {
       limit?: number;
       offset?: number;
       scope?: readonly DictionarySearchScope[];
+      mode?: DictionarySearchMode;
       signal?: AbortSignal;
     } = {},
   ): Promise<DictionarySearchPage> {
@@ -227,6 +240,9 @@ export const dictionaryClient = {
     url.searchParams.set("limit", String(Math.min(Math.max(options.limit ?? 32, 1), 256)));
     if (options.scope?.length && isChineseSearchQuery(normalized)) {
       url.searchParams.set("scope", serializeDictionarySearchScopes(options.scope));
+    }
+    if (options.mode === "hybrid") {
+      url.searchParams.set("mode", options.mode);
     }
     const offset = Math.min(Math.max(options.offset ?? 0, 0), 511);
     if (offset > 0) {

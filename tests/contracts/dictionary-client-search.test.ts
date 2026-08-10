@@ -9,6 +9,7 @@ import {
   parseSearchPage,
   parseSearchTargets,
 } from "../../src/lib/dictionary-client/client";
+import { isHybridSearchEligible } from "../../src/lib/dictionary-client/search-mode";
 import { dictionarySearchErrorMessage } from "../../src/features/dictionary/search-errors";
 
 test("parses optional reverse-search evidence without changing English search items", () => {
@@ -101,6 +102,44 @@ test("serializes one canonical scope for every Chinese page and omits it for Eng
   assert.equal(requests[1]?.searchParams.get("scope"), "sense,phrase,form,usage,example");
   assert.equal(requests[1]?.searchParams.get("offset"), "32");
   assert.equal(requests[2]?.searchParams.has("scope"), false);
+});
+
+test("uses hybrid mode only for eligible explicit Chinese searches and keeps it across pages", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: URL[] = [];
+  globalThis.fetch = async (input) => {
+    requests.push(new URL(String(input)));
+    return new Response(JSON.stringify({ items: [] }), { status: 200 });
+  };
+
+  try {
+    await dictionaryClient.search("词汇", { limit: 10 });
+    await dictionaryClient.searchPage("词汇", {
+      limit: 32,
+      scope: ["sense", "phrase", "form"],
+      mode: "hybrid",
+    });
+    await dictionaryClient.searchPage("词汇", {
+      limit: 32,
+      offset: 32,
+      scope: ["sense", "phrase", "form"],
+      mode: "hybrid",
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(requests[0]?.searchParams.has("mode"), false);
+  assert.equal(requests[1]?.searchParams.get("mode"), "hybrid");
+  assert.equal(requests[2]?.searchParams.get("mode"), "hybrid");
+  assert.equal(requests[2]?.searchParams.get("offset"), "32");
+});
+
+test("limits hybrid eligibility to at least two CJK characters within the query limit", () => {
+  assert.equal(isHybridSearchEligible("词汇"), true);
+  assert.equal(isHybridSearchEligible("rest"), false);
+  assert.equal(isHybridSearchEligible("词"), false);
+  assert.equal(isHybridSearchEligible("词".repeat(dictionarySearchQueryLimit + 1)), false);
 });
 
 test("rejects oversized search text before a request and reports an input error", async () => {
