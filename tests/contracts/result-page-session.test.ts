@@ -36,3 +36,18 @@ test("evicts the least recently used result page at its fixed capacity", () => {
   assert.equal(sessions.read("first")?.scrollY, 100);
   assert.equal(sessions.read("third")?.state, 128);
 });
+
+test("preserves semantic result status when restoring a cached search page", () => {
+  const sessions = createResultPageSessionStore<{
+    semanticStatus?: "applied" | "degraded";
+  }>();
+  sessions.write("词汇\0sense,phrase,form\0hybrid", {
+    state: { semanticStatus: "degraded" },
+    scrollY: 320,
+  });
+
+  assert.deepEqual(sessions.read("词汇\0sense,phrase,form\0hybrid"), {
+    state: { semanticStatus: "degraded" },
+    scrollY: 320,
+  });
+});

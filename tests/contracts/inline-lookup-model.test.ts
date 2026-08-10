@@ -5,6 +5,7 @@ import {
   clampLookupPosition,
   extractEnglishToken,
   normalizeLookupQuery,
+  resolveEnglishLookupToken,
   resolveLookupInteractionMode,
 } from "../../src/features/dictionary/inline-lookup-model";
 
@@ -15,6 +16,28 @@ test("extracts English tokens with apostrophes and hyphens only", () => {
   assert.equal(extractEnglishToken("中文word", 1), null);
   assert.equal(extractEnglishToken("   ", 1), null);
   assert.equal(extractEnglishToken("--", 1), null);
+});
+
+test("resolves the exact token range from its beginning, middle, end, or trailing boundary", () => {
+  const value = "hello well-known";
+  assert.deepEqual(resolveEnglishLookupToken(value, 0), { query: "hello", start: 0, end: 5 });
+  assert.deepEqual(resolveEnglishLookupToken(value, 2), { query: "hello", start: 0, end: 5 });
+  assert.deepEqual(resolveEnglishLookupToken(value, 5), { query: "hello", start: 0, end: 5 });
+  assert.deepEqual(resolveEnglishLookupToken(value, value.length), {
+    query: "well-known",
+    start: 6,
+    end: 16,
+  });
+});
+
+test("applies the shared query bound to tapped tokens", () => {
+  const oversized = "a".repeat(81);
+  assert.equal(resolveEnglishLookupToken(oversized, 40), null);
+  assert.deepEqual(resolveEnglishLookupToken(oversized, 40, 81), {
+    query: oversized,
+    start: 0,
+    end: 81,
+  });
 });
 
 test("normalizes desktop selections and rejects excessive text", () => {

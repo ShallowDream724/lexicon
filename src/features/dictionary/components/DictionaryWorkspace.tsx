@@ -74,6 +74,7 @@ type SearchResultsState = {
   items: SearchTarget[];
   pending: boolean;
   error: string | null;
+  semanticStatus?: "applied" | "degraded";
   nextOffset: number | null;
   loadingMore: boolean;
   loadMoreError: string | null;
@@ -174,7 +175,6 @@ export function DictionaryWorkspace({
   >();
   const [drawer, setDrawer] = useState<DrawerState>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const wordPageRef = useRef<HTMLElement>(null);
   const suggestionRequest = useRef<AbortController | null>(null);
   const submittedSearchRequest = useRef<AbortController | null>(null);
   const resultPageRequest = useRef<AbortController | null>(null);
@@ -641,6 +641,7 @@ export function DictionaryWorkspace({
         items: preserveResultPage ? previousResults.items : [],
         pending: true,
         error: null,
+        semanticStatus: undefined,
         nextOffset: null,
         loadingMore: false,
         loadMoreError: null,
@@ -697,6 +698,9 @@ export function DictionaryWorkspace({
           items: resolution.items,
           pending: false,
           error: null,
+          semanticStatus: reverseLookup && mode === "hybrid"
+            ? primaryPage.semanticStatus
+            : undefined,
           nextOffset: reverseLookup ? primaryPage.nextOffset : null,
           loadingMore: false,
           loadMoreError: null,
@@ -729,6 +733,7 @@ export function DictionaryWorkspace({
           items: [],
           pending: false,
           error: dictionarySearchErrorMessage(error),
+          semanticStatus: undefined,
           nextOffset: null,
           loadingMore: false,
           loadMoreError: null,
@@ -811,6 +816,7 @@ export function DictionaryWorkspace({
         return {
           ...current,
           items: [...current.items, ...additions],
+          ...(page.semanticStatus ? { semanticStatus: page.semanticStatus } : {}),
           nextOffset: page.nextOffset,
           loadMoreError: null,
         };
@@ -1222,6 +1228,7 @@ export function DictionaryWorkspace({
               items={searchResults.items}
               loadingMore={searchResults.loadingMore}
               loadMoreError={searchResults.loadMoreError}
+              mode={searchResults.mode}
               nextResultCount={searchResults.nextOffset === null
                 ? undefined
                 : nextReverseResultCount(searchResults.nextOffset)}
@@ -1243,6 +1250,7 @@ export function DictionaryWorkspace({
               pending={searchResults.pending}
               query={searchResults.query}
               scope={searchResults.scope}
+              semanticStatus={searchResults.semanticStatus}
             />
           </div>
         ) : view === "etymology" && etymology ? (
@@ -1292,7 +1300,7 @@ export function DictionaryWorkspace({
             </button>
           </aside>
 
-          <section className="word-page" ref={wordPageRef}>
+          <section className="word-page" data-inline-lookup-surface>
             <EntryView
               activeSectionId={activeSectionId}
               entry={entry}
@@ -1327,15 +1335,15 @@ export function DictionaryWorkspace({
               onPlayAudio={playAudio}
               onJump={scrollToSection}
             />
-            <InlineLookup
-              onLookup={(lookupQuery) => {
-                recordExplicitQuery(lookupQuery);
-                return runSearch(lookupQuery, { route: "push" });
-              }}
-              rootRef={wordPageRef}
-            />
           </section>
         </div>}
+
+        <InlineLookup
+          onLookup={(lookupQuery) => {
+            recordExplicitQuery(lookupQuery);
+            return runSearch(lookupQuery, { route: "push" });
+          }}
+        />
 
         <WorkspaceDrawer
           {...(drawer?.mode === "note"

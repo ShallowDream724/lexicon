@@ -10,14 +10,19 @@ function enabled(value: JsonValue | undefined): boolean {
   return value === true || value === 1 || value === "1";
 }
 
-function tokenContent(token: SourceToken): ReactNode {
+function tokenContent(token: SourceToken, breakBeforeHelp: boolean): ReactNode {
   const tag = token.tag?.toLocaleLowerCase();
   if (tag === "custom-br") {
     return <br />;
   }
   const help = tag === "un" ? /^\[([A-Z][A-Z ]+)\]$/.exec(token.text.trim()) : null;
   if (help) {
-    return <span className="source-token-help">{help[1]}</span>;
+    return (
+      <>
+        {breakBeforeHelp ? <br /> : null}
+        <span className="source-token-help">{help[1]}</span>
+      </>
+    );
   }
   if (!token.text) {
     return null;
@@ -60,7 +65,20 @@ export function CanonicalTextContent({ value }: { value: CanonicalText }) {
     return value.text;
   }
 
-  return value.tokens.map((token, index) => (
-    <Fragment key={`${token.tag ?? "text"}-${index}`}>{tokenContent(token)}</Fragment>
-  ));
+  let hasContentOnLine = false;
+  return value.tokens.map((token, index) => {
+    const tag = token.tag?.toLocaleLowerCase();
+    const help = tag === "un" && /^\[([A-Z][A-Z ]+)\]$/.test(token.text.trim());
+    const breakBeforeHelp = help && hasContentOnLine;
+    if (tag === "custom-br" || breakBeforeHelp) {
+      hasContentOnLine = false;
+    } else if (token.text) {
+      hasContentOnLine = true;
+    }
+    return (
+      <Fragment key={`${token.tag ?? "text"}-${index}`}>
+        {tokenContent(token, breakBeforeHelp)}
+      </Fragment>
+    );
+  });
 }

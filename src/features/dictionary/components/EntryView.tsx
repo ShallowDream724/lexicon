@@ -687,6 +687,7 @@ function ResourceDialog({
       <div className="resource-dialog-layer" role="presentation" onMouseDown={onClose}>
         <section
           className="resource-dialog"
+          data-inline-lookup-surface
           {...(box ? searchLocationAttributes(locationIndex.get(box), box.id) : {})}
           role="dialog"
           aria-modal="true"

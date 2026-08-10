@@ -36,6 +36,12 @@ export type LookupPosition = {
   placement: "above" | "below";
 };
 
+export type EnglishLookupToken = {
+  query: string;
+  start: number;
+  end: number;
+};
+
 export function resolveLookupInteractionMode({
   viewportWidth,
   hasFinePointer,
@@ -68,7 +74,11 @@ export function normalizeLookupQuery(
   return normalized && normalized.length <= maxLength ? normalized : null;
 }
 
-export function extractEnglishToken(value: string, offset: number): string | null {
+export function resolveEnglishLookupToken(
+  value: string,
+  offset: number,
+  maxLength = INLINE_LOOKUP_MAX_QUERY_LENGTH,
+): EnglishLookupToken | null {
   if (!value || offset < 0 || offset > value.length) {
     return null;
   }
@@ -92,7 +102,12 @@ export function extractEnglishToken(value: string, offset: number): string | nul
   }
 
   const token = value.slice(start, end);
-  return validToken.test(token) ? token : null;
+  const query = validToken.test(token) ? normalizeLookupQuery(token, maxLength) : null;
+  return query ? { query, start, end } : null;
+}
+
+export function extractEnglishToken(value: string, offset: number): string | null {
+  return resolveEnglishLookupToken(value, offset)?.query ?? null;
 }
 
 export function clampLookupPosition(

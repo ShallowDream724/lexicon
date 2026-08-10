@@ -76,7 +76,7 @@ export function EtymologyOnlyView({
   }
 
   return (
-    <section className="etymology-only-view" aria-label="词源">
+    <section className="etymology-only-view" aria-label="词源" data-inline-lookup-surface>
       {error ? (
         <div className="etymology-only-error" role="alert">
           <p>{error}</p>

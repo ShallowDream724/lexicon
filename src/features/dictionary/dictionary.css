@@ -3366,11 +3366,26 @@
   width: 100%;
 }
 
+.search-results-heading {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .16rem .4rem;
+  margin: 0 0 1.06667rem;
+}
+
 .search-results h1 {
   color: #17191f;
   font-size: calc(var(--search-result-title-size) + var(--reading-font-delta));
   line-height: 1.4;
-  margin: 0 0 1.06667rem;
+  margin: 0;
+}
+
+.search-results-semantic-status {
+  color: #737b89;
+  font-size: calc(var(--search-result-secondary-size) + var(--reading-font-delta));
+  line-height: 1.4;
+  margin: 0;
 }
 
 .confirm-dialog-layer {
@@ -3556,9 +3571,11 @@
 }
 
 .search-result-scope {
+  --search-result-scope-accent: #52647e;
+  --search-result-scope-border: #b8c0cd;
+
   align-items: center;
-  border: .02667rem solid #c8ccd5;
-  color: #697180;
+  border: .02667rem solid var(--search-result-scope-border);
   display: inline-flex;
   font-size: calc(var(--search-result-label-size) + var(--reading-font-delta));
   justify-content: center;
@@ -3570,12 +3587,48 @@
   white-space: nowrap;
 }
 
+.search-result-scope[data-scope="sense"] {
+  --search-result-scope-accent: #315f98;
+  --search-result-scope-border: #9fb4ce;
+}
+
+.search-result-scope[data-scope="phrase"] {
+  --search-result-scope-accent: #8a621f;
+  --search-result-scope-border: #c8b78e;
+}
+
+.search-result-scope[data-scope="usage"] {
+  --search-result-scope-accent: #397262;
+  --search-result-scope-border: #9dbcb2;
+}
+
+.search-result-scope[data-scope="example"] {
+  --search-result-scope-accent: #995162;
+  --search-result-scope-border: #caa8b0;
+}
+
+.search-result-scope[data-scope="form"] {
+  --search-result-scope-accent: #695d88;
+  --search-result-scope-border: #b5acc7;
+}
+
+.search-result-scope-label {
+  color: var(--search-result-scope-accent);
+  font-weight: 600;
+}
+
+.search-result-scope-part {
+  color: #697180;
+  margin-left: 1em;
+}
+
 .search-result-evidence-copy {
   display: grid;
   gap: .05333rem;
   min-width: 0;
 }
 
+.search-result-candidate,
 .search-result-english {
   color: #20242d;
   font-family: "Times New Roman", Times, serif;
@@ -3594,6 +3647,40 @@
 [data-search-owner-id],
 [data-search-path] {
   scroll-margin-top: 2.4rem;
+}
+
+.search-result-match-term {
+  color: inherit;
+  font-weight: 700;
+}
+
+.search-result-definition {
+  color: #596175;
+  font-family: "Times New Roman", Times, serif;
+  font-size: calc(var(--search-result-secondary-size) + var(--reading-font-delta));
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.search-result-evidence-toggle {
+  padding: .10667rem .10667rem 0 calc(.10667rem + .93333rem + .26667rem);
+}
+
+.search-result-evidence-toggle button {
+  background: transparent;
+  border: 0;
+  color: #4b5f80;
+  cursor: pointer;
+  font-size: calc(var(--search-result-secondary-size) + var(--reading-font-delta));
+  line-height: 1.4;
+  padding: .10667rem;
+  text-decoration: underline;
+  text-underline-offset: .08rem;
+}
+
+.search-result-evidence-toggle button:hover,
+.search-result-evidence-toggle button:focus-visible {
+  color: #00225f;
 }
 
 [data-search-highlight="true"] {
@@ -4649,7 +4736,11 @@
 
   .search-result-evidence-list button {
     gap: .21333rem;
-    grid-template-columns: .8rem minmax(0, 1fr);
+    grid-template-columns: 1.9rem minmax(0, 1fr);
+  }
+
+  .search-result-scope {
+    white-space: normal;
   }
 
   .part-of-speech-tabs a,

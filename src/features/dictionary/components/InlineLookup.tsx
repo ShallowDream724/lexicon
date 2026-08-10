@@ -4,18 +4,18 @@ import { Search } from "lucide-react";
 import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
-  type RefObject,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 
 import {
   clampLookupPosition,
-  extractEnglishToken,
   normalizeLookupQuery,
+  resolveEnglishLookupToken,
   resolveLookupInteractionMode,
   type LookupInteractionMode,
   type LookupAnchorRect,
@@ -24,16 +24,17 @@ import {
 } from "../inline-lookup-model";
 
 type InlineLookupProps = {
-  rootRef: RefObject<HTMLElement | null>;
   onLookup: (query: string) => Promise<unknown> | void;
 };
 
 type LookupCandidate = {
   query: string;
   anchor: LookupAnchorRect;
+  surface: HTMLElement;
 };
 
 const fallbackPopupSize: LookupPopupSize = { width: 180, height: 40 };
+const lookupSurfaceSelector = "[data-inline-lookup-surface]";
 
 function containsInteractiveAncestor(target: EventTarget | null): boolean {
   if (!(target instanceof Node)) {
@@ -43,6 +44,16 @@ function containsInteractiveAncestor(target: EventTarget | null): boolean {
     ? target as Element
     : target.parentElement;
   return Boolean(element?.closest("button, a, input, textarea, select, [contenteditable]"));
+}
+
+function lookupSurface(target: EventTarget | null): HTMLElement | null {
+  if (!(target instanceof Node)) {
+    return null;
+  }
+  const element = target.nodeType === Node.ELEMENT_NODE
+    ? target as Element
+    : target.parentElement;
+  return element?.closest<HTMLElement>(lookupSurfaceSelector) ?? null;
 }
 
 function selectionAnchor(selection: Selection, root: HTMLElement): LookupCandidate | null {
@@ -64,7 +75,7 @@ function selectionAnchor(selection: Selection, root: HTMLElement): LookupCandida
   if (!rect.width && !rect.height) {
     return null;
   }
-  return { query, anchor: toAnchorRect(rect) };
+  return { query, anchor: toAnchorRect(rect), surface: root };
 }
 
 function tokenAtPoint(
@@ -82,21 +93,18 @@ function tokenAtPoint(
   }
 
   const text = range.startContainer.textContent ?? "";
-  const token = extractEnglishToken(text, range.startOffset);
+  const token = resolveEnglishLookupToken(text, range.startOffset);
   if (!token) {
     return null;
   }
 
-  const start = tokenStart(text, range.startOffset);
-  if (start === null) {
-    return null;
-  }
   const tokenRange = document.createRange();
-  tokenRange.setStart(range.startContainer, start);
-  tokenRange.setEnd(range.startContainer, start + token.length);
+  tokenRange.setStart(range.startContainer, token.start);
+  tokenRange.setEnd(range.startContainer, token.end);
   const rect = tokenRange.getBoundingClientRect();
   return {
-    query: token,
+    query: token.query,
+    surface: root,
     anchor: rect.width || rect.height
       ? toAnchorRect(rect)
       : { left: clientX, top: clientY, width: 0, height: 0 },
@@ -116,15 +124,6 @@ function caretRangeAtPoint(document: Document, clientX: number, clientY: number)
     return range;
   }
   return document.caretRangeFromPoint?.(clientX, clientY) ?? null;
-}
-
-function tokenStart(value: string, offset: number): number | null {
-  const token = extractEnglishToken(value, offset);
-  if (!token) {
-    return null;
-  }
-  const candidateStart = value.lastIndexOf(token, Math.min(offset, value.length));
-  return candidateStart >= 0 ? candidateStart : null;
 }
 
 function toAnchorRect(rect: DOMRect): LookupAnchorRect {
@@ -177,7 +176,7 @@ function useLookupInteractionMode(): LookupInteractionMode {
   return mode;
 }
 
-export function InlineLookup({ rootRef, onLookup }: InlineLookupProps) {
+export function InlineLookup({ onLookup }: InlineLookupProps) {
   const [candidate, setCandidate] = useState<LookupCandidate | null>(null);
   const [popupSize, setPopupSize] = useState<LookupPopupSize>(fallbackPopupSize);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -199,51 +198,33 @@ export function InlineLookup({ rootRef, onLookup }: InlineLookupProps) {
   }, [candidate, popupSize.height, popupSize.width]);
 
   useEffect(() => {
-    const root = rootRef.current;
-    if (!root) {
-      return;
-    }
     const dismiss = () => setCandidate(null);
     const handlePointerDown = (event: PointerEvent) => {
       if (buttonRef.current?.contains(event.target as Node)) {
         return;
       }
-      if (!root.contains(event.target as Node)) {
+      if (!lookupSurface(event.target)) {
         dismiss();
       }
     };
     const handlePointerUp = (event: PointerEvent) => {
-      if (!root.contains(event.target as Node) || containsInteractiveAncestor(event.target)) {
+      const surface = lookupSurface(event.target);
+      if (!surface || containsInteractiveAncestor(event.target)) {
         return;
       }
       if (interactionMode === "selection") {
         const selection = window.getSelection();
-        const next = selection && selectionAnchor(selection, root);
+        const next = selection && selectionAnchor(selection, surface);
         setCandidate(next);
         return;
       }
-      setCandidate(tokenAtPoint(document, root, event.clientX, event.clientY));
+      setCandidate(tokenAtPoint(document, surface, event.clientX, event.clientY));
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         dismiss();
       }
     };
-    const observer = new MutationObserver((records) => {
-      const button = buttonRef.current;
-      const hasExternalMutation = records.some((record) => {
-        if (record.target === button) {
-          return false;
-        }
-        return [...record.addedNodes, ...record.removedNodes].some(
-          (node) => node !== button && !(node instanceof Element && node.contains(button)),
-        );
-      });
-      if (hasExternalMutation) {
-        dismiss();
-      }
-    });
-
     document.addEventListener("pointerdown", handlePointerDown, true);
     document.addEventListener("pointerup", handlePointerUp);
     document.addEventListener("keydown", handleKeyDown);
@@ -251,8 +232,6 @@ export function InlineLookup({ rootRef, onLookup }: InlineLookupProps) {
     window.addEventListener("resize", dismiss);
     window.visualViewport?.addEventListener("resize", dismiss);
     window.visualViewport?.addEventListener("scroll", dismiss);
-    observer.observe(root, { childList: true, subtree: true });
-
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown, true);
       document.removeEventListener("pointerup", handlePointerUp);
@@ -261,9 +240,38 @@ export function InlineLookup({ rootRef, onLookup }: InlineLookupProps) {
       window.removeEventListener("resize", dismiss);
       window.visualViewport?.removeEventListener("resize", dismiss);
       window.visualViewport?.removeEventListener("scroll", dismiss);
-      observer.disconnect();
     };
-  }, [interactionMode, rootRef]);
+  }, [interactionMode]);
+
+  useEffect(() => {
+    if (!candidate) {
+      return;
+    }
+    const surface = candidate.surface;
+    const observer = new MutationObserver((records) => {
+      if (!surface.isConnected) {
+        setCandidate(null);
+        return;
+      }
+      const button = buttonRef.current;
+      const hasSurfaceMutation = records.some((record) => {
+        if (!surface.contains(record.target)) {
+          return false;
+        }
+        if (record.target === button) {
+          return false;
+        }
+        return [...record.addedNodes, ...record.removedNodes].some(
+          (node) => node !== button && !(node instanceof Element && node.contains(button)),
+        );
+      });
+      if (hasSurfaceMutation) {
+        setCandidate(null);
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [candidate]);
 
   if (!candidate || !position) {
     return null;
@@ -276,7 +284,7 @@ export function InlineLookup({ rootRef, onLookup }: InlineLookupProps) {
     maxWidth: "calc(100vw - 16px)",
   };
 
-  return (
+  return createPortal(
     <button
       aria-label={`查询 ${candidate.query}`}
       className="inline-lookup"
@@ -292,6 +300,7 @@ export function InlineLookup({ rootRef, onLookup }: InlineLookupProps) {
     >
       <Search aria-hidden="true" />
       <span>查询 {candidate.query}</span>
-    </button>
+    </button>,
+    candidate.surface,
   );
 }

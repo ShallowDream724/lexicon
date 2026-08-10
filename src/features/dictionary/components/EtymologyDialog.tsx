@@ -217,6 +217,7 @@ export function EtymologyDialog({
       <div className="resource-dialog-layer etymology-dialog-layer" role="presentation" onMouseDown={onClose}>
         <section
           className="resource-dialog etymology-dialog"
+          data-inline-lookup-surface
           role="dialog"
           aria-modal="true"
           aria-label="词源"
