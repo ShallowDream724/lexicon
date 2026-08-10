@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -62,6 +63,25 @@ func TestOpenRejectsMismatchedAndCorruptSidecars(t *testing.T) {
 	if _, err := Open(path, primarySHA, reverseSHA, projection, modelKey); err == nil {
 		t.Fatal("accepted sidecar without a valid query template")
 	}
+
+	for _, value := range []string{
+		`{"model":"other-model"}`,
+		`[]`,
+		`{"note":"` + strings.Repeat("x", maxQueryExtraJSONB) + `"}`,
+	} {
+		path = writeFixture(t)
+		db, err = sql.Open("sqlite", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`UPDATE metadata SET value = ? WHERE key = 'query_extra_json'`, value); err != nil {
+			t.Fatal(err)
+		}
+		_ = db.Close()
+		if _, err := Open(path, primarySHA, reverseSHA, projection, modelKey); err == nil {
+			t.Fatalf("accepted invalid query extra JSON %q", value[:min(len(value), 32)])
+		}
+	}
 }
 
 func TestStoreSearchScopeGroupingOrderAndPagination(t *testing.T) {
@@ -69,6 +89,11 @@ func TestStoreSearchScopeGroupingOrderAndPagination(t *testing.T) {
 	defer store.Close()
 	if store.QueryTemplate() != queryTemplate {
 		t.Fatalf("unexpected query template %q", store.QueryTemplate())
+	}
+	extra := store.QueryExtraJSON()
+	extra[0] = '['
+	if string(store.QueryExtraJSON()) != "{}" {
+		t.Fatal("query extra JSON getter exposed store-owned bytes")
 	}
 	senses, _ := NewScopeFilter(ScopeSense)
 	page, err := store.Search(context.Background(), []float32{1, 0}, Options{Limit: 10, Scopes: senses})
@@ -113,14 +138,14 @@ func TestOpenAIEmbedderRequestAndResponseValidation(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Error(err)
 		}
-		if payload["input"] != "Embed this dictionary query: query" || payload["model"] != "embedding-model" || payload["encoding_format"] != "float" || payload["dimensions"] != float64(2) {
+		if payload["input"] != "Embed this dictionary query: query" || payload["model"] != "embedding-model" || payload["encoding_format"] != "float" || payload["dimensions"] != float64(2) || payload["input_type"] != "query" {
 			t.Errorf("unexpected payload %#v", payload)
 		}
 		_, _ = w.Write([]byte(`{"data":[{"index":0,"embedding":[3,4]}]}`))
 	}))
 	defer server.Close()
 	embedder := newHTTPEmbedder(t, server.URL)
-	vector, err := embedder.Embed(context.Background(), "query", queryTemplate)
+	vector, err := embedder.Embed(context.Background(), "query", queryTemplate, []byte(`{"input_type":"query"}`))
 	if err != nil || len(vector) != 2 || vector[0] != .6 || vector[1] != .8 {
 		t.Fatalf("unexpected vector %#v, %v", vector, err)
 	}
@@ -130,7 +155,7 @@ func TestOpenAIEmbedderRequestAndResponseValidation(t *testing.T) {
 	}))
 	defer invalid.Close()
 	embedder = newHTTPEmbedder(t, invalid.URL)
-	if _, err := embedder.Embed(context.Background(), "query", queryTemplate); err == nil {
+	if _, err := embedder.Embed(context.Background(), "query", queryTemplate, []byte(`{}`)); err == nil {
 		t.Fatal("invalid provider response accepted")
 	}
 }
@@ -245,7 +270,7 @@ func writeFixture(t *testing.T) string {
 	}
 	metadata := map[string]string{
 		"schema_version": SchemaVersion, "primary_sha256": primarySHA, "reverse_search_sha256": reverseSHA, "projection_version": projection,
-		"model_key": modelKey, "query_template": queryTemplate, "dimensions": "2", "normalization": "l2", "quantization": "symmetric-int8-127", "vector_count": "4", "block_size": "4",
+		"model_key": modelKey, "query_template": queryTemplate, "query_extra_json": "{}", "dimensions": "2", "normalization": "l2", "quantization": "symmetric-int8-127", "vector_count": "4", "block_size": "4",
 	}
 	for key, value := range metadata {
 		if _, err := db.Exec(`INSERT INTO metadata(key, value) VALUES (?, ?)`, key, value); err != nil {

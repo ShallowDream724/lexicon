@@ -15,7 +15,7 @@ import (
 )
 
 type Embedder interface {
-	Embed(context.Context, string, string) ([]float32, error)
+	Embed(context.Context, string, string, []byte) ([]float32, error)
 	ModelKey() string
 	Dimensions() int
 }
@@ -98,7 +98,7 @@ func (e *OpenAIEmbedder) Dimensions() int {
 	return e.dimensions
 }
 
-func (e *OpenAIEmbedder) Embed(ctx context.Context, query, queryTemplate string) ([]float32, error) {
+func (e *OpenAIEmbedder) Embed(ctx context.Context, query, queryTemplate string, queryExtraJSON []byte) ([]float32, error) {
 	if e == nil || e.client == nil {
 		return nil, &EmbedError{Kind: EmbedErrorConfiguration, Err: errors.New("embedder is not configured")}
 	}
@@ -106,12 +106,30 @@ func (e *OpenAIEmbedder) Embed(ctx context.Context, query, queryTemplate string)
 	if err != nil {
 		return nil, &EmbedError{Kind: EmbedErrorConfiguration, Err: err}
 	}
-	body, err := json.Marshal(struct {
-		Input          string `json:"input"`
-		Model          string `json:"model"`
-		EncodingFormat string `json:"encoding_format"`
-		Dimensions     int    `json:"dimensions"`
-	}{Input: input, Model: e.model, EncodingFormat: "float", Dimensions: e.dimensions})
+	if err := validateQueryExtraJSON(queryExtraJSON); err != nil {
+		return nil, &EmbedError{Kind: EmbedErrorConfiguration, Err: err}
+	}
+	requestPayload := map[string]json.RawMessage{}
+	if err := json.Unmarshal(queryExtraJSON, &requestPayload); err != nil {
+		return nil, &EmbedError{Kind: EmbedErrorConfiguration, Err: errors.New("query extra JSON is invalid")}
+	}
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		return nil, &EmbedError{Kind: EmbedErrorRequest, Err: errors.New("encode embedding input")}
+	}
+	modelJSON, err := json.Marshal(e.model)
+	if err != nil {
+		return nil, &EmbedError{Kind: EmbedErrorRequest, Err: errors.New("encode embedding model")}
+	}
+	dimensionsJSON, err := json.Marshal(e.dimensions)
+	if err != nil {
+		return nil, &EmbedError{Kind: EmbedErrorRequest, Err: errors.New("encode embedding dimensions")}
+	}
+	requestPayload["input"] = inputJSON
+	requestPayload["model"] = modelJSON
+	requestPayload["encoding_format"] = json.RawMessage(`"float"`)
+	requestPayload["dimensions"] = dimensionsJSON
+	body, err := json.Marshal(requestPayload)
 	if err != nil {
 		return nil, &EmbedError{Kind: EmbedErrorRequest, Err: errors.New("encode embedding request")}
 	}

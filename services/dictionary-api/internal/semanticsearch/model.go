@@ -17,6 +17,7 @@ const (
 	maxResidentVectorB   = 512 << 20
 	maximumCandidatePool = 4096
 	maximumResultGroups  = 512
+	maxQueryExtraJSONB   = 16 << 10
 )
 
 type Scope string

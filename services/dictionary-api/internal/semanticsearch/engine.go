@@ -123,7 +123,7 @@ func (e *Engine) embedding(ctx context.Context, query string) ([]float32, error)
 	e.flights[query] = flight
 	e.mu.Unlock()
 
-	vector, err := e.embedder.Embed(ctx, query, e.store.QueryTemplate())
+	vector, err := e.embedder.Embed(ctx, query, e.store.QueryTemplate(), e.store.QueryExtraJSON())
 
 	e.mu.Lock()
 	flight.vector, flight.err = cloneVector(vector), err

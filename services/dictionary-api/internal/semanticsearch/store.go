@@ -1,12 +1,14 @@
 package semanticsearch
 
 import (
+	"bytes"
 	"container/heap"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"path/filepath"
 	"runtime"
@@ -18,20 +20,22 @@ import (
 )
 
 type Store struct {
-	db            *sql.DB
-	dimensions    int
-	modelKey      string
-	queryTemplate string
-	vectors       []int8
-	scopeMasks    []uint32
+	db             *sql.DB
+	dimensions     int
+	modelKey       string
+	queryTemplate  string
+	queryExtraJSON []byte
+	vectors        []int8
+	scopeMasks     []uint32
 }
 
 type metadata struct {
-	dimensions    int
-	modelKey      string
-	queryTemplate string
-	vectorCount   int
-	blockSize     int
+	dimensions     int
+	modelKey       string
+	queryTemplate  string
+	queryExtraJSON []byte
+	vectorCount    int
+	blockSize      int
 }
 
 func Open(path, expectedPrimarySHA256, expectedReverseSHA256, expectedProjectionVersion, expectedModelKey string) (*Store, error) {
@@ -67,7 +71,7 @@ func Open(path, expectedPrimarySHA256, expectedReverseSHA256, expectedProjection
 		_ = db.Close()
 		return nil, err
 	}
-	return &Store{db: db, dimensions: meta.dimensions, modelKey: meta.modelKey, queryTemplate: meta.queryTemplate, vectors: vectors, scopeMasks: masks}, nil
+	return &Store{db: db, dimensions: meta.dimensions, modelKey: meta.modelKey, queryTemplate: meta.queryTemplate, queryExtraJSON: cloneBytes(meta.queryExtraJSON), vectors: vectors, scopeMasks: masks}, nil
 }
 
 func sqliteReadOnlyDSN(path string) string { return "file:" + filepath.ToSlash(path) + "?mode=ro" }
@@ -113,7 +117,14 @@ func validateMetadata(db *sql.DB, primarySHA256, reverseSHA256, projectionVersio
 	if err := validateQueryTemplate(queryTemplate); err != nil {
 		return metadata{}, fmt.Errorf("semantic-search metadata %q is invalid: %w", "query_template", err)
 	}
-	return metadata{dimensions: dimensions, modelKey: modelKey, queryTemplate: queryTemplate, vectorCount: vectorCount, blockSize: blockSize}, nil
+	queryExtraJSON, err := metadataValue(db, "query_extra_json")
+	if err != nil {
+		return metadata{}, err
+	}
+	if err := validateQueryExtraJSON([]byte(queryExtraJSON)); err != nil {
+		return metadata{}, fmt.Errorf("semantic-search metadata %q is invalid: %w", "query_extra_json", err)
+	}
+	return metadata{dimensions: dimensions, modelKey: modelKey, queryTemplate: queryTemplate, queryExtraJSON: []byte(queryExtraJSON), vectorCount: vectorCount, blockSize: blockSize}, nil
 }
 
 func metadataValue(db *sql.DB, key string) (string, error) {
@@ -232,6 +243,36 @@ func (s *Store) QueryTemplate() string {
 	}
 	return s.queryTemplate
 }
+
+func (s *Store) QueryExtraJSON() []byte {
+	if s == nil {
+		return nil
+	}
+	return cloneBytes(s.queryExtraJSON)
+}
+
+func validateQueryExtraJSON(raw []byte) error {
+	if len(raw) == 0 || len(raw) > maxQueryExtraJSONB {
+		return fmt.Errorf("query extra JSON must be between 1 and %d bytes", maxQueryExtraJSONB)
+	}
+	var values map[string]json.RawMessage
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	if err := decoder.Decode(&values); err != nil || values == nil {
+		return errors.New("query extra JSON must be an object")
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return errors.New("query extra JSON contains trailing values")
+	}
+	for key := range values {
+		switch key {
+		case "model", "input", "encoding_format", "dimensions":
+			return fmt.Errorf("query extra JSON must not override reserved field %q", key)
+		}
+	}
+	return nil
+}
+
+func cloneBytes(value []byte) []byte { return append([]byte(nil), value...) }
 
 func (s *Store) Search(ctx context.Context, queryVector []float32, options Options) (Page, error) {
 	empty := Page{Groups: []Group{}}
