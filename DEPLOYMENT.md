@@ -18,6 +18,7 @@ Go dictionary API
    +-- semantic-search SQLite, read-only
    +-- etymology sidecar SQLite, read-only
    +-- pronunciation ZIP, read-only
+   +-- bounded query-vector cache, writable
    +-- optional outbound query-embedding provider
 ```
 
@@ -25,6 +26,9 @@ The browser calls a same-origin `/api/v1` path. The repository's Compose file us
 keep application containers on a private network, obtain TLS certificates when a domain
 is configured, and expose only HTTP and HTTPS. This is a public reference topology; an
 existing reverse proxy can provide the same routing without running the included gateway.
+The bundled Caddy gateway is not part of installations already routed through Nginx Proxy
+Manager; those deployments attach the web and API services to their existing private Docker
+network and keep that site-specific Compose file outside this repository.
 History, favorites, and notes remain in the browser's IndexedDB; the server stores no
 personal records.
 
@@ -35,8 +39,8 @@ The measured production assets are:
 | Asset | Stored size | Runtime treatment |
 | --- | ---: | --- |
 | Runtime SQLite schema v3 | 53,952,512 bytes | opened read-only |
-| Reverse-search sidecar schema v3 | 69,894,144 bytes | opened read-only; scoped exact lookup, bounded FTS, OpenCC normalization, and grouped refinement |
-| Semantic-search sidecar schema v1 | 251,174,912 bytes | 178,382 int8 vectors loaded once; evidence read from SQLite on demand |
+| Reverse-search sidecar schema v5 | 72,228,864 bytes | opened read-only; scoped exact lookup, bounded FTS, grouped refinement, and batched headword forms |
+| Semantic-search sidecar schema v2 | 252,542,976 bytes | 178,382 int8 vectors loaded once; evidence read from SQLite on demand |
 | Etymology sidecar schema v3 | 45,400,064 bytes | opened read-only; articles decoded on demand |
 | Headword pronunciation ZIP | 1,135,490,706 bytes | indexed once, streamed without extraction |
 | Usable headword MP3 assets | 128,010 files / 1,143,628,003 bytes | not extracted |
@@ -140,14 +144,28 @@ DICTIONARY_SEMANTIC_BASE_URL=https://provider.example/v1
 DICTIONARY_SEMANTIC_API_KEY=replace-with-your-key
 DICTIONARY_SEMANTIC_MODEL=Qwen/Qwen3-Embedding-4B
 DICTIONARY_SEMANTIC_MODEL_KEY=qwen3-embedding-4b-1024-v1
-DICTIONARY_SEMANTIC_TIMEOUT=5s
+DICTIONARY_SEMANTIC_TIMEOUT=3s
 DICTIONARY_SEMANTIC_CACHE=128
+DICTIONARY_SEMANTIC_PERSISTENT_CACHE=true
+DICTIONARY_SEMANTIC_PERSISTENT_CACHE_KEY=replace-with-at-least-32-private-bytes
+DICTIONARY_SEMANTIC_PERSISTENT_CACHE_MAX_ENTRIES=10000
+DICTIONARY_SEMANTIC_PERSISTENT_CACHE_TTL=720h
 ```
 
 The base URL and credential are never included in the image, runtime manifest, or Git
 history. Leaving either empty disables only semantic retrieval. A different embedding space
 requires rebuilding `semantic-search.db` and assigning a new model key; see
 [SEMANTIC_SEARCH.md](SEMANTIC_SEARCH.md).
+
+The three-second budget starts when the API dispatches the provider request. A timeout,
+rate limit, or malformed response returns the complete local lexical page. The reference
+Compose keeps the query-vector cache in its own writable volume while every content asset
+remains read-only. The cache stores HMAC keys instead of query text, survives container
+restarts, expires entries after 30 days, and evicts least-recently-used rows above 10,000.
+That default bound is approximately 42-50 MiB. Generate the private cache key with
+`openssl rand -hex 32`; set `DICTIONARY_SEMANTIC_PERSISTENT_CACHE=false` to opt out. A
+one-shot init service gives the non-root API user ownership of the cache volume before the
+API starts.
 
 ## Start
 
@@ -214,9 +232,18 @@ services:
       DICTIONARY_SEMANTIC_API_KEY: ${DICTIONARY_SEMANTIC_API_KEY:-}
       DICTIONARY_SEMANTIC_MODEL: ${DICTIONARY_SEMANTIC_MODEL:-Qwen/Qwen3-Embedding-4B}
       DICTIONARY_SEMANTIC_MODEL_KEY: ${DICTIONARY_SEMANTIC_MODEL_KEY:-qwen3-embedding-4b-1024-v1}
+      DICTIONARY_SEMANTIC_TIMEOUT: ${DICTIONARY_SEMANTIC_TIMEOUT:-3s}
+      DICTIONARY_SEMANTIC_PERSISTENT_CACHE: ${DICTIONARY_SEMANTIC_PERSISTENT_CACHE:-true}
+      DICTIONARY_SEMANTIC_PERSISTENT_CACHE_PATH: /var/cache/lexicon/semantic-query-vectors.db
+      DICTIONARY_SEMANTIC_PERSISTENT_CACHE_KEY: ${DICTIONARY_SEMANTIC_PERSISTENT_CACHE_KEY:-}
     volumes:
       - ./data/semantic-search.db:/var/lib/lexicon/semantic-search.db:ro
+      - semantic-query-cache:/var/cache/lexicon
 ```
+
+For a private Compose, initialize the cache volume for container UID/GID `65532:65532`
+before starting the non-root API, or reproduce the bundled `semantic-cache-init` service.
+Without a writable cache directory, semantic search still works but persistence is disabled.
 
 The proxy must support streaming responses and preserve query strings, response content
 types, `Cache-Control`, and `Service-Worker-Allowed`. Do not enable proxy caching for

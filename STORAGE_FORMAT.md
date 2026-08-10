@@ -127,20 +127,31 @@ into an external dependency.
 
 ## Chinese Reverse-Search Sidecar
 
-Chinese lookup is a derived, project-owned SQLite sidecar with four structures:
+Chinese lookup is a derived, project-owned SQLite sidecar with five structures:
 
 ```text
 metadata       schema, normalizer, projection, source, count, and primary fingerprint
 documents      display evidence, grouping identity, weight, and canonical location
 exact_segments deduplicated normalized segments for complete-match lookup
+entry_headword_forms deduplicated entry-level surface forms used by evidence highlighting
 documents_fts  contentless FTS5 candidate index using detail=none
 ```
 
 The sidecar is generated from validated `CanonicalEntry` values through the shared
-`SearchDocument` projector. The current schema 3 / projection 1.2 build contains 188,851
-documents and 347,486 exact segments from 40,974 entries in a 69,894,144-byte file.
+`SearchDocument` projector. The current schema 5 / projection 1.4 build contains 188,851
+documents, 347,486 exact segments, and 16,857 headword forms from 40,974 entries in a
+72,228,864-byte file.
 Repeating the same projection and import produced the byte-identical SHA-256
-`5f5b0d024141d6be17e76ef62a83206a2ca750984cd793bc52094b6a8298aaf5`.
+`6a5288a931c1818fa064e030dc6476b72724717444ee751f52e26fc38e73fab0`.
+
+Headword forms are projected once per canonical entry. Explicit canonical inflections
+carry irregular forms such as `think` to `thought`. A build-only lemmatizer supplements them
+with forms that actually occur in projected English evidence, such as `twist` to `twisted`,
+and only when the owning same-headword entry path supplies a compatible part of speech.
+Entry-level alternative spellings are accepted as lexical surfaces. Sense wording,
+constructions, derivatives, differently named nested entries, and unobserved guesses are
+excluded. The API fetches forms for one result window with a single bounded query, so evidence
+rendering never performs per-entry lookups or request-time morphology.
 
 Normalization applies Unicode NFKC, OpenCC traditional-to-simplified conversion, and
 collapsed punctuation and whitespace boundaries. One process-wide, race-safe OpenCC
@@ -172,7 +183,7 @@ a contiguous run covering about half the query, and lightweight polarity checkin
 misleading negated fallbacks. Mixed Chinese and ASCII or numeric queries retain every ASCII or
 numeric constraint. Scoring never joins text across punctuation or whitespace boundaries.
 Results are grouped with deterministic ties into a stable window of at most 512 entries and at
-most three evidence records per entry.
+most eight evidence records per entry.
 The HTTP endpoint returns 32 groups by default, accepts pages of at most 256, and exposes
 `nextOffset` for progressive 32, 64, 128, 256, and 512 cumulative result counts. Both the
 HTTP endpoint and the store reject queries longer than 200 characters.
@@ -222,12 +233,12 @@ documents      source-neutral evidence and canonical locations keyed by text id
 vector_blocks  contiguous symmetric-int8 vector blocks
 ```
 
-The current schema 1 build groups 188,851 documents into 178,382 unique text vectors with
-1,024 dimensions. It covers 2,139,356 Chinese characters and occupies 251,174,912 bytes.
+The current schema 2 / projection 1.1 build groups 188,851 documents into 178,382 unique text vectors with
+1,024 dimensions. It covers 2,139,356 Chinese characters and occupies 252,542,976 bytes.
 Its SHA-256 is
-`4bb445efbc8ddce2eaf02a386b6531e514544a5c7f65beb1bbe31cfec0d3ad40`.
+`c17d6b478e0ab0dfa5868abf32209b84dab6b1c82abacfac8ae5ccc24fe4273b`.
 Metadata pins the primary runtime SHA-256, reverse-search SHA-256, corpus fingerprint,
-source projection 1.2, semantic projection 1.0, model key
+source projection 1.4, semantic projection 1.1, model key
 `qwen3-embedding-4b-1024-v1`, query template, provider options, and every vector-format
 parameter. The API rejects an incompatible combination before serving requests.
 
@@ -252,16 +263,25 @@ tokens. With the measured provider's 4x input multiplier, total recorded usage w
 instruction, or 119.4 weighted units at the same multiplier. A resumable checkpoint and
 pre-request reservations keep rebuilds and provider quota bounded.
 
-Loopback end-to-end probes measured 0.66-1.42 seconds for a first provider-backed query and
-roughly 20-75 ms for complete warm hybrid requests. The semantic-enabled Windows API process
+Loopback end-to-end probes measured 0.66-1.42 seconds for a first provider-backed query. The
+quality-v3 development run measured 125 ms at p50 and 163 ms at p95 for complete warm hybrid
+requests over the stable 512-entry fusion window. The semantic-enabled Windows API process
 used 385.5 MiB of working-set memory and 421.2 MiB of private memory after real queries;
 these figures also include the pronunciation ZIP index and normal Go/SQLite state.
 
-The dense rank is not returned directly. The API combines it with the complete bounded
-lexical rank through reciprocal-rank fusion and protects exact Chinese segments before
-stable pagination. Query-vector and page LRUs avoid repeat provider calls; provider errors
-return the lexical page. See [SEMANTIC_SEARCH.md](SEMANTIC_SEARCH.md) for the build command,
-runtime contract, model comparison, and configuration.
+The dense rank is not returned directly. The API protects full-boundary lexical evidence,
+then compares each entry's semantic evidence profile lexicographically: the strongest match
+wins, another match breaks ties only inside the 0.005 similarity band, and evidence counts are
+never summed. Query-vector and page LRUs avoid repeat provider calls; provider errors return
+the lexical page.
+
+An optional writable SQLite cache preserves normalized query vectors across process and
+container restarts. Its key is HMAC-SHA-256 over the query plus the complete embedding
+contract; query plaintext is never stored. Float32 vectors use 4,096 bytes each at 1,024
+dimensions. The default 10,000-row TTL/LRU bound occupies roughly 42-50 MiB including SQLite
+indexes and page overhead. Cache failures disable only persistence and never the lexical or
+semantic request path. See [SEMANTIC_SEARCH.md](SEMANTIC_SEARCH.md) for the build command,
+runtime contract, model comparison, cache settings, and configuration.
 
 ## Pronunciation Archive
 

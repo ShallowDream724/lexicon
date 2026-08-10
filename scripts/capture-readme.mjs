@@ -293,7 +293,7 @@ const browser = await chromium.launch({
 
 try {
   const [hero, reverseSearch, tablet, phone, reader, mobileReader] = await Promise.all([
-    captureEntry(browser, { width: 1440, height: 771 }),
+    captureEntry(browser, { width: 1180, height: 771 }),
     captureReverseSearch(browser, { width: 1180, height: 820 }),
     captureEntry(browser, { width: 820, height: 1180 }),
     captureEntry(browser, { width: 390, height: 844 }),

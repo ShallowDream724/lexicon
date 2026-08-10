@@ -85,8 +85,8 @@ Indexed lookup, bounded candidate pools, and independently compressed entries le
 | Dataset<br>数据集 | Coverage<br>规模 | Runtime asset<br>运行资源 |
 | --- | ---: | ---: |
 | Core bilingual dictionary<br>双语主词典 | 40,974 entries<br>40,974 个词条 | 51.5 MiB |
-| Chinese reverse search<br>中文反查 | 188,851 documents · 347,486 exact segments<br>188,851 条文档 · 347,486 个精确片段 | 66.7 MiB |
-| Semantic intent search<br>语义意图检索 | 178,382 vectors · 1,024 dimensions<br>178,382 个向量 · 1,024 维 | 239.5 MiB |
+| Chinese reverse search<br>中文反查 | 188,851 documents · 347,486 exact segments · 16,857 headword forms<br>188,851 条文档 · 347,486 个精确片段 · 16,857 个词形 | 68.9 MiB |
+| Semantic intent search<br>语义意图检索 | 178,382 vectors · 1,024 dimensions<br>178,382 个向量 · 1,024 维 | 240.8 MiB |
 | Etymology enhancement<br>词源扩展 | 46,773 terms · 51,716 articles<br>46,773 个词语 · 51,716 篇文章 | 43.3 MiB |
 | Headword pronunciation<br>词头发音 | 128,010 MP3 assets<br>128,010 个 MP3 | 1.06 GiB |
 
@@ -107,9 +107,9 @@ npm ci
 npm run data:download
 ```
 
-The download is about 1.45 GiB. It retrieves the versioned [runtime-data-v1 Release](https://github.com/ShallowDream724/lexicon/releases/tag/runtime-data-v1), verifies every file against `runtime-assets.json`, and creates the shared runtime layout:
+The download is about 1.45 GiB. It retrieves the versioned [runtime-data-v1 Release](https://github.com/ShallowDream724/lexicon/releases/tag/runtime-data-v1), verifies every file against `runtime-assets.json`, and creates the shared runtime layout of four databases and one packed audio archive:
 
-完整下载量约为 1.45 GiB。命令会获取带版本的 [runtime-data-v1 Release](https://github.com/ShallowDream724/lexicon/releases/tag/runtime-data-v1)，依据 `runtime-assets.json` 校验每个文件，并创建统一的运行目录：
+完整下载量约为 1.45 GiB。命令会获取带版本的 [runtime-data-v1 Release](https://github.com/ShallowDream724/lexicon/releases/tag/runtime-data-v1)，依据 `runtime-assets.json` 校验每个文件，并创建由四个数据库和一个压缩音频包组成的运行目录：
 
 ```text
 data/
@@ -140,9 +140,9 @@ Open `http://localhost:3000`. The web application calls `http://localhost:8787/a
 
 打开 `http://localhost:3000`。Web 应用默认调用 `http://localhost:8787/api/v1`。可通过 `LEXICON_DATA_BASE_URL` 选择其他资源镜像，通过 `LEXICON_DATA_DIR` 选择其他本地数据目录。
 
-Semantic intent search is optional at runtime. Configure an OpenAI-compatible embeddings endpoint and a model compatible with the released sidecar to enable it; without those settings, Chinese lookup keeps its complete local lexical path. The released contract, one-command rebuild, provider options, quota guard, and measured quality are documented in [SEMANTIC_SEARCH.md](SEMANTIC_SEARCH.md).
+Semantic intent search is optional at runtime. Configure an OpenAI-compatible embeddings endpoint and a model compatible with the released sidecar to enable it; without those settings, Chinese lookup keeps its complete local lexical path. Typing suggestions never call the provider. Explicit multi-character Chinese searches use a three-second provider timeout and fall back to local results without interrupting the page. Deployments can retain query vectors across restarts in a bounded cache that stores keyed hashes rather than query text. The released contract, one-command rebuild, provider options, quota guard, cache settings, and measured quality are documented in [SEMANTIC_SEARCH.md](SEMANTIC_SEARCH.md).
 
-语义意图检索在运行时可选。配置与发布侧库兼容的 OpenAI 格式 Embeddings 接口和模型即可启用；未配置时，中文反查仍会完整使用本地字面检索。发布契约、一键重建、接口选项、额度保护与实测质量见 [SEMANTIC_SEARCH.md](SEMANTIC_SEARCH.md)。
+语义意图检索在运行时可选。配置与发布侧库兼容的 OpenAI 格式 Embeddings 接口和模型即可启用；未配置时，中文反查仍会完整使用本地字面检索。输入过程中的联想不会调用上游；明确提交多字中文后，provider 请求采用 3 秒超时，异常时页面会无感回到本地结果。部署端还可用有界缓存跨重启复用查询向量，磁盘只保存带密钥的摘要，不保存查询原文。发布契约、一键重建、接口选项、额度保护、缓存设置与实测质量见 [SEMANTIC_SEARCH.md](SEMANTIC_SEARCH.md)。
 
 For self-hosted Docker deployment, configure the reference environment and start the bundled web, API, and reverse-proxy services. HTTPS, proxy, asset, update, and rollback notes are in [DEPLOYMENT.md](DEPLOYMENT.md).
 

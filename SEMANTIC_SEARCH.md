@@ -34,7 +34,7 @@ Explicit Chinese query with at least two Han characters
              semantic candidate projection
         |
         v
-Exact-match protection + reciprocal-rank fusion + stable pagination
+Exact-match protection + hierarchical evidence ranking + stable pagination
         |
         v
 Search evidence with canonical entry locations
@@ -45,10 +45,15 @@ request never includes that mode, so typing does not spend embedding quota. Quer
 fewer than two Han characters, English queries, and queries longer than 200 characters do
 not call the embedding provider.
 
-The API keeps separate bounded LRU caches for normalized query vectors and complete
+The API keeps separate bounded in-memory LRU caches for normalized query vectors and complete
 semantic pages. Scope changes and continuation pages reuse the vector. Concurrent identical
-queries share one provider request. If the provider times out or returns an invalid response,
-the request falls back to the complete lexical result page.
+queries share one provider request. At most four unique provider requests run concurrently and
+at most 64 unique embedding flights may exist; excess work follows the same lexical fallback
+path as a provider failure. An optional SQLite cache retains normalized vectors across process
+restarts. It stores an HMAC-SHA-256 key and the vector, never the query text; its
+namespace includes the model key, dimensions, query template, and query options so an embedding
+contract change cannot reuse an incompatible vector. If the provider times out or returns an
+invalid response, the request falls back to the complete lexical result page.
 
 ## Bundled Contract
 
@@ -65,8 +70,9 @@ The released sidecar is built with:
 | Unique vectors | 178,382 |
 | Search documents | 188,851 |
 | Chinese characters | 2,139,356 |
-| Sidecar size | 251,174,912 bytes |
-| SHA-256 | `4bb445efbc8ddce2eaf02a386b6531e514544a5c7f65beb1bbe31cfec0d3ad40` |
+| Sidecar schema / projection | `2` / `1.1` |
+| Sidecar size | 252,542,976 bytes |
+| SHA-256 | `c17d6b478e0ab0dfa5868abf32209b84dab6b1c82abacfac8ae5ccc24fe4273b` |
 
 The sidecar metadata pins the exact primary database SHA-256, reverse-search sidecar
 SHA-256, projection versions, model key, dimensions, query template, provider options,
@@ -113,6 +119,22 @@ valid alternatives absent from those finite allowlists: `can`/`enough` for `Âèó‰
 `go`/`nicety`/`puzzle` for a detail worth examining, and `temper`/`compulsive` for losing
 self-control in an argument. The suite remains conservative instead of rewriting labels to
 inflate the score.
+
+After ranking parameters were frozen, a separate blind holdout covered 192 cases across 15
+intent categories: 182 retrieval cases and 10 expected-gap cases. It contains 422 graded
+targets; 167 retrieval cases include at least one target absent from development tuning.
+
+| Final HTTP path | nDCG@8 | MRR | Recall@8 | Hit@8 | Evidence nDCG@3 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Lexical | 0.1704 | 0.2040 | 0.1859 | 0.2747 | 0.1301 |
+| Hybrid | 0.2172 | 0.2469 | 0.2372 | 0.3297 | 0.1627 |
+
+Forbidden-result and scope-leakage rates were both zero. The configured three-second provider
+deadline applied semantic fusion to 46 of 182 retrieval cases; the other 136 deliberately
+returned complete lexical pages. Consequently the holdout measures the deployed failure
+policy as well as ranking quality. Lexical p50/p95/p99 latency was 25.4/64.3/125.8 ms; the
+provider-limited hybrid path measured 3023.9/3061.8/3085.5 ms. The holdout was executed once
+and was not used for subsequent parameter tuning.
 
 ## Build The Sidecar
 
@@ -175,13 +197,27 @@ DICTIONARY_SEMANTIC_BASE_URL=https://provider.example/v1
 DICTIONARY_SEMANTIC_API_KEY=replace-with-your-key
 DICTIONARY_SEMANTIC_MODEL=Qwen/Qwen3-Embedding-4B
 DICTIONARY_SEMANTIC_MODEL_KEY=qwen3-embedding-4b-1024-v1
-DICTIONARY_SEMANTIC_TIMEOUT=5s
+DICTIONARY_SEMANTIC_TIMEOUT=3s
 DICTIONARY_SEMANTIC_CACHE=128
+DICTIONARY_SEMANTIC_PERSISTENT_CACHE=true
+DICTIONARY_SEMANTIC_PERSISTENT_CACHE_PATH=/var/cache/lexicon/semantic-query-vectors.db
+DICTIONARY_SEMANTIC_PERSISTENT_CACHE_KEY=replace-with-at-least-32-private-bytes
+DICTIONARY_SEMANTIC_PERSISTENT_CACHE_MAX_ENTRIES=10000
+DICTIONARY_SEMANTIC_PERSISTENT_CACHE_TTL=720h
 ```
 
 Changing only the runtime model name is valid when two provider routes return the same
 embedding space. Changing the embedding space, dimensions, query template, or task options
 requires rebuilding the sidecar with a new model key.
+
+The three-second timeout begins immediately before the API dispatches the provider HTTP
+request; local lexical retrieval and request parsing do not consume that budget. Persistent
+caching is best-effort and never makes search unavailable. It becomes active only when both
+the path and a private key of at least 32 bytes are present; set
+`DICTIONARY_SEMANTIC_PERSISTENT_CACHE=false` to disable it. With 1,024-dimensional float32
+query vectors, the default 10,000-entry limit uses roughly 42-50 MiB including SQLite indexes
+and page overhead. Expired rows are removed on writes, and the least recently accessed rows
+are evicted at the configured capacity.
 
 ## Measured Usage
 
@@ -192,8 +228,8 @@ that is 6,716,092 weighted units in total.
 Across the 67-query quality suite, one query averaged 29.85 input tokens including the
 instruction, or about 119.4 weighted units at 4x. Real loopback requests observed roughly
 0.66-1.42 seconds for an uncached provider call. Repeated queries and pagination reuse the
-cached vector; observed complete warm hybrid requests took roughly 20-75 ms without another
-provider charge. After real queries, the measured Windows API process used 385.5 MiB of
+cached vector; the quality-v3 development run measured 125 ms at p50 and 163 ms at p95 for
+complete warm hybrid requests without another provider charge. After real queries, the measured Windows API process used 385.5 MiB of
 working-set memory and 421.2 MiB of private memory, including the pronunciation index and
 semantic matrix.
 

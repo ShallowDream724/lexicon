@@ -93,8 +93,9 @@ The service owns runtime storage work:
 - exact-segment and bounded FTS candidate retrieval, followed by deterministic grouped
   Chinese-result ranking;
 - validating the semantic sidecar against both database fingerprints and its model contract;
-- bounded resident int8 retrieval, query-vector caching, and deterministic lexical-semantic
-  fusion for explicitly submitted Chinese intent queries;
+- bounded resident int8 retrieval, four-request/64-flight embedding admission, bounded memory
+  and persistent query-vector caching, and deterministic lexical-semantic fusion for explicitly
+  submitted Chinese intent queries;
 - decompressing one independently stored entry and returning a stable envelope
   around the unmodified entry JSON;
 - indexing the pronunciation archive once and streaming individual assets;
@@ -125,8 +126,8 @@ loads int8 vectors into a bounded resident array and keeps evidence in read-only
 Replacing the primary or reverse-search database therefore also requires a compatible
 semantic rebuild.
 
-Only the query vector crosses the optional OpenAI-compatible provider boundary. Document
-vectors are built once and distributed as a release asset. The provider model name is a
+Only the query text needed to produce one vector crosses the optional OpenAI-compatible
+provider boundary. Document vectors are built once and distributed as a release asset. The provider model name is a
 deployment routing value; the project-owned model key identifies a compatible embedding
 space. Missing provider configuration disables semantic retrieval while preserving the
 complete lexical Chinese path. Provider failures during a request degrade to that lexical
@@ -181,6 +182,17 @@ fields. A genuinely new canonical semantic type adds one projection branch, one 
 anchor, and one contract fixture at this boundary; individual adapters, result pages,
 and navigation components remain unchanged. Preserved `raw` data is deliberately not
 indexed because it may contain transport fields or content the UI cannot display.
+
+The projection also resolves bounded headword surface forms for result evidence. Canonical
+`inflectedForms` are authoritative for irregular morphology. A build-only English lemmatizer
+supplements them only with surface forms observed in that entry's projected evidence, using
+the evidence's known part of speech. Only lexical entry variants and same-headword entry paths
+participate. Sense-level alternative wording, constructions, derivatives, differently named
+subentries, unobserved guesses, and evidence without a known part of speech remain outside the
+form relation. The reverse sidecar stores that relation once, and the API enriches an entire
+result window through one batch query. React receives explicit forms and contains no
+irregular-word table or morphology rules; build-only morphology code is absent from the web
+bundle and request path.
 
 The build script streams projected documents into the Go importer. The importer validates
 ordering and bounds, creates a deduplicated exact-segment B-tree beside the contentless FTS
@@ -279,10 +291,13 @@ coarser locations fall back to their owner and then their section.
 
 Chinese suggestions remain a debounced lexical request. An explicit submission containing
 at least two Han characters and no more than 200 Unicode characters opts into hybrid mode.
-The server retrieves the complete bounded lexical and dense windows, protects exact Chinese
-segments, combines independent ranks with reciprocal-rank fusion, and paginates the stable
-merged window. Query-vector and page caches are server-owned; browser scope changes and
-continuation requests keep the hybrid mode but never hold vectors in client state.
+The server retrieves the complete bounded lexical and dense windows, protects full-boundary
+Chinese evidence, and compares each entry's strongest semantic evidence before using
+same-band corroborating evidence. It never sums evidence counts, so several weaker matches
+cannot outrank one clearly stronger match. Query-vector and page caches are server-owned;
+browser scope changes and continuation requests keep the hybrid mode but never hold vectors
+in client state. An optional bounded SQLite cache stores only keyed query hashes and vectors
+across restarts; its namespace includes the complete embedding contract.
 
 Chinese results default to definitions, phrases, and forms. Users may include usage notes
 or examples through one canonical scope control. Scope is part of the request identity,
@@ -313,8 +328,9 @@ a uniform two-pixel reduction to its own baseline; supplementary resource cards 
 remain outside that adjustment. Result pages retain separate responsive baselines. Small and
 large levels apply a bounded pixel delta to reading text, cards, and result evidence without
 scaling layout geometry or search controls; long-form etymology uses a restrained independent
-delta. Content labels size their grid track from the rendered text, so a larger level cannot
-force a two-character scope label into a vertical stack. Dialog portals mirror the same
+delta. Result labels use a bounded phone track and wrap long part-of-speech qualifiers inside
+that track; larger layouts size the track from its content. A larger level therefore cannot
+push the label into its evidence text. Dialog portals mirror the same
 preference variables because their DOM nodes live outside the workspace root.
 
 Modal resources share one reference-counted viewport lock. Opening an illustration,
@@ -351,7 +367,11 @@ separate blocks so their destination role stays visually clear.
 Inline lookup has one environment-derived interaction mode. Viewports up to 1024 px,
 coarse pointers, and touch-capable devices resolve a tapped English token; wider
 fine-pointer desktops expose lookup only after a text selection. Both modes share the
-same token normalization, viewport clamping, and query action.
+same token normalization, viewport clamping, and query action. One workspace-level listener
+serves every explicitly marked reading surface, including entry content and portalled resource
+or etymology dialogs. The action is portalled back into the active surface, while buttons,
+links, form controls, and editable content remain outside lookup handling. New reading cards
+join this behavior through the same surface contract instead of mounting another listener.
 
 Part-of-speech switching passes through one projection boundary in
 `src/features/dictionary/entry-sections.ts`. Given an entry and active tab, it derives
@@ -469,7 +489,7 @@ GET /api/v1/media/example-audio?key=<url-encoded asset key>
 GET /api/v1/media/illustration?key=<url-encoded asset key>
 ```
 
-Chinese search items additionally include up to three bounded evidence records. Each
+Chinese search items additionally include up to eight bounded evidence records. Each
 record contains `scope`, `englishText`, `chineseText`, and a validated `location`. English
 search items retain their existing compact response shape. Chinese requests accept an
 optional `offset`; their default page contains 32 groups, a page contains at most 256, and
@@ -505,7 +525,7 @@ requests as distinct outcomes.
   tries the all-token expression per semantic tier and uses bounded OR retrieval only for a
   tier with no usable complete-token result. Scope plus ASCII and numeric constraints are
   applied before each SQL candidate limit; Go refinement respects normalized Chinese segment
-  boundaries, uses deterministic tie-breaks, and returns at most 512 entry groups with three
+  boundaries, uses deterministic tie-breaks, and returns at most 512 entry groups with eight
   evidence records per entry.
 - Chinese result pages begin at 32 groups and expand cumulatively to 64, 128, 256, then
   512. Each request transfers only the next page, and route changes cancel in-flight pages.
@@ -524,7 +544,9 @@ requests as distinct outcomes.
 - Semantic queries require at least two Han characters. Typing suggestions, English lookup,
   one-character Chinese lookup, invalid input, and oversized input never call the provider.
   Identical concurrent queries share one call; bounded vector and page LRUs avoid another
-  call for repeated queries, scope changes, and pagination.
+  call for repeated queries, scope changes, and pagination. An optional SQLite cache preserves
+  normalized vectors across restarts under HMAC keys, TTL, and a fixed LRU capacity without
+  storing query text.
 - The embedding request has a deployment-configured timeout, validates the model key and
   dimensions against sidecar metadata, caps response bytes, rejects malformed or non-finite
   vectors, and degrades to lexical retrieval on request-time failure.
