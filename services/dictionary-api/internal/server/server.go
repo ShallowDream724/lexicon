@@ -29,15 +29,15 @@ import (
 )
 
 const (
-	defaultLimit          = 20
-	maxLimit              = 50
-	defaultReverseLimit   = 32
-	maxReversePageSize    = 256
-	maxReverseOffset      = 511
-	maxTypoMatches        = 128
-	semanticMaxQueryRunes = 80
-	hybridResultWindow    = 512
-	rrfK                  = 60.0
+	defaultLimit        = 20
+	maxLimit            = 50
+	defaultReverseLimit = 32
+	maxReversePageSize  = 256
+	maxReverseOffset    = 511
+	maxTypoMatches      = 128
+	hybridResultWindow  = 512
+	maxSearchMatches    = 3
+	rrfK                = 60.0
 )
 
 type requestIDContextKey struct{}
@@ -308,7 +308,7 @@ func parseSearchMode(value string) (searchMode, error) {
 }
 
 func semanticEligible(query string) bool {
-	if utf8.RuneCountInString(query) > semanticMaxQueryRunes {
+	if utf8.RuneCountInString(query) > reversesearch.MaxQueryRunes {
 		return false
 	}
 	count := 0
@@ -436,12 +436,12 @@ func (s *Service) queryHybridReverseSuggestions(ctx context.Context, query strin
 		Offset: 0, Limit: hybridResultWindow, Scopes: semanticScopes,
 	})
 	if err != nil {
-		s.logger.Debug("semantic search unavailable; returning lexical results", "error", err)
+		s.logger.Warn("semantic search unavailable; returning lexical results", "error", err)
 		return paginateReverseSuggestions(lexical, options.Offset, options.Limit), nil
 	}
 	semantic, err := s.semanticSuggestionsForGroups(ctx, semanticPage.Groups)
 	if err != nil {
-		s.logger.Debug("semantic search projection failed; returning lexical results", "error", err)
+		s.logger.Warn("semantic search projection failed; returning lexical results", "error", err)
 		return paginateReverseSuggestions(lexical, options.Offset, options.Limit), nil
 	}
 	return paginateReverseSuggestions(mergeHybridSuggestions(query, lexical, semantic), options.Offset, options.Limit), nil
@@ -529,7 +529,7 @@ func mergeHybridSuggestions(query string, lexical, semantic []suggestion) []sugg
 		}
 		candidate.semanticRank = rank
 		candidate.score += reciprocalRank(rank)
-		candidate.item.Matches = append(candidate.item.Matches, item.Matches...)
+		candidate.item.Matches = mergeSearchMatches(candidate.item.Matches, item.Matches)
 	}
 	merged := make([]hybridSuggestion, 0, len(byID))
 	for _, item := range byID {
@@ -562,11 +562,34 @@ func reciprocalRank(rank int) float64 { return 1 / (rrfK + float64(rank+1)) }
 
 func hasExactChineseMatch(query string, item suggestion) bool {
 	for _, match := range item.Matches {
-		if strings.TrimSpace(match.ChineseText) == query {
+		if reversesearch.ContainsExactChineseSegment(match.ChineseText, query) {
 			return true
 		}
 	}
 	return false
+}
+
+func mergeSearchMatches(groups ...[]searchMatch) []searchMatch {
+	result := make([]searchMatch, 0, maxSearchMatches)
+	seen := make(map[string]struct{}, maxSearchMatches)
+	for _, matches := range groups {
+		for _, match := range matches {
+			key := strings.Join([]string{
+				string(match.Scope), match.EnglishText, match.ChineseText,
+				string(match.Location.Section), match.Location.Part, match.Location.OwnerID,
+				strings.Join(match.Location.Path, "\x1f"),
+			}, "\x00")
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			result = append(result, match)
+			if len(result) == maxSearchMatches {
+				return result
+			}
+		}
+	}
+	return result
 }
 
 func paginateReverseSuggestions(items []suggestion, offset, limit int) reverseSuggestionPage {

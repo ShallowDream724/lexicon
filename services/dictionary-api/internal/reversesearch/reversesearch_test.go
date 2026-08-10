@@ -805,6 +805,15 @@ func TestTraditionalNormalizationIsReusableAndConcurrent(t *testing.T) {
 	}
 }
 
+func TestContainsExactChineseSegmentUsesIndexNormalization(t *testing.T) {
+	if !ContainsExactChineseSegment("中止；放弃；不再有", "放棄") {
+		t.Fatal("traditional exact segment was not recognized")
+	}
+	if ContainsExactChineseSegment("中止；放弃；不再有", "弃") {
+		t.Fatal("partial segment was accepted as exact")
+	}
+}
+
 func BenchmarkScopedSearch(b *testing.B) {
 	root := b.TempDir()
 	dictionary := filepath.Join(root, "dictionary.db")

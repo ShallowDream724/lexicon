@@ -190,7 +190,7 @@ func defaultConfig() configDefaults {
 		semanticAPIKey:                   envOr("DICTIONARY_SEMANTIC_API_KEY", ""),
 		semanticModel:                    envOr("DICTIONARY_SEMANTIC_MODEL", ""),
 		semanticModelKey:                 envOr("DICTIONARY_SEMANTIC_MODEL_KEY", ""),
-		semanticTimeout:                  envOr("DICTIONARY_SEMANTIC_TIMEOUT", "20s"),
+		semanticTimeout:                  envOr("DICTIONARY_SEMANTIC_TIMEOUT", "5s"),
 		semanticCache:                    envOr("DICTIONARY_SEMANTIC_CACHE", "128"),
 		exampleAudioBaseURL:              envOr("DICTIONARY_EXAMPLE_AUDIO_BASE_URL", ""),
 		illustrationBaseURL:              envOr("DICTIONARY_ILLUSTRATION_BASE_URL", ""),
@@ -238,13 +238,17 @@ func openOptionalSemanticSearch(config semanticRuntimeConfig) (*semanticsearch.E
 	if path == "" {
 		return nil, nil, nil
 	}
+	if strings.TrimSpace(config.baseURL) == "" || strings.TrimSpace(config.apiKey) == "" ||
+		strings.TrimSpace(config.model) == "" || strings.TrimSpace(config.modelKey) == "" {
+		return nil, nil, nil
+	}
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil, nil
 		}
 		return nil, nil, fmt.Errorf("inspect semantic-search sidecar: %w", err)
 	}
-	if strings.TrimSpace(config.reverseSearchPath) == "" || strings.TrimSpace(config.modelKey) == "" {
+	if strings.TrimSpace(config.reverseSearchPath) == "" {
 		return nil, nil, nil
 	}
 	if _, err := os.Stat(config.reverseSearchPath); err != nil {
@@ -268,10 +272,6 @@ func openOptionalSemanticSearch(config semanticRuntimeConfig) (*semanticsearch.E
 	store, err := semanticsearch.Open(path, config.dictionaryFingerprint, reverseFingerprint, semanticsearch.ProjectionVersion, config.modelKey)
 	if err != nil {
 		return nil, nil, err
-	}
-	if strings.TrimSpace(config.baseURL) == "" || strings.TrimSpace(config.apiKey) == "" || strings.TrimSpace(config.model) == "" {
-		_ = store.Close()
-		return nil, nil, nil
 	}
 	embedder, err := semanticsearch.NewOpenAIEmbedder(semanticsearch.OpenAIEmbedderConfig{
 		BaseURL: config.baseURL, APIKey: config.apiKey, Model: config.model, ModelKey: config.modelKey,

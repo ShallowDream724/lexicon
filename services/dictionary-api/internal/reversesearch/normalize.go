@@ -70,6 +70,24 @@ func ContainsCJK(value string) bool {
 	return false
 }
 
+// ContainsExactChineseSegment reports whether query matches one complete normalized
+// Chinese segment in value. It shares the importer's punctuation and traditional-
+// Chinese normalization, so hybrid ranking protects the same exact evidence as the
+// reverse-search index.
+func ContainsExactChineseSegment(value, query string) bool {
+	querySequences := cjkSequences(query)
+	if len(querySequences) != 1 {
+		return false
+	}
+	wanted := string(querySequences[0])
+	for _, sequence := range cjkSequences(value) {
+		if string(sequence) == wanted {
+			return true
+		}
+	}
+	return false
+}
+
 func cjkSequences(value string) [][]rune {
 	return cjkSequencesFromNormalized(normalizeChinese(value))
 }

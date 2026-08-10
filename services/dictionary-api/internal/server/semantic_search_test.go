@@ -83,6 +83,34 @@ func TestHybridSearchDeduplicatesProtectsExactLexicalAndPaginatesStably(t *testi
 	}
 }
 
+func TestHybridEvidenceIsDeduplicatedAndBounded(t *testing.T) {
+	shared := semanticsearch.Match{
+		Scope: semanticsearch.ScopeSense, English: "exact definition", Chinese: "精确释义",
+		Location: semanticsearch.Location{Section: "definitions", Part: "noun", OwnerID: "sense-exact", Path: []string{"senses", "0"}},
+	}
+	searcher := &fakeSemanticSearcher{page: semanticsearch.Page{Groups: []semanticsearch.Group{{
+		EntryID: "exact",
+		Matches: []semanticsearch.Match{
+			shared,
+			{Scope: semanticsearch.ScopePhrase, English: "second", Chinese: "第二条", Location: semanticsearch.Location{Section: "idioms", Path: []string{"idioms", "0"}}},
+			{Scope: semanticsearch.ScopeUsage, English: "third", Chinese: "第三条", Location: semanticsearch.Location{Section: "grammar-usage", Path: []string{"usage", "0"}}},
+		},
+	}}}}
+	service := newFixtureServiceWithReverseSearchAndSemantic(t, searcher)
+	response := get(t, service, "/api/v1/search?q=%E7%B2%BE%E7%A1%AE%E9%87%8A%E4%B9%89&mode=hybrid")
+	if response.Code != http.StatusOK {
+		t.Fatalf("hybrid response: %d %s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Items []struct {
+			Matches []json.RawMessage `json:"matches"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil || len(body.Items) == 0 || len(body.Items[0].Matches) != 3 {
+		t.Fatalf("hybrid evidence contract: %#v, %v", body, err)
+	}
+}
+
 func TestHealthReportsSemanticSearchCapability(t *testing.T) {
 	searcher := &fakeSemanticSearcher{}
 	service := newFixtureServiceWithReverseSearchAndSemantic(t, searcher)
