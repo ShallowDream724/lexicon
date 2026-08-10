@@ -8,6 +8,7 @@ import hashlib
 import json
 import math
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +29,14 @@ def write_json_atomic(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    os.replace(temporary, path)
+    for attempt in range(8):
+        try:
+            os.replace(temporary, path)
+            return
+        except PermissionError:
+            if attempt == 7:
+                raise
+            time.sleep(0.025 * (2**attempt))
 
 
 def parse_extra_json(raw: str) -> dict[str, Any]:
@@ -164,10 +172,13 @@ def build_cached_vectors(args: argparse.Namespace, corpus: Corpus, fingerprint: 
         raise ValueError("preflight estimate plus concurrent in-flight reserve exceeds the configured budget")
     if bool(usage.get("unmetered")) and args.max_weighted_units is not None:
         raise ValueError("unmetered provider responses cannot be used with --max-weighted-units")
-    tokens_per_text = int(plan["tokensPerText"])
     def reservation(texts: list[str]) -> int:
-        return math.ceil(tokens_per_text * len(texts) * args.budget_safety_factor)
+        return conservative_reservation_tokens(texts, args.budget_safety_factor)
     iterator = iter(_batches(pending, corpus, args.batch_size))
+    completed_count = len(corpus.texts) - len(pending)
+    progress_origin = completed_count
+    next_progress = ((completed_count // 10_000) + 1) * 10_000
+    progress_started = time.monotonic()
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=args.concurrency)
     in_flight: dict[concurrent.futures.Future[Any], tuple[list[int], list[str]]] = {}
     try:
@@ -195,6 +206,22 @@ def build_cached_vectors(args: argparse.Namespace, corpus: Corpus, fingerprint: 
                     checkpoint["completed"][index] = True
                 _checkpoint_usage(checkpoint, result)
                 write_json_atomic(_checkpoint_path(args.output_dir), checkpoint)
+                completed_count += len(indices)
+                if completed_count >= next_progress or completed_count == len(corpus.texts):
+                    elapsed = max(time.monotonic() - progress_started, 0.001)
+                    print(
+                        json.dumps(
+                            {
+                                "completed": completed_count,
+                                "total": len(corpus.texts),
+                                "textsPerSecond": round((completed_count - progress_origin) / elapsed, 1),
+                                "promptTokens": checkpoint["usage"]["promptTokens"],
+                            }
+                        ),
+                        flush=True,
+                    )
+                    while next_progress <= completed_count:
+                        next_progress += 10_000
             if failure is not None:
                 for future in in_flight:
                     future.cancel()
@@ -212,7 +239,7 @@ def _cost_report(document_usage: dict[str, Any], ledger: UsageLedger, multiplier
     return {"documents": {**document_usage, "weightedUnits": int(document_usage["promptTokens"]) * multiplier}, "quality": {"promptTokens": quality_tokens, "requests": quality_requests, "weightedUnits": quality_tokens * multiplier, "unmetered": bool(total["unmetered"]) and not bool(document_usage.get("unmetered"))}, "total": total, "budgetPolicy": "preflight-estimate-with-pre-request-reservations"}
 
 
-def quality_reservation_tokens(inputs: list[str], safety_factor: float) -> int:
+def conservative_reservation_tokens(inputs: list[str], safety_factor: float) -> int:
     """Use UTF-8 byte length as a tokenizer-independent upper bound per input."""
     if not inputs or safety_factor < 1:
         raise ValueError("quality inputs and safety factor are invalid")
@@ -282,7 +309,7 @@ def main() -> None:
         if args.quality_file:
             provider = _provider_from_args(args, ledger, args.query_extra)
             def embed_quality(texts: list[str]) -> np.ndarray:
-                reserve = quality_reservation_tokens(texts, args.budget_safety_factor)
+                reserve = conservative_reservation_tokens(texts, args.budget_safety_factor)
                 snapshot = ledger.snapshot()
                 if args.max_weighted_units is not None and (float(snapshot["promptTokens"]) + float(snapshot["reservedPromptTokens"]) + reserve) * args.input_multiplier > args.max_weighted_units:
                     raise ValueError("quality request reservation exceeds the configured budget")

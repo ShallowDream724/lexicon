@@ -18,6 +18,7 @@ import numpy as np
 
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 RESERVED_FIELDS = frozenset({"model", "input", "encoding_format", "dimensions"})
+USER_AGENT = "Lexicon-Semantic-Builder/2"
 
 
 class ProviderError(RuntimeError):
@@ -124,7 +125,16 @@ class OpenAIEmbeddingProvider:
         last_error: Exception | None = None
         try:
             for attempt in range(self.max_retries + 1):
-                request = Request(self.endpoint, body, {"Authorization": "Bearer " + self.api_key, "Content-Type": "application/json"}, method="POST")
+                request = Request(
+                    self.endpoint,
+                    body,
+                    {
+                        "Authorization": "Bearer " + self.api_key,
+                        "Content-Type": "application/json",
+                        "User-Agent": USER_AGENT,
+                    },
+                    method="POST",
+                )
                 try:
                     with self.opener.open(request, timeout=self.timeout_seconds) as response:
                         payload_bytes = response.read(MAX_RESPONSE_BYTES + 1)

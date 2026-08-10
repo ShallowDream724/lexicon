@@ -38,10 +38,12 @@ def make_reverse(path: Path) -> None:
 
 class EmbeddingHandler(BaseHTTPRequestHandler):
     request: dict[str, object] = {}
+    user_agent = ""
     base64_mode = False
     tokens: int | None = 3
 
     def do_POST(self) -> None:  # noqa: N802
+        type(self).user_agent = self.headers.get("User-Agent", "")
         type(self).request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         data = []
         for index, _ in enumerate(type(self).request["input"]):
@@ -85,6 +87,7 @@ class SemanticBuildTest(unittest.TestCase):
             EmbeddingHandler.base64_mode = base64_mode; EmbeddingHandler.tokens = 3
             result = OpenAIEmbeddingProvider(url, "secret", "model", 2, "base64" if base64_mode else "float", {"truncate": True}, ledger=UsageLedger(None, 1.0)).embed(["one"])
             self.assertTrue(np.allclose(result.vectors[0], [0.6, 0.8])); self.assertTrue(EmbeddingHandler.request["truncate"])
+            self.assertEqual(EmbeddingHandler.user_agent, "Lexicon-Semantic-Builder/2")
         with self.assertRaises(ValueError): OpenAIEmbeddingProvider("ftp://invalid", "secret", "model", 2)
         with self.assertRaises(ValueError): OpenAIEmbeddingProvider(url, "secret", "model", 2, extra={"input": "bad"})
         EmbeddingHandler.tokens = 0
@@ -138,11 +141,31 @@ class SemanticBuildTest(unittest.TestCase):
         second = build.build_fingerprint(corpus, self.primary, "key", "model", 2, "Q: {query}", {"input_type": "document"}, {})
         self.assertNotEqual(first, second)
 
-    def test_quality_reservation_uses_templated_utf8_input(self) -> None:
+    def test_request_reservation_uses_utf8_input_size(self) -> None:
         templated = "Instruct: retrieve a dictionary answer\nQuery: " + "中文描述" * 10
-        reserve = build.quality_reservation_tokens([templated], 1.15)
+        reserve = build.conservative_reservation_tokens([templated], 1.15)
         self.assertGreater(reserve, 10)  # Above a one-token-per-document preflight average.
         self.assertEqual(reserve, int(np.ceil(len(templated.encode("utf-8")) * 1.15)))
+
+    def test_atomic_json_write_retries_transient_windows_reader(self) -> None:
+        path = self.root / "report.json"
+        original = build.os.replace
+        attempts = 0
+
+        def flaky_replace(source: Path, target: Path) -> None:
+            nonlocal attempts
+            attempts += 1
+            if attempts < 3:
+                raise PermissionError("temporarily open")
+            original(source, target)
+
+        build.os.replace = flaky_replace
+        try:
+            build.write_json_atomic(path, {"ok": True})
+        finally:
+            build.os.replace = original
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"ok": True})
+        self.assertEqual(attempts, 3)
 
     def test_quality_files_preserve_order_and_reject_duplicates(self) -> None:
         first, second = self.root / "one.json", self.root / "two.json"

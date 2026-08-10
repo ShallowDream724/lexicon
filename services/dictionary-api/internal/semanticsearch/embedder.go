@@ -139,6 +139,7 @@ func (e *OpenAIEmbedder) Embed(ctx context.Context, query, queryTemplate string,
 	}
 	request.Header.Set("Authorization", "Bearer "+e.apiKey)
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("User-Agent", "Lexicon-Dictionary-API/1")
 	response, err := e.client.Do(request)
 	if err != nil {
 		return nil, &EmbedError{Kind: EmbedErrorRequest, Err: err}

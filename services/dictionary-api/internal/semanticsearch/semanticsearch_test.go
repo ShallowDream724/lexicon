@@ -131,7 +131,7 @@ func TestStoreSearchHonorsCancellation(t *testing.T) {
 
 func TestOpenAIEmbedderRequestAndResponseValidation(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/embeddings" || r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer secret" {
+		if r.URL.Path != "/v1/embeddings" || r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer secret" || r.Header.Get("User-Agent") != "Lexicon-Dictionary-API/1" {
 			t.Errorf("unexpected request %s %s", r.Method, r.URL)
 		}
 		var payload map[string]any
