@@ -15,17 +15,26 @@ type Engine struct {
 	store    *Store
 	embedder Embedder
 
-	mu       sync.Mutex
-	capacity int
-	pages    map[string]*list.Element
-	lru      *list.List
-	flights  map[string]*embeddingFlight
+	mu             sync.Mutex
+	pageCapacity   int
+	vectorCapacity int
+	pages          map[string]*list.Element
+	pageLRU        *list.List
+	vectors        map[string]*list.Element
+	vectorLRU      *list.List
+	flights        map[string]*embeddingFlight
 }
 
 type cachedPage struct {
 	key  string
 	page Page
 }
+
+type cachedVector struct {
+	query  string
+	vector []float32
+}
+
 type embeddingFlight struct {
 	done   chan struct{}
 	vector []float32
@@ -33,16 +42,26 @@ type embeddingFlight struct {
 }
 
 func NewEngine(store *Store, embedder Embedder, cacheCapacity int) (*Engine, error) {
+	return NewEngineWithCacheCapacities(store, embedder, cacheCapacity, cacheCapacity)
+}
+
+func NewEngineWithCacheCapacities(store *Store, embedder Embedder, pageCapacity, vectorCapacity int) (*Engine, error) {
 	if store == nil || !store.Available() {
 		return nil, errors.New("semantic-search store is unavailable")
 	}
 	if embedder == nil || embedder.Dimensions() != store.Dimensions() || embedder.ModelKey() != store.ModelKey() {
 		return nil, errors.New("semantic-search embedder does not match sidecar metadata")
 	}
-	if cacheCapacity < 0 {
-		return nil, errors.New("semantic-search cache capacity must not be negative")
+	if pageCapacity < 0 || vectorCapacity < 0 {
+		return nil, errors.New("semantic-search cache capacities must not be negative")
 	}
-	return &Engine{store: store, embedder: embedder, capacity: cacheCapacity, pages: make(map[string]*list.Element), lru: list.New(), flights: make(map[string]*embeddingFlight)}, nil
+	return &Engine{
+		store: store, embedder: embedder,
+		pageCapacity: pageCapacity, vectorCapacity: vectorCapacity,
+		pages: make(map[string]*list.Element), pageLRU: list.New(),
+		vectors: make(map[string]*list.Element), vectorLRU: list.New(),
+		flights: make(map[string]*embeddingFlight),
+	}, nil
 }
 
 func (e *Engine) Search(ctx context.Context, query string, options Options) (Page, error) {
@@ -85,11 +104,17 @@ func normalizeQuery(query string) string {
 
 func (e *Engine) embedding(ctx context.Context, query string) ([]float32, error) {
 	e.mu.Lock()
+	if element := e.vectors[query]; element != nil {
+		e.vectorLRU.MoveToFront(element)
+		vector := cloneVector(element.Value.(cachedVector).vector)
+		e.mu.Unlock()
+		return vector, nil
+	}
 	if flight := e.flights[query]; flight != nil {
 		e.mu.Unlock()
 		select {
 		case <-flight.done:
-			return flight.vector, flight.err
+			return cloneVector(flight.vector), flight.err
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
@@ -97,12 +122,18 @@ func (e *Engine) embedding(ctx context.Context, query string) ([]float32, error)
 	flight := &embeddingFlight{done: make(chan struct{})}
 	e.flights[query] = flight
 	e.mu.Unlock()
-	flight.vector, flight.err = e.embedder.Embed(ctx, query)
+
+	vector, err := e.embedder.Embed(ctx, query, e.store.QueryTemplate())
+
 	e.mu.Lock()
+	flight.vector, flight.err = cloneVector(vector), err
+	if err == nil {
+		e.putVectorLocked(query, vector)
+	}
 	delete(e.flights, query)
 	close(flight.done)
 	e.mu.Unlock()
-	return flight.vector, flight.err
+	return cloneVector(vector), err
 }
 
 func (e *Engine) cachedPage(key string) (Page, bool) {
@@ -112,28 +143,47 @@ func (e *Engine) cachedPage(key string) (Page, bool) {
 	if element == nil {
 		return Page{}, false
 	}
-	e.lru.MoveToFront(element)
+	e.pageLRU.MoveToFront(element)
 	return clonePage(element.Value.(cachedPage).page), true
 }
 
 func (e *Engine) putPage(key string, page Page) {
-	if e.capacity == 0 {
+	if e.pageCapacity == 0 {
 		return
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if element := e.pages[key]; element != nil {
 		element.Value = cachedPage{key: key, page: clonePage(page)}
-		e.lru.MoveToFront(element)
+		e.pageLRU.MoveToFront(element)
 		return
 	}
-	e.pages[key] = e.lru.PushFront(cachedPage{key: key, page: clonePage(page)})
-	if e.lru.Len() > e.capacity {
-		oldest := e.lru.Back()
+	e.pages[key] = e.pageLRU.PushFront(cachedPage{key: key, page: clonePage(page)})
+	if e.pageLRU.Len() > e.pageCapacity {
+		oldest := e.pageLRU.Back()
 		delete(e.pages, oldest.Value.(cachedPage).key)
-		e.lru.Remove(oldest)
+		e.pageLRU.Remove(oldest)
 	}
 }
+
+func (e *Engine) putVectorLocked(query string, vector []float32) {
+	if e.vectorCapacity == 0 {
+		return
+	}
+	if element := e.vectors[query]; element != nil {
+		element.Value = cachedVector{query: query, vector: cloneVector(vector)}
+		e.vectorLRU.MoveToFront(element)
+		return
+	}
+	e.vectors[query] = e.vectorLRU.PushFront(cachedVector{query: query, vector: cloneVector(vector)})
+	if e.vectorLRU.Len() > e.vectorCapacity {
+		oldest := e.vectorLRU.Back()
+		delete(e.vectors, oldest.Value.(cachedVector).query)
+		e.vectorLRU.Remove(oldest)
+	}
+}
+
+func cloneVector(vector []float32) []float32 { return append([]float32(nil), vector...) }
 
 func clonePage(page Page) Page {
 	copyPage := page

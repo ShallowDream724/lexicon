@@ -16,10 +16,11 @@ import (
 )
 
 const (
-	primarySHA = "primary-sha"
-	reverseSHA = "reverse-sha"
-	projection = "semantic-projection-v1"
-	modelKey   = "test-model-v1"
+	primarySHA    = "primary-sha"
+	reverseSHA    = "reverse-sha"
+	projection    = ProjectionVersion
+	modelKey      = "test-model-v1"
+	queryTemplate = "Embed this dictionary query: {query}"
 )
 
 func TestOpenRejectsMismatchedAndCorruptSidecars(t *testing.T) {
@@ -48,11 +49,27 @@ func TestOpenRejectsMismatchedAndCorruptSidecars(t *testing.T) {
 	if _, err := Open(path, primarySHA, reverseSHA, projection, modelKey); err == nil {
 		t.Fatal("accepted corrupt vector block")
 	}
+
+	path = writeFixture(t)
+	db, err = sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE metadata SET value = '{query} and {query}' WHERE key = 'query_template'`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	if _, err := Open(path, primarySHA, reverseSHA, projection, modelKey); err == nil {
+		t.Fatal("accepted sidecar without a valid query template")
+	}
 }
 
 func TestStoreSearchScopeGroupingOrderAndPagination(t *testing.T) {
 	store := openFixture(t)
 	defer store.Close()
+	if store.QueryTemplate() != queryTemplate {
+		t.Fatalf("unexpected query template %q", store.QueryTemplate())
+	}
 	senses, _ := NewScopeFilter(ScopeSense)
 	page, err := store.Search(context.Background(), []float32{1, 0}, Options{Limit: 10, Scopes: senses})
 	if err != nil {
@@ -96,14 +113,14 @@ func TestOpenAIEmbedderRequestAndResponseValidation(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Error(err)
 		}
-		if payload["input"] != "query" || payload["model"] != "embedding-model" || payload["encoding_format"] != "float" {
+		if payload["input"] != "Embed this dictionary query: query" || payload["model"] != "embedding-model" || payload["encoding_format"] != "float" || payload["dimensions"] != float64(2) {
 			t.Errorf("unexpected payload %#v", payload)
 		}
 		_, _ = w.Write([]byte(`{"data":[{"index":0,"embedding":[3,4]}]}`))
 	}))
 	defer server.Close()
 	embedder := newHTTPEmbedder(t, server.URL)
-	vector, err := embedder.Embed(context.Background(), "query")
+	vector, err := embedder.Embed(context.Background(), "query", queryTemplate)
 	if err != nil || len(vector) != 2 || vector[0] != .6 || vector[1] != .8 {
 		t.Fatalf("unexpected vector %#v, %v", vector, err)
 	}
@@ -113,7 +130,7 @@ func TestOpenAIEmbedderRequestAndResponseValidation(t *testing.T) {
 	}))
 	defer invalid.Close()
 	embedder = newHTTPEmbedder(t, invalid.URL)
-	if _, err := embedder.Embed(context.Background(), "query"); err == nil {
+	if _, err := embedder.Embed(context.Background(), "query", queryTemplate); err == nil {
 		t.Fatal("invalid provider response accepted")
 	}
 }
@@ -163,11 +180,28 @@ func TestEngineCoalescesEmbeddingAndCachesPages(t *testing.T) {
 	if calls.Load() != 1 {
 		t.Fatalf("expected one provider call, got %d", calls.Load())
 	}
-	if _, err := engine.Search(context.Background(), " query ", options); err != nil {
+	if _, err := engine.Search(context.Background(), " query ", Options{Offset: 1, Limit: 1, Scopes: AllScopeFilter()}); err != nil {
 		t.Fatal(err)
 	}
 	if calls.Load() != 1 {
-		t.Fatalf("page cache missed: %d provider calls", calls.Load())
+		t.Fatalf("query-vector cache missed: %d provider calls", calls.Load())
+	}
+	if _, err := engine.Search(context.Background(), "query", Options{Limit: 2, Scopes: DefaultScopeFilter()}); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("scope-specific page triggered another embedding: %d provider calls", calls.Load())
+	}
+}
+
+func TestCandidatePoolCoversMaximumGroupWindow(t *testing.T) {
+	got, err := candidatePoolLimit(0, 512)
+	if err != nil || got != maximumCandidatePool || got < 4096 {
+		t.Fatalf("maximum page candidate pool = %d, %v", got, err)
+	}
+	got, err = candidatePoolLimit(511, 1)
+	if err != nil || got != maximumCandidatePool {
+		t.Fatalf("last page candidate pool = %d, %v", got, err)
 	}
 }
 
@@ -211,7 +245,7 @@ func writeFixture(t *testing.T) string {
 	}
 	metadata := map[string]string{
 		"schema_version": SchemaVersion, "primary_sha256": primarySHA, "reverse_search_sha256": reverseSHA, "projection_version": projection,
-		"model_key": modelKey, "dimensions": "2", "normalization": "l2", "quantization": "symmetric-int8-127", "vector_count": "4", "block_size": "4",
+		"model_key": modelKey, "query_template": queryTemplate, "dimensions": "2", "normalization": "l2", "quantization": "symmetric-int8-127", "vector_count": "4", "block_size": "4",
 	}
 	for key, value := range metadata {
 		if _, err := db.Exec(`INSERT INTO metadata(key, value) VALUES (?, ?)`, key, value); err != nil {

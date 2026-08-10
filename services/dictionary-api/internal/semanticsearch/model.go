@@ -8,13 +8,15 @@ import (
 )
 
 const (
-	SchemaVersion = "1"
+	SchemaVersion     = "1"
+	ProjectionVersion = "1.0"
 
 	maxMatches           = 3
 	maxDimensions        = 4096
 	maxVectors           = 4_000_000
 	maxResidentVectorB   = 512 << 20
-	maximumCandidatePool = 768
+	maximumCandidatePool = 4096
+	maximumResultGroups  = 512
 )
 
 type Scope string

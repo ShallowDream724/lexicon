@@ -15,7 +15,7 @@ import (
 )
 
 type Embedder interface {
-	Embed(context.Context, string) ([]float32, error)
+	Embed(context.Context, string, string) ([]float32, error)
 	ModelKey() string
 	Dimensions() int
 }
@@ -98,15 +98,20 @@ func (e *OpenAIEmbedder) Dimensions() int {
 	return e.dimensions
 }
 
-func (e *OpenAIEmbedder) Embed(ctx context.Context, query string) ([]float32, error) {
+func (e *OpenAIEmbedder) Embed(ctx context.Context, query, queryTemplate string) ([]float32, error) {
 	if e == nil || e.client == nil {
 		return nil, &EmbedError{Kind: EmbedErrorConfiguration, Err: errors.New("embedder is not configured")}
+	}
+	input, err := renderQueryTemplate(queryTemplate, query)
+	if err != nil {
+		return nil, &EmbedError{Kind: EmbedErrorConfiguration, Err: err}
 	}
 	body, err := json.Marshal(struct {
 		Input          string `json:"input"`
 		Model          string `json:"model"`
 		EncodingFormat string `json:"encoding_format"`
-	}{Input: query, Model: e.model, EncodingFormat: "float"})
+		Dimensions     int    `json:"dimensions"`
+	}{Input: input, Model: e.model, EncodingFormat: "float", Dimensions: e.dimensions})
 	if err != nil {
 		return nil, &EmbedError{Kind: EmbedErrorRequest, Err: errors.New("encode embedding request")}
 	}
@@ -142,6 +147,27 @@ func (e *OpenAIEmbedder) Embed(ctx context.Context, query string) ([]float32, er
 		return nil, &EmbedError{Kind: EmbedErrorResponse, Err: err}
 	}
 	return vector, nil
+}
+
+func renderQueryTemplate(template, query string) (string, error) {
+	if err := validateQueryTemplate(template); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(query) == "" {
+		return "", errors.New("semantic-search query must not be empty")
+	}
+	return strings.Replace(template, "{query}", query, 1), nil
+}
+
+func validateQueryTemplate(template string) error {
+	if strings.TrimSpace(template) == "" || strings.Count(template, "{query}") != 1 {
+		return errors.New("query template must contain exactly one {query} placeholder")
+	}
+	remaining := strings.Replace(template, "{query}", "", 1)
+	if strings.ContainsAny(remaining, "{}") {
+		return errors.New("query template contains an unsupported placeholder")
+	}
+	return nil
 }
 
 func normalizeEmbedding(vector []float32) ([]float32, error) {

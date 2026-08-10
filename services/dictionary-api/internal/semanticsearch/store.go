@@ -18,18 +18,20 @@ import (
 )
 
 type Store struct {
-	db         *sql.DB
-	dimensions int
-	modelKey   string
-	vectors    []int8
-	scopeMasks []uint32
+	db            *sql.DB
+	dimensions    int
+	modelKey      string
+	queryTemplate string
+	vectors       []int8
+	scopeMasks    []uint32
 }
 
 type metadata struct {
-	dimensions  int
-	modelKey    string
-	vectorCount int
-	blockSize   int
+	dimensions    int
+	modelKey      string
+	queryTemplate string
+	vectorCount   int
+	blockSize     int
 }
 
 func Open(path, expectedPrimarySHA256, expectedReverseSHA256, expectedProjectionVersion, expectedModelKey string) (*Store, error) {
@@ -65,7 +67,7 @@ func Open(path, expectedPrimarySHA256, expectedReverseSHA256, expectedProjection
 		_ = db.Close()
 		return nil, err
 	}
-	return &Store{db: db, dimensions: meta.dimensions, modelKey: meta.modelKey, vectors: vectors, scopeMasks: masks}, nil
+	return &Store{db: db, dimensions: meta.dimensions, modelKey: meta.modelKey, queryTemplate: meta.queryTemplate, vectors: vectors, scopeMasks: masks}, nil
 }
 
 func sqliteReadOnlyDSN(path string) string { return "file:" + filepath.ToSlash(path) + "?mode=ro" }
@@ -104,7 +106,14 @@ func validateMetadata(db *sql.DB, primarySHA256, reverseSHA256, projectionVersio
 	if vectorCount > maxResidentVectorB/dimensions {
 		return metadata{}, errors.New("semantic-search sidecar exceeds resident vector memory limit")
 	}
-	return metadata{dimensions: dimensions, modelKey: modelKey, vectorCount: vectorCount, blockSize: blockSize}, nil
+	queryTemplate, err := metadataValue(db, "query_template")
+	if err != nil {
+		return metadata{}, err
+	}
+	if err := validateQueryTemplate(queryTemplate); err != nil {
+		return metadata{}, fmt.Errorf("semantic-search metadata %q is invalid: %w", "query_template", err)
+	}
+	return metadata{dimensions: dimensions, modelKey: modelKey, queryTemplate: queryTemplate, vectorCount: vectorCount, blockSize: blockSize}, nil
 }
 
 func metadataValue(db *sql.DB, key string) (string, error) {
@@ -217,6 +226,13 @@ func (s *Store) ModelKey() string {
 	return s.modelKey
 }
 
+func (s *Store) QueryTemplate() string {
+	if s == nil {
+		return ""
+	}
+	return s.queryTemplate
+}
+
 func (s *Store) Search(ctx context.Context, queryVector []float32, options Options) (Page, error) {
 	empty := Page{Groups: []Group{}}
 	if s == nil || !s.Available() || options.Limit < 1 {
@@ -225,6 +241,12 @@ func (s *Store) Search(ctx context.Context, queryVector []float32, options Optio
 	if options.Offset < 0 {
 		return empty, errors.New("semantic-search offset must not be negative")
 	}
+	if options.Offset >= maximumResultGroups {
+		return empty, nil
+	}
+	if options.Limit > maximumResultGroups-options.Offset {
+		options.Limit = maximumResultGroups - options.Offset
+	}
 	if _, err := options.Scopes.values(); err != nil {
 		return empty, err
 	}
@@ -232,16 +254,9 @@ func (s *Store) Search(ctx context.Context, queryVector []float32, options Optio
 	if err != nil {
 		return empty, err
 	}
-	candidateCount := options.Offset + options.Limit + 1
-	if candidateCount > math.MaxInt/24 {
-		return empty, errors.New("semantic-search pagination is too large")
-	}
-	candidateCount *= 24
-	if candidateCount < 192 {
-		candidateCount = 192
-	}
-	if candidateCount > maximumCandidatePool {
-		candidateCount = maximumCandidatePool
+	candidateCount, err := candidatePoolLimit(options.Offset, options.Limit)
+	if err != nil {
+		return empty, err
 	}
 	candidates, err := s.topCandidates(ctx, query, options.Scopes.mask, candidateCount)
 	if err != nil || len(candidates) == 0 {
@@ -252,6 +267,24 @@ func (s *Store) Search(ctx context.Context, queryVector []float32, options Optio
 		return empty, err
 	}
 	return groupAndPaginate(documents, options.Offset, options.Limit), nil
+}
+
+func candidatePoolLimit(offset, limit int) (int, error) {
+	if offset < 0 || limit < 0 || offset > math.MaxInt-limit-1 {
+		return 0, errors.New("semantic-search pagination is too large")
+	}
+	groups := offset + limit + 1
+	if groups > math.MaxInt/24 {
+		return 0, errors.New("semantic-search pagination is too large")
+	}
+	candidates := groups * 24
+	if candidates < 192 {
+		return 192, nil
+	}
+	if candidates > maximumCandidatePool {
+		return maximumCandidatePool, nil
+	}
+	return candidates, nil
 }
 
 func normalizeAndQuantize(vector []float32, dimensions int) ([]int8, error) {
