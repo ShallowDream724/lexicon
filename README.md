@@ -165,6 +165,7 @@ The interface reads one canonical entry model. Import adapters, Chinese search p
 | --- | --- |
 | [ARCHITECTURE.md](ARCHITECTURE.md) · [DATA_MODEL.md](DATA_MODEL.md) | Module ownership and dictionary contracts<br>模块职责与词典契约 |
 | [ADAPTER_GUIDE.md](ADAPTER_GUIDE.md) · [STORAGE_FORMAT.md](STORAGE_FORMAT.md) · [SEMANTIC_SEARCH.md](SEMANTIC_SEARCH.md) | Source adapters, lexical and semantic indexing, compression, and migration<br>数据源适配、字面与语义索引、压缩与迁移 |
+| [QUALITY_EVALUATION.md](QUALITY_EVALUATION.md) | Test construction, retrieval evaluation, vector reuse, and corpus audits<br>测试构筑、检索评估、向量复用与全库审计 |
 | [PWA.md](PWA.md) · [DEPLOYMENT.md](DEPLOYMENT.md) | Installation, cache boundaries, self-hosting, and updates<br>安装、缓存边界、自托管与更新 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Development workflow and release checks<br>开发流程与发布检查 |
 

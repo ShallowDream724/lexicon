@@ -110,10 +110,10 @@ entry nDCG、entry recall 与 evidence recall/nDCG 必须分别报告。不能�
 在仓库根目录使用 aider conda 环境中的 Python：
 
 ```bash
-D:/anaconda/envs/aider/python.exe tools/semantic-search/quality-v3/build_dataset.py --check
-D:/anaconda/envs/aider/python.exe tools/semantic-search/quality-v3/validate_dataset.py
-D:/anaconda/envs/aider/python.exe tools/semantic-search/quality-v3/build_holdout.py --check
-D:/anaconda/envs/aider/python.exe tools/semantic-search/quality-v3/validate_holdout.py
+conda run -n aider python tools/semantic-search/quality-v3/build_dataset.py --check
+conda run -n aider python tools/semantic-search/quality-v3/validate_dataset.py
+conda run -n aider python tools/semantic-search/quality-v3/build_holdout.py --check
+conda run -n aider python tools/semantic-search/quality-v3/validate_holdout.py
 ```
 
 validator 检查 case 数、类别、长度、自然文本标记、单字覆盖、多目标比例、平均目标数、scope pair、重复 query 分组、gap 声明、sidecar 版本，以及每个 entry/evidence/forbidden 在请求 scope 内的真实文档位置。phrase evidence 还强制精确 location 对应的 `candidate_text` 非空。它只读取 sidecar；`build_dataset.py --check` 只比较生成结果，不改写文件。

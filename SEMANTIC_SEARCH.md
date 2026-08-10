@@ -154,6 +154,15 @@ complete sidecar is valid. A matching checkpoint resumes without paying for comp
 texts. A changed corpus, model, dimensions, template, or provider options changes the build
 fingerprint and requires a separate output directory or an explicit `--rebuild`.
 
+`--reuse-vectors-from` is a whole-sidecar operation. It verifies the complete ordered list
+of unique Chinese texts and the document embedding contract before copying every int8 vector
+block into a newly projected sidecar. The final schema 5 / projection 1.4 runtime asset reused
+all 178,382 vectors this way with zero provider requests because its text corpus was unchanged.
+The current builder does not reuse the intersection after texts are added, removed, or
+reordered; such a corpus change requires a full vector rebuild. Build checkpoints, whole-sidecar
+reuse, runtime query caching, and the acceptance boundary for future incremental reuse are
+documented in [QUALITY_EVALUATION.md](QUALITY_EVALUATION.md).
+
 Quota systems that price input through a multiplier can enforce a pre-request budget:
 
 ```bash
@@ -243,6 +252,9 @@ The semantic sidecar is derived from both `dictionary.db` and `reverse-search.db
 and replace all three databases as one compatible unit. A content update rebuilds the
 canonical reverse projection first, then the semantic sidecar. The released file remains
 outside Git and container images and is pinned through `runtime-assets.json`.
+
+Test-suite construction, final development and blind-holdout metrics, and the full-corpus
+usage audit are recorded in [QUALITY_EVALUATION.md](QUALITY_EVALUATION.md).
 
 A future semantic feature should add a separate projection and model key when its retrieval
 unit changes. English concept search, example-to-example similarity, study recommendations,
