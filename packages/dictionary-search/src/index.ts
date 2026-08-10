@@ -12,7 +12,21 @@ import type {
   CanonicalText,
 } from "../../dictionary-schema/src/index";
 
-export const SEARCH_DOCUMENT_SCHEMA_VERSION = "1.2" as const;
+import {
+  isWellFormedUnicode,
+  normalizeHeadwordForm,
+  projectCanonicalEntryHeadwordForms,
+  SEARCH_DOCUMENT_MAX_HEADWORD_FORM_BYTES,
+  SEARCH_DOCUMENT_MAX_HEADWORD_FORMS,
+} from "./headword-forms";
+
+export {
+  projectCanonicalEntryHeadwordForms,
+  SEARCH_DOCUMENT_MAX_HEADWORD_FORM_BYTES,
+  SEARCH_DOCUMENT_MAX_HEADWORD_FORMS,
+} from "./headword-forms";
+
+export const SEARCH_DOCUMENT_SCHEMA_VERSION = "1.4" as const;
 
 export const SEARCH_DOCUMENT_SCOPES = [
   "sense",
@@ -53,13 +67,29 @@ export interface SearchDocument {
   entryId: string;
   scope: SearchDocumentScope;
   headword: string;
+  headwordForms?: string[];
   englishText: string;
+  candidateText?: string;
+  definitionText?: string;
   chineseText: string;
   location: SearchDocumentLocation;
   weight: number;
 }
 
 const cjkPattern = /\p{Script=Han}/u;
+const utf8Encoder = new TextEncoder();
+
+const headwordFormSchema = z.string()
+  .refine((value) => normalizeHeadwordForm(value).length > 0, "Expected a non-empty headword form")
+  .refine(isWellFormedUnicode, "Expected valid Unicode")
+  .refine(
+    (value) => utf8Encoder.encode(value).byteLength <= SEARCH_DOCUMENT_MAX_HEADWORD_FORM_BYTES,
+    `Expected at most ${SEARCH_DOCUMENT_MAX_HEADWORD_FORM_BYTES} UTF-8 bytes`,
+  )
+  .refine(
+    (value) => utf8Encoder.encode(normalizeHeadwordForm(value)).byteLength <= SEARCH_DOCUMENT_MAX_HEADWORD_FORM_BYTES,
+    `Expected at most ${SEARCH_DOCUMENT_MAX_HEADWORD_FORM_BYTES} UTF-8 bytes after normalization`,
+  );
 
 export const searchDocumentLocationSchema = z.object({
   section: z.enum(SEARCH_DOCUMENT_SECTIONS),
@@ -73,7 +103,10 @@ export const searchDocumentSchema = z.object({
   entryId: z.string().min(1),
   scope: z.enum(SEARCH_DOCUMENT_SCOPES),
   headword: z.string(),
+  headwordForms: z.array(headwordFormSchema).max(SEARCH_DOCUMENT_MAX_HEADWORD_FORMS).optional(),
   englishText: z.string(),
+  candidateText: z.string().optional(),
+  definitionText: z.string().optional(),
   chineseText: z.string().min(1).refine(hasCjkText, "Expected Chinese text"),
   location: searchDocumentLocationSchema,
   weight: z.number().finite(),
@@ -209,6 +242,7 @@ interface ProjectionContext {
   dictionaryId: string;
   entryId: string;
   headword: string;
+  headwordForms: string[];
   entryWeight: number;
   documents?: SearchDocument[];
   documentsBySignature?: Map<string, SearchDocument>;
@@ -228,6 +262,8 @@ interface DocumentCandidate {
   section: SearchDocumentSection;
   path: string[];
   englishText: string;
+  candidateText?: string;
+  definitionText?: string;
   chineseText: string;
   part?: string;
   ownerId?: string;
@@ -268,7 +304,10 @@ function addDocument(context: ProjectionContext, candidate: DocumentCandidate): 
     entryId: context.entryId,
     scope: candidate.scope,
     headword: context.headword,
+    ...(context.headwordForms.length > 0 ? { headwordForms: context.headwordForms } : {}),
     englishText: candidate.englishText,
+    ...(candidate.candidateText ? { candidateText: candidate.candidateText } : {}),
+    ...(candidate.definitionText ? { definitionText: candidate.definitionText } : {}),
     chineseText: candidate.chineseText,
     location: candidateLocation(candidate),
     weight: SEARCH_DOCUMENT_WEIGHTS[candidate.scope] + context.entryWeight,
@@ -298,24 +337,43 @@ function documentSignature(document: SearchDocument): string {
     document.location.part ?? "",
     document.location.ownerId || document.location.path,
     document.englishText,
+    document.candidateText ?? "",
+    document.definitionText ?? "",
     document.chineseText,
   ]);
 }
 
 function addBilingualDocument(
   context: ProjectionContext,
-  candidate: Omit<DocumentCandidate, "englishText" | "chineseText"> & {
+  candidate: Omit<DocumentCandidate, "englishText" | "candidateText" | "definitionText" | "chineseText"> & {
     englishText: BilingualSource;
     chineseText?: BilingualSource;
+    candidateText?: BilingualSource;
+    definitionText?: BilingualSource;
   },
 ): void {
   if (!context.documents || context.activeBoxProjection?.emit === false) {
     return;
   }
-  const english = projectCanonicalText(candidate.englishText);
-  const explicitChinese = candidate.chineseText ? projectCanonicalText(candidate.chineseText) : undefined;
-  const chineseText = explicitChinese?.chineseText || (candidate.chineseText ? sourceText(candidate.chineseText) : english.chineseText);
-  addDocument(context, { ...candidate, englishText: english.englishText, chineseText });
+  const {
+    englishText,
+    chineseText: chineseSource,
+    candidateText,
+    definitionText,
+    ...metadata
+  } = candidate;
+  const english = projectCanonicalText(englishText);
+  const explicitChinese = chineseSource ? projectCanonicalText(chineseSource) : undefined;
+  const chineseText = explicitChinese?.chineseText || (chineseSource ? sourceText(chineseSource) : english.chineseText);
+  const projectedCandidate = candidateText ? projectCanonicalText(candidateText).englishText : "";
+  const projectedDefinition = definitionText ? projectCanonicalText(definitionText).englishText : "";
+  addDocument(context, {
+    ...metadata,
+    englishText: english.englishText,
+    ...(projectedCandidate ? { candidateText: projectedCandidate } : {}),
+    ...(projectedDefinition ? { definitionText: projectedDefinition } : {}),
+    chineseText,
+  });
 }
 
 function projectExample(
@@ -537,6 +595,7 @@ function projectSense(
     part,
     ownerId: senseOwnerId,
     englishText: joinCanonicalText(phraseHeading, sense.definition),
+    ...(phraseHeading ? { candidateText: phraseHeading, definitionText: sense.definition } : {}),
     chineseText: sense.translation,
   });
 
@@ -757,6 +816,7 @@ export function projectCanonicalEntrySearchDocuments(entry: CanonicalEntry): Sea
     dictionaryId: entry.dictionaryId,
     entryId: entry.id,
     headword: entry.headword,
+    headwordForms: projectCanonicalEntryHeadwordForms(entry),
     entryWeight: entrySearchWeight(entry),
     documents: [],
     documentsBySignature: new Map<string, SearchDocument>(),
@@ -773,6 +833,7 @@ export function indexCanonicalEntrySearchLocations(entry: CanonicalEntry): Canon
     dictionaryId: entry.dictionaryId,
     entryId: entry.id,
     headword: entry.headword,
+    headwordForms: [],
     entryWeight: 0,
     locations,
   };

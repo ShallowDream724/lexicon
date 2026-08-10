@@ -10,6 +10,7 @@ import {
   projectCanonicalEntrySearchDocuments,
   type SearchDocument,
 } from "../packages/dictionary-search/src/index";
+import { enrichSearchDocumentsWithObservedHeadwordForms } from "../packages/dictionary-search/src/build-headword-forms";
 
 type Options = {
   database: string;
@@ -159,7 +160,10 @@ async function build(options: Options): Promise<void> {
         continue;
       }
       const entry = adapter.parse(JSON.parse(line));
-      const documents = projectCanonicalEntrySearchDocuments(entry);
+      const documents = enrichSearchDocumentsWithObservedHeadwordForms(
+        entry,
+        projectCanonicalEntrySearchDocuments(entry),
+      );
       projectedBytes += await writeDocuments(importer, documents);
       if (processFailure) {
         throw processFailure;

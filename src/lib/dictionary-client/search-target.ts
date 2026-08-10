@@ -8,6 +8,9 @@ export type DictionarySearchMatch = {
   englishText: string;
   chineseText: string;
   location: SearchDocumentLocation;
+  candidateText?: string;
+  definitionText?: string;
+  part?: string;
 };
 
 export type DictionarySearchItem = {
@@ -16,7 +19,9 @@ export type DictionarySearchItem = {
   headword: string;
   partsOfSpeech: string[];
   translationPreview: string;
+  headwordForms?: string[];
   matches?: DictionarySearchMatch[];
+  matchesTotal?: number;
 };
 
 export type EtymologySearchItem = {

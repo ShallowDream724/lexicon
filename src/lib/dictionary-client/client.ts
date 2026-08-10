@@ -33,10 +33,18 @@ import type { SearchTarget } from "./search-target";
 
 const dictionarySearchMatchSchema = z.object({
   scope: z.enum(SEARCH_DOCUMENT_SCOPES),
-  englishText: z.string(),
+  englishText: z.string().optional().default(""),
   chineseText: z.string(),
   location: searchDocumentLocationSchema,
-});
+  candidateText: z.string().optional(),
+  definitionText: z.string().optional(),
+  part: z.string().optional(),
+}).transform((match) => ({
+  ...match,
+  ...(match.part ?? match.location.part
+    ? { part: match.part ?? match.location.part }
+    : {}),
+}));
 
 const searchItemBaseSchema = z
   .object({
@@ -45,12 +53,14 @@ const searchItemBaseSchema = z
     headword: z.string(),
     partsOfSpeech: z.array(z.string()).optional(),
     translationPreview: z.string().optional(),
+    headwordForms: z.array(z.string().min(1).max(256)).max(64).optional(),
   });
 
 const dictionarySearchItemSchema = searchItemBaseSchema
   .extend({
     kind: z.literal("dictionary"),
     matches: z.array(dictionarySearchMatchSchema).optional(),
+    matchesTotal: z.number().int().nonnegative().optional(),
   })
   .transform((item) => ({
     kind: "dictionary" as const,
@@ -58,7 +68,9 @@ const dictionarySearchItemSchema = searchItemBaseSchema
     headword: item.headword,
     partsOfSpeech: item.partsOfSpeech ?? [],
     translationPreview: item.translationPreview ?? "",
+    headwordForms: item.headwordForms ?? [],
     ...(item.matches?.length ? { matches: item.matches } : {}),
+    ...(item.matchesTotal !== undefined ? { matchesTotal: item.matchesTotal } : {}),
   }))
   .refine((item) => item.id.length > 0, "Search result is missing an entry id.");
 
@@ -84,6 +96,7 @@ const searchResponseSchema = z.object({
   query: z.string().optional(),
   items: z.array(searchItemSchema),
   nextOffset: z.number().int().min(1).max(511).optional(),
+  semanticStatus: z.enum(["applied", "degraded"]).optional(),
 });
 
 export function parseSearchTargets(payload: unknown): SearchTarget[] {
@@ -93,11 +106,16 @@ export function parseSearchTargets(payload: unknown): SearchTarget[] {
 export type DictionarySearchPage = {
   items: SearchTarget[];
   nextOffset: number | null;
+  semanticStatus?: "applied" | "degraded";
 };
 
 export function parseSearchPage(payload: unknown): DictionarySearchPage {
   const result = searchResponseSchema.parse(payload);
-  return { items: result.items, nextOffset: result.nextOffset ?? null };
+  return {
+    items: result.items,
+    nextOffset: result.nextOffset ?? null,
+    ...(result.semanticStatus ? { semanticStatus: result.semanticStatus } : {}),
+  };
 }
 
 const errorResponseSchema = z.object({

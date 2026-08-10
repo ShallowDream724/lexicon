@@ -33,11 +33,33 @@ services:
       - /tmp:size=32m,mode=1777
       - /app/.next/cache:size=64m,mode=1777
 
+  semantic-cache-init:
+    image: alpine:3.22
+    restart: "no"
+    network_mode: none
+    read_only: true
+    user: "0:0"
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+    security_opt:
+      - no-new-privileges:true
+    command: ["sh", "-c", "chown 65532:65532 /cache && chmod 0700 /cache"]
+    volumes:
+      - type: volume
+        source: semantic-query-cache
+        target: /cache
+
   dictionary-api:
     build:
       context: ../../services/dictionary-api
     restart: unless-stopped
     init: true
+    depends_on:
+      semantic-cache-init:
+        condition: service_completed_successfully
     read_only: true
     cap_drop:
       - ALL
@@ -54,8 +76,13 @@ services:
       DICTIONARY_SEMANTIC_API_KEY: ${DICTIONARY_SEMANTIC_API_KEY:-}
       DICTIONARY_SEMANTIC_MODEL: ${DICTIONARY_SEMANTIC_MODEL:-Qwen/Qwen3-Embedding-4B}
       DICTIONARY_SEMANTIC_MODEL_KEY: ${DICTIONARY_SEMANTIC_MODEL_KEY:-qwen3-embedding-4b-1024-v1}
-      DICTIONARY_SEMANTIC_TIMEOUT: ${DICTIONARY_SEMANTIC_TIMEOUT:-5s}
+      DICTIONARY_SEMANTIC_TIMEOUT: ${DICTIONARY_SEMANTIC_TIMEOUT:-3s}
       DICTIONARY_SEMANTIC_CACHE: ${DICTIONARY_SEMANTIC_CACHE:-128}
+      DICTIONARY_SEMANTIC_PERSISTENT_CACHE: ${DICTIONARY_SEMANTIC_PERSISTENT_CACHE:-true}
+      DICTIONARY_SEMANTIC_PERSISTENT_CACHE_PATH: /var/cache/lexicon/semantic-query-vectors.db
+      DICTIONARY_SEMANTIC_PERSISTENT_CACHE_KEY: ${DICTIONARY_SEMANTIC_PERSISTENT_CACHE_KEY:-}
+      DICTIONARY_SEMANTIC_PERSISTENT_CACHE_MAX_ENTRIES: ${DICTIONARY_SEMANTIC_PERSISTENT_CACHE_MAX_ENTRIES:-10000}
+      DICTIONARY_SEMANTIC_PERSISTENT_CACHE_TTL: ${DICTIONARY_SEMANTIC_PERSISTENT_CACHE_TTL:-720h}
       DICTIONARY_AUDIO_ZIP_PATH: /var/lib/lexicon/headword-audio.zip
       DICTIONARY_LISTEN: 0.0.0.0:8787
       DICTIONARY_CORS_ORIGINS: ${DICTIONARY_CORS_ORIGINS:?Set DICTIONARY_CORS_ORIGINS in deploy/server/.env}
@@ -84,7 +111,11 @@ services:
         source: ${LEXICON_DATA_DIR:-../../data}/semantic-search.db
         target: /var/lib/lexicon/semantic-search.db
         read_only: true
+      - type: volume
+        source: semantic-query-cache
+        target: /var/cache/lexicon
 
 volumes:
   caddy-data:
   caddy-config:
+  semantic-query-cache:

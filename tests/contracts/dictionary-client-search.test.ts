@@ -27,6 +27,7 @@ test("parses optional reverse-search evidence without changing English search it
       headword: "break",
       partsOfSpeech: ["noun"],
       translationPreview: "间歇",
+      headwordForms: ["broke", "broken"],
       matches: [{
         scope: "sense",
         englishText: "a short period of rest",
@@ -44,6 +45,8 @@ test("parses optional reverse-search evidence without changing English search it
   assert.equal(english?.kind, "dictionary");
   assert.equal(english?.kind === "dictionary" ? english.matches : undefined, undefined);
   assert.equal(chinese?.kind === "dictionary" ? chinese.matches?.[0]?.location.ownerId : undefined, "sense-break");
+  assert.deepEqual(chinese?.kind === "dictionary" ? chinese.headwordForms : undefined, ["broke", "broken"]);
+  assert.deepEqual(english?.kind === "dictionary" ? english.headwordForms : undefined, []);
 });
 
 test("parses an optional incremental-search offset without changing legacy items", () => {
@@ -57,6 +60,39 @@ test("parses an optional incremental-search offset without changing legacy items
   assert.equal(page.nextOffset, 32);
   assert.equal(parseSearchPage({ items: [] }).nextOffset, null);
   assert.throws(() => parseSearchPage({ items: [], nextOffset: 512 }));
+});
+
+test("parses structured phrase evidence and semantic response status while accepting legacy evidence", () => {
+  const page = parseSearchPage({
+    items: [{
+      kind: "dictionary",
+      id: "take-a-break",
+      headword: "take a break",
+      matchesTotal: 4,
+      matches: [{
+        scope: "phrase",
+        candidateText: "take a break",
+        chineseText: "休息一下",
+        definitionText: "to stop working for a short time",
+        part: "verb",
+        location: {
+          section: "definitions",
+          part: "verb",
+          ownerId: "phrase-break",
+          path: ["phrases", "0"],
+        },
+      }],
+    }],
+    semanticStatus: "degraded",
+  });
+
+  const item = page.items[0];
+  assert.equal(page.semanticStatus, "degraded");
+  assert.equal(item?.kind === "dictionary" ? item.matchesTotal : undefined, 4);
+  assert.equal(item?.kind === "dictionary" ? item.matches?.[0]?.candidateText : undefined, "take a break");
+  assert.equal(item?.kind === "dictionary" ? item.matches?.[0]?.definitionText : undefined, "to stop working for a short time");
+  assert.equal(item?.kind === "dictionary" ? item.matches?.[0]?.englishText : undefined, "");
+  assert.equal(parseSearchPage({ items: [] }).semanticStatus, undefined);
 });
 
 test("rejects reverse-search evidence with an unknown location contract", () => {

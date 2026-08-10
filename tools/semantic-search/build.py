@@ -252,6 +252,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--primary-db", type=Path, default=Path("data/dictionary.db"))
     parser.add_argument("--output-dir", type=Path, default=Path("work/semantic-search"))
     parser.add_argument("--sidecar", type=Path, default=Path("data/semantic-search.db"))
+    parser.add_argument("--reuse-vectors-from", type=Path)
     parser.add_argument("--base-url", default=os.environ.get("OPENAI_BASE_URL"))
     parser.add_argument("--api-key-env", default="OPENAI_API_KEY")
     parser.add_argument("--provider-model", default=DEFAULT_PROVIDER_MODEL)
@@ -302,9 +303,16 @@ def main() -> None:
         if not args.primary_db.is_file():
             raise ValueError(f"primary database is missing: {args.primary_db}")
         fingerprint = build_fingerprint(corpus, args.primary_db, args.model_key, args.provider_model, args.dimensions, args.query_template, args.document_extra, args.query_extra)
-        matrix, document_usage, ledger = build_cached_vectors(args, corpus, fingerprint)
+        if args.reuse_vectors_from:
+            if args.quality_file:
+                raise ValueError("quality evaluation requires float vectors and cannot be combined with --reuse-vectors-from")
+            matrix = None
+            document_usage = {"promptTokens": 0, "requests": 0, "unmetered": False}
+            ledger = UsageLedger(args.max_weighted_units, args.input_multiplier)
+        else:
+            matrix, document_usage, ledger = build_cached_vectors(args, corpus, fingerprint)
         sidecar = args.sidecar or args.output_dir / "semantic-search.db"
-        metadata = write_sidecar(sidecar, corpus, matrix, args.dimensions, args.primary_db, args.model_key, args.provider_model, args.query_template, args.document_extra, args.query_extra, args.block_size)
+        metadata = write_sidecar(sidecar, corpus, matrix, args.dimensions, args.primary_db, args.model_key, args.provider_model, args.query_template, args.document_extra, args.query_extra, args.block_size, args.reuse_vectors_from)
         quality = None
         if args.quality_file:
             provider = _provider_from_args(args, ledger, args.query_extra)

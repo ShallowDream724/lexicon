@@ -11,9 +11,17 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
+const (
+	defaultMaxConcurrentEmbeddings = 4
+	defaultMaxEmbeddingFlights     = 64
+)
+
+var errEmbeddingCapacity = errors.New("semantic-search embedding capacity is exhausted")
+
 type Engine struct {
-	store    *Store
-	embedder Embedder
+	store                 *Store
+	embedder              Embedder
+	persistentVectorCache PersistentVectorCache
 
 	mu             sync.Mutex
 	pageCapacity   int
@@ -23,6 +31,14 @@ type Engine struct {
 	vectors        map[string]*list.Element
 	vectorLRU      *list.List
 	flights        map[string]*embeddingFlight
+	embeddingSlots chan struct{}
+	maxFlights     int
+	flightContext  context.Context
+	cancelFlights  context.CancelFunc
+	flightWG       sync.WaitGroup
+	closed         bool
+	closeOnce      sync.Once
+	closeErr       error
 }
 
 type cachedPage struct {
@@ -46,6 +62,17 @@ func NewEngine(store *Store, embedder Embedder, cacheCapacity int) (*Engine, err
 }
 
 func NewEngineWithCacheCapacities(store *Store, embedder Embedder, pageCapacity, vectorCapacity int) (*Engine, error) {
+	return NewEngineWithPersistentVectorCache(store, embedder, pageCapacity, vectorCapacity, nil)
+}
+
+func NewEngineWithPersistentVectorCache(store *Store, embedder Embedder, pageCapacity, vectorCapacity int, persistentVectorCache PersistentVectorCache) (*Engine, error) {
+	return newEngineWithLimits(
+		store, embedder, pageCapacity, vectorCapacity, persistentVectorCache,
+		defaultMaxConcurrentEmbeddings, defaultMaxEmbeddingFlights,
+	)
+}
+
+func newEngineWithLimits(store *Store, embedder Embedder, pageCapacity, vectorCapacity int, persistentVectorCache PersistentVectorCache, maxConcurrentEmbeddings, maxFlights int) (*Engine, error) {
 	if store == nil || !store.Available() {
 		return nil, errors.New("semantic-search store is unavailable")
 	}
@@ -55,12 +82,18 @@ func NewEngineWithCacheCapacities(store *Store, embedder Embedder, pageCapacity,
 	if pageCapacity < 0 || vectorCapacity < 0 {
 		return nil, errors.New("semantic-search cache capacities must not be negative")
 	}
+	if maxConcurrentEmbeddings < 1 || maxFlights < maxConcurrentEmbeddings {
+		return nil, errors.New("semantic-search embedding limits are invalid")
+	}
+	flightContext, cancelFlights := context.WithCancel(context.Background())
 	return &Engine{
-		store: store, embedder: embedder,
+		store: store, embedder: embedder, persistentVectorCache: persistentVectorCache,
 		pageCapacity: pageCapacity, vectorCapacity: vectorCapacity,
 		pages: make(map[string]*list.Element), pageLRU: list.New(),
 		vectors: make(map[string]*list.Element), vectorLRU: list.New(),
-		flights: make(map[string]*embeddingFlight),
+		flights:        make(map[string]*embeddingFlight),
+		embeddingSlots: make(chan struct{}, maxConcurrentEmbeddings), maxFlights: maxFlights,
+		flightContext: flightContext, cancelFlights: cancelFlights,
 	}, nil
 }
 
@@ -104,36 +137,81 @@ func normalizeQuery(query string) string {
 
 func (e *Engine) embedding(ctx context.Context, query string) ([]float32, error) {
 	e.mu.Lock()
+	if e.closed {
+		e.mu.Unlock()
+		return nil, errors.New("semantic-search engine is closed")
+	}
 	if element := e.vectors[query]; element != nil {
 		e.vectorLRU.MoveToFront(element)
 		vector := cloneVector(element.Value.(cachedVector).vector)
 		e.mu.Unlock()
 		return vector, nil
 	}
-	if flight := e.flights[query]; flight != nil {
-		e.mu.Unlock()
+	flight := e.flights[query]
+	if flight == nil {
+		if len(e.flights) >= e.maxFlights {
+			e.mu.Unlock()
+			return nil, errEmbeddingCapacity
+		}
+		flight = &embeddingFlight{done: make(chan struct{})}
+		e.flights[query] = flight
+		e.flightWG.Add(1)
+		go e.resolveEmbedding(e.flightContext, query, flight)
+	}
+	e.mu.Unlock()
+	select {
+	case <-flight.done:
+		return cloneVector(flight.vector), flight.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (e *Engine) resolveEmbedding(ctx context.Context, query string, flight *embeddingFlight) {
+	defer e.flightWG.Done()
+	var vector []float32
+	var err error
+	if e.persistentVectorCache != nil {
+		vector, _ = e.persistentVectorCache.Get(ctx, query)
+	}
+	if vector == nil {
 		select {
-		case <-flight.done:
-			return cloneVector(flight.vector), flight.err
+		case e.embeddingSlots <- struct{}{}:
+			vector, err = e.embedder.Embed(ctx, query, e.store.QueryTemplate(), e.store.QueryExtraJSON())
+			<-e.embeddingSlots
+			if err == nil && e.persistentVectorCache != nil {
+				e.persistentVectorCache.Put(ctx, query, vector)
+			}
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			err = ctx.Err()
 		}
 	}
-	flight := &embeddingFlight{done: make(chan struct{})}
-	e.flights[query] = flight
-	e.mu.Unlock()
-
-	vector, err := e.embedder.Embed(ctx, query, e.store.QueryTemplate(), e.store.QueryExtraJSON())
 
 	e.mu.Lock()
 	flight.vector, flight.err = cloneVector(vector), err
-	if err == nil {
+	if err == nil && !e.closed {
 		e.putVectorLocked(query, vector)
 	}
 	delete(e.flights, query)
 	close(flight.done)
 	e.mu.Unlock()
-	return cloneVector(vector), err
+}
+
+func (e *Engine) Close() error {
+	if e == nil {
+		return nil
+	}
+	e.closeOnce.Do(func() {
+		e.mu.Lock()
+		e.closed = true
+		e.cancelFlights()
+		e.mu.Unlock()
+		e.flightWG.Wait()
+		if cache, ok := e.persistentVectorCache.(interface{ Close() error }); ok {
+			e.closeErr = cache.Close()
+		}
+	})
+	return e.closeErr
 }
 
 func (e *Engine) cachedPage(key string) (Page, bool) {

@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -103,7 +105,7 @@ func TestStoreSearchScopeGroupingOrderAndPagination(t *testing.T) {
 	if len(page.Groups) != 2 || page.Groups[0].EntryID != "alpha" || page.Groups[1].EntryID != "beta" {
 		t.Fatalf("unexpected scoped groups: %#v", page.Groups)
 	}
-	if len(page.Groups[0].Matches) != 3 {
+	if len(page.Groups[0].Matches) != 4 {
 		t.Fatalf("evidence limit ignored: %#v", page.Groups[0].Matches)
 	}
 	for run := 0; run < 5; run++ {
@@ -219,6 +221,224 @@ func TestEngineCoalescesEmbeddingAndCachesPages(t *testing.T) {
 	}
 }
 
+func TestEngineEmbeddingFlightSurvivesLeaderCancellation(t *testing.T) {
+	store := openFixture(t)
+	defer store.Close()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) == 1 {
+			close(started)
+		}
+		<-release
+		_, _ = w.Write([]byte(`{"data":[{"index":0,"embedding":[1,0]}]}`))
+	}))
+	defer server.Close()
+	engine, err := NewEngine(store, newHTTPEmbedder(t, server.URL), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := Options{Limit: 1, Scopes: AllScopeFilter()}
+	leaderCtx, cancelLeader := context.WithCancel(context.Background())
+	leaderResult := make(chan error, 1)
+	go func() {
+		_, err := engine.Search(leaderCtx, "shared", options)
+		leaderResult <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("embedding request did not start")
+	}
+	cancelLeader()
+	if err := <-leaderResult; !errors.Is(err, context.Canceled) {
+		t.Fatalf("leader cancellation = %v", err)
+	}
+	waiterResult := make(chan error, 1)
+	go func() {
+		_, err := engine.Search(context.Background(), "shared", options)
+		waiterResult <- err
+	}()
+	close(release)
+	if err := <-waiterResult; err != nil {
+		t.Fatalf("waiter inherited leader cancellation: %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("leader cancellation triggered %d provider calls", calls.Load())
+	}
+}
+
+func TestEngineBoundsUniqueEmbeddingFlightsAndProviderConcurrency(t *testing.T) {
+	store := openFixture(t)
+	defer store.Close()
+	embedder := &gatedEmbedder{
+		started: make(chan string, 2),
+		release: make(chan struct{}),
+	}
+	engine, err := newEngineWithLimits(store, embedder, 0, 0, nil, 1, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	options := Options{Limit: 1, Scopes: AllScopeFilter()}
+	results := make(chan error, 2)
+	for _, query := range []string{"first", "second"} {
+		go func() {
+			_, err := engine.Search(context.Background(), query, options)
+			results <- err
+		}()
+	}
+	select {
+	case <-embedder.started:
+	case <-time.After(time.Second):
+		t.Fatal("first embedding request did not start")
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		engine.mu.Lock()
+		flights := len(engine.flights)
+		engine.mu.Unlock()
+		if flights == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("second embedding flight was not registered")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if _, err := engine.Search(context.Background(), "third", options); !errors.Is(err, errEmbeddingCapacity) {
+		t.Fatalf("capacity error = %v", err)
+	}
+	close(embedder.release)
+	for range 2 {
+		if err := <-results; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if embedder.maxActive.Load() != 1 || embedder.calls.Load() != 2 {
+		t.Fatalf("provider concurrency=%d calls=%d", embedder.maxActive.Load(), embedder.calls.Load())
+	}
+}
+
+func TestPersistentVectorCacheReusesVectorsAcrossEngineRestartWithoutQueries(t *testing.T) {
+	store := openFixture(t)
+	defer store.Close()
+	cachePath := filepath.Join(t.TempDir(), "query-vectors.db")
+	config := persistentCacheConfig(cachePath, modelKey, 10, time.Hour)
+	cache, err := NewSQLitePersistentVectorCache(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		_, _ = w.Write([]byte(`{"data":[{"index":0,"embedding":[1,0]}]}`))
+	}))
+	defer server.Close()
+	engine, err := NewEngineWithPersistentVectorCache(store, newHTTPEmbedder(t, server.URL), 0, 0, cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Search(context.Background(), "private query", Options{Limit: 1, Scopes: AllScopeFilter()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Close(); err != nil {
+		t.Fatal(err)
+	}
+	cache, err = NewSQLitePersistentVectorCache(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cache.Close()
+	engine, err = NewEngineWithPersistentVectorCache(store, newHTTPEmbedder(t, server.URL), 0, 0, cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Search(context.Background(), "private query", Options{Limit: 1, Scopes: AllScopeFilter()}); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("expected a restart cache hit, got %d provider calls", calls.Load())
+	}
+	contents, err := os.ReadFile(cachePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(contents), "private query") {
+		t.Fatal("persistent cache wrote a plaintext query")
+	}
+}
+
+func TestPersistentVectorCacheNamespaceExpiryCapacityAndFailureDegrade(t *testing.T) {
+	weak := persistentCacheConfig(filepath.Join(t.TempDir(), "weak.db"), modelKey, 2, time.Hour)
+	weak.Key = []byte("weak")
+	if _, err := NewSQLitePersistentVectorCache(weak); err == nil {
+		t.Fatal("persistent cache accepted a weak HMAC key")
+	}
+	path := filepath.Join(t.TempDir(), "query-vectors.db")
+	now := time.Unix(1_000, 0)
+	config := persistentCacheConfig(path, modelKey, 2, time.Hour)
+	config.Now = func() time.Time { return now }
+	cache, err := NewSQLitePersistentVectorCache(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cache.Close()
+	cache.Put(context.Background(), "one", []float32{1, 0})
+	now = now.Add(time.Minute)
+	cache.Put(context.Background(), "two", []float32{0, 1})
+	now = now.Add(time.Minute)
+	if _, ok := cache.Get(context.Background(), "one"); !ok {
+		t.Fatal("expected initial cache entry")
+	}
+	now = now.Add(time.Minute)
+	cache.Put(context.Background(), "three", []float32{.6, .8})
+	if _, ok := cache.Get(context.Background(), "two"); ok {
+		t.Fatal("least recently used entry was not evicted")
+	}
+	other := persistentCacheConfig(path, "other-model", 2, time.Hour)
+	other.Now = func() time.Time { return now }
+	otherCache, err := NewSQLitePersistentVectorCache(other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer otherCache.Close()
+	if _, ok := otherCache.Get(context.Background(), "one"); ok {
+		t.Fatal("cache namespace leaked vectors across model keys")
+	}
+	now = now.Add(2 * time.Hour)
+	if _, ok := cache.Get(context.Background(), "one"); ok {
+		t.Fatal("expired cache entry was returned")
+	}
+	if err := cache.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store := openFixture(t)
+	defer store.Close()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[{"index":0,"embedding":[1,0]}]}`))
+	}))
+	defer server.Close()
+	engine, err := NewEngineWithPersistentVectorCache(store, newHTTPEmbedder(t, server.URL), 0, 0, cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Search(context.Background(), "cache failure", Options{Limit: 1, Scopes: AllScopeFilter()}); err != nil {
+		t.Fatalf("cache failure disabled semantic search: %v", err)
+	}
+}
+
+func TestOpenAIEmbedderDefaultsToThreeSecondRequestBudget(t *testing.T) {
+	embedder, err := NewOpenAIEmbedder(OpenAIEmbedderConfig{BaseURL: "https://example.test", APIKey: "key", Model: "model", ModelKey: modelKey, Dimensions: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if embedder.timeout != 3*time.Second {
+		t.Fatalf("default timeout = %s", embedder.timeout)
+	}
+}
+
 func TestCandidatePoolCoversMaximumGroupWindow(t *testing.T) {
 	got, err := candidatePoolLimit(0, 512)
 	if err != nil || got != maximumCandidatePool || got < 4096 {
@@ -230,6 +450,36 @@ func TestCandidatePoolCoversMaximumGroupWindow(t *testing.T) {
 	}
 }
 
+type gatedEmbedder struct {
+	started   chan string
+	release   chan struct{}
+	calls     atomic.Int32
+	active    atomic.Int32
+	maxActive atomic.Int32
+}
+
+func (embedder *gatedEmbedder) Embed(ctx context.Context, query, _ string, _ []byte) ([]float32, error) {
+	embedder.calls.Add(1)
+	active := embedder.active.Add(1)
+	defer embedder.active.Add(-1)
+	for {
+		maximum := embedder.maxActive.Load()
+		if active <= maximum || embedder.maxActive.CompareAndSwap(maximum, active) {
+			break
+		}
+	}
+	embedder.started <- query
+	select {
+	case <-embedder.release:
+		return []float32{1, 0}, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (*gatedEmbedder) ModelKey() string { return modelKey }
+func (*gatedEmbedder) Dimensions() int  { return 2 }
+
 func newHTTPEmbedder(t *testing.T, baseURL string) *OpenAIEmbedder {
 	t.Helper()
 	embedder, err := NewOpenAIEmbedder(OpenAIEmbedderConfig{BaseURL: baseURL, APIKey: "secret", Model: "embedding-model", ModelKey: modelKey, Dimensions: 2, Timeout: time.Second})
@@ -237,6 +487,13 @@ func newHTTPEmbedder(t *testing.T, baseURL string) *OpenAIEmbedder {
 		t.Fatal(err)
 	}
 	return embedder
+}
+
+func persistentCacheConfig(path, keyModel string, maxEntries int, ttl time.Duration) PersistentVectorCacheConfig {
+	return PersistentVectorCacheConfig{
+		Path: path, Key: []byte(strings.Repeat("k", 32)), ModelKey: keyModel, Dimensions: 2,
+		QueryTemplate: queryTemplate, QueryExtraJSON: []byte(`{}`), MaxEntries: maxEntries, TTL: ttl,
+	}
 }
 
 func openFixture(t *testing.T) *Store {
@@ -260,7 +517,7 @@ func writeFixture(t *testing.T) string {
 		`CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
 		`CREATE TABLE texts (id INTEGER PRIMARY KEY, chinese_text TEXT NOT NULL UNIQUE, scope_mask INTEGER NOT NULL)`,
 		`CREATE TABLE vector_blocks (block_index INTEGER PRIMARY KEY, first_vector_id INTEGER NOT NULL, vector_count INTEGER NOT NULL, data BLOB NOT NULL)`,
-		`CREATE TABLE documents (text_id INTEGER NOT NULL, entry_id TEXT NOT NULL, headword TEXT NOT NULL, scope TEXT NOT NULL, english_text TEXT NOT NULL, chinese_text TEXT NOT NULL, section TEXT NOT NULL, part TEXT NOT NULL, owner_id TEXT NOT NULL, path_json TEXT NOT NULL, weight INTEGER NOT NULL)`,
+		`CREATE TABLE documents (text_id INTEGER NOT NULL, entry_id TEXT NOT NULL, headword TEXT NOT NULL, scope TEXT NOT NULL, english_text TEXT NOT NULL, chinese_text TEXT NOT NULL, candidate_text TEXT NOT NULL, definition_text TEXT NOT NULL, section TEXT NOT NULL, part TEXT NOT NULL, owner_id TEXT NOT NULL, path_json TEXT NOT NULL, weight INTEGER NOT NULL)`,
 		`CREATE INDEX documents_text_id ON documents(text_id)`,
 	}
 	for _, statement := range statements {
@@ -300,7 +557,7 @@ func writeFixture(t *testing.T) string {
 	}
 	for index, document := range documents {
 		pathJSON, _ := json.Marshal([]string{"part", string(rune('a' + index))})
-		if _, err := db.Exec(`INSERT INTO documents(text_id, entry_id, headword, scope, english_text, chinese_text, section, part, owner_id, path_json, weight) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, document.textID, document.entry, document.headword, document.scope, "english", "chinese", "definitions", "part", "owner", string(pathJSON), document.weight); err != nil {
+		if _, err := db.Exec(`INSERT INTO documents(text_id, entry_id, headword, scope, english_text, chinese_text, candidate_text, definition_text, section, part, owner_id, path_json, weight) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, document.textID, document.entry, document.headword, document.scope, "english", "chinese", "candidate", "definition", "definitions", "part", "owner", string(pathJSON), document.weight); err != nil {
 			t.Fatal(err)
 		}
 	}

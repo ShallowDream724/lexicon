@@ -8,10 +8,10 @@ import (
 )
 
 const (
-	SchemaVersion     = "1"
-	ProjectionVersion = "1.0"
+	SchemaVersion     = "2"
+	ProjectionVersion = "1.1"
 
-	maxMatches           = 3
+	maxMatches           = 8
 	maxDimensions        = 4096
 	maxVectors           = 4_000_000
 	maxResidentVectorB   = 512 << 20
@@ -109,11 +109,13 @@ type Location struct {
 }
 
 type Match struct {
-	Scope    Scope
-	English  string
-	Chinese  string
-	Location Location
-	Score    float32
+	Scope          Scope
+	English        string
+	Chinese        string
+	CandidateText  string
+	DefinitionText string
+	Location       Location
+	Score          float32
 }
 
 type Group struct {

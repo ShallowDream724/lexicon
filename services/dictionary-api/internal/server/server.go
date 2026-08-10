@@ -36,8 +36,7 @@ const (
 	maxReverseOffset    = 511
 	maxTypoMatches      = 128
 	hybridResultWindow  = 512
-	maxSearchMatches    = 3
-	rrfK                = 60.0
+	maxSearchMatches    = 8
 )
 
 type requestIDContextKey struct{}
@@ -155,15 +154,27 @@ type suggestion struct {
 	Headword           string        `json:"headword"`
 	PartsOfSpeech      []string      `json:"partsOfSpeech"`
 	TranslationPreview string        `json:"translationPreview"`
+	HeadwordForms      []string      `json:"headwordForms,omitempty"`
 	Matches            []searchMatch `json:"matches,omitempty"`
+	MatchesTotal       int           `json:"matchesTotal,omitempty"`
 	rank               int
 }
 
 type searchMatch struct {
-	Scope       reversesearch.Scope    `json:"scope"`
-	EnglishText string                 `json:"englishText"`
-	ChineseText string                 `json:"chineseText"`
-	Location    reversesearch.Location `json:"location"`
+	Scope          reversesearch.Scope    `json:"scope"`
+	EnglishText    string                 `json:"englishText"`
+	CandidateText  string                 `json:"candidateText,omitempty"`
+	DefinitionText string                 `json:"definitionText,omitempty"`
+	ChineseText    string                 `json:"chineseText"`
+	Part           string                 `json:"part,omitempty"`
+	Location       reversesearch.Location `json:"location"`
+
+	hasLexical       bool
+	lexicalPosition  int
+	lexicalRelevance reversesearch.Relevance
+	hasSemantic      bool
+	semanticPosition int
+	semanticScore    float32
 }
 
 func (s *Service) search(w http.ResponseWriter, r *http.Request) {
@@ -234,10 +245,11 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) {
 			nextOffset = &page.nextOffset
 		}
 		s.writeJSON(w, http.StatusOK, struct {
-			Query      string       `json:"query"`
-			Items      []suggestion `json:"items"`
-			NextOffset *int         `json:"nextOffset,omitempty"`
-		}{Query: query, Items: page.items, NextOffset: nextOffset})
+			Query          string               `json:"query"`
+			Items          []suggestion         `json:"items"`
+			NextOffset     *int                 `json:"nextOffset,omitempty"`
+			SemanticStatus semanticSearchStatus `json:"semanticStatus,omitempty"`
+		}{Query: query, Items: page.items, NextOffset: nextOffset, SemanticStatus: page.semanticStatus})
 		return
 	}
 	if hasScope {
@@ -284,10 +296,18 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) {
 }
 
 type reverseSuggestionPage struct {
-	items      []suggestion
-	nextOffset int
-	hasMore    bool
+	items          []suggestion
+	nextOffset     int
+	hasMore        bool
+	semanticStatus semanticSearchStatus
 }
+
+type semanticSearchStatus string
+
+const (
+	semanticSearchApplied  semanticSearchStatus = "applied"
+	semanticSearchDegraded semanticSearchStatus = "degraded"
+)
 
 type searchMode string
 
@@ -365,12 +385,15 @@ func (s *Service) reverseSuggestionsForGroups(ctx context.Context, groups []reve
 		}
 		item.rank = index
 		item.Matches = make([]searchMatch, 0, len(group.Matches))
-		for _, match := range group.Matches {
+		for matchIndex, match := range group.Matches {
 			item.Matches = append(item.Matches, searchMatch{
 				Scope: match.Scope, EnglishText: match.English,
-				ChineseText: match.Chinese, Location: match.Location,
+				CandidateText: match.CandidateText, DefinitionText: match.DefinitionText,
+				ChineseText: match.Chinese, Part: match.Location.Part, Location: match.Location,
+				hasLexical: true, lexicalPosition: matchIndex, lexicalRelevance: match.Relevance,
 			})
 		}
+		item.MatchesTotal = len(item.Matches)
 		results = append(results, item)
 	}
 	return results, nil
@@ -379,6 +402,15 @@ func (s *Service) reverseSuggestionsForGroups(ctx context.Context, groups []reve
 func (s *Service) dictionarySuggestionsForIDs(ctx context.Context, ids []string) (map[string]suggestion, error) {
 	if len(ids) == 0 {
 		return map[string]suggestion{}, nil
+	}
+
+	formsByID := map[string][]string{}
+	if s.reverseSearch != nil {
+		var err error
+		formsByID, err = s.reverseSearch.HeadwordForms(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var statement strings.Builder
@@ -411,6 +443,7 @@ func (s *Service) dictionarySuggestionsForIDs(ctx context.Context, ids []string)
 			return nil, errors.New("dictionary search projection is malformed")
 		}
 		item.Kind = "dictionary"
+		item.HeadwordForms = formsByID[item.ID]
 		results[item.ID] = item
 	}
 	if err := rows.Err(); err != nil {
@@ -429,7 +462,9 @@ func (s *Service) queryHybridReverseSuggestions(ctx context.Context, query strin
 		return reverseSuggestionPage{}, err
 	}
 	if s.semanticSearch == nil {
-		return paginateReverseSuggestions(lexical, options.Offset, options.Limit), nil
+		page := paginateReverseSuggestions(lexical, options.Offset, options.Limit)
+		page.semanticStatus = semanticSearchDegraded
+		return page, nil
 	}
 
 	semanticPage, err := s.semanticSearch.Search(ctx, query, semanticsearch.Options{
@@ -437,14 +472,20 @@ func (s *Service) queryHybridReverseSuggestions(ctx context.Context, query strin
 	})
 	if err != nil {
 		s.logger.Warn("semantic search unavailable; returning lexical results", "error", err)
-		return paginateReverseSuggestions(lexical, options.Offset, options.Limit), nil
+		page := paginateReverseSuggestions(lexical, options.Offset, options.Limit)
+		page.semanticStatus = semanticSearchDegraded
+		return page, nil
 	}
 	semantic, err := s.semanticSuggestionsForGroups(ctx, semanticPage.Groups)
 	if err != nil {
 		s.logger.Warn("semantic search projection failed; returning lexical results", "error", err)
-		return paginateReverseSuggestions(lexical, options.Offset, options.Limit), nil
+		page := paginateReverseSuggestions(lexical, options.Offset, options.Limit)
+		page.semanticStatus = semanticSearchDegraded
+		return page, nil
 	}
-	return paginateReverseSuggestions(mergeHybridSuggestions(query, lexical, semantic), options.Offset, options.Limit), nil
+	page := paginateReverseSuggestions(mergeHybridSuggestions(lexical, semantic), options.Offset, options.Limit)
+	page.semanticStatus = semanticSearchApplied
+	return page, nil
 }
 
 func (s *Service) allReverseGroups(ctx context.Context, query string, scopes reversesearch.ScopeFilter) ([]reversesearch.Group, error) {
@@ -489,107 +530,22 @@ func (s *Service) semanticSuggestionsForGroups(ctx context.Context, groups []sem
 		}
 		item.rank = index
 		item.Matches = make([]searchMatch, 0, len(group.Matches))
-		for _, match := range group.Matches {
+		for matchIndex, match := range group.Matches {
 			item.Matches = append(item.Matches, searchMatch{
-				Scope: reversesearch.Scope(match.Scope), EnglishText: match.English, ChineseText: match.Chinese,
+				Scope: reversesearch.Scope(match.Scope), EnglishText: match.English,
+				CandidateText: match.CandidateText, DefinitionText: match.DefinitionText,
+				ChineseText: match.Chinese, Part: match.Location.Part,
 				Location: reversesearch.Location{
 					Section: reversesearch.Section(match.Location.Section), Part: match.Location.Part,
 					OwnerID: match.Location.OwnerID, Path: append([]string(nil), match.Location.Path...),
 				},
+				hasSemantic: true, semanticPosition: matchIndex, semanticScore: match.Score,
 			})
 		}
+		item.MatchesTotal = len(item.Matches)
 		results = append(results, item)
 	}
 	return results, nil
-}
-
-type hybridSuggestion struct {
-	item         suggestion
-	lexicalRank  int
-	semanticRank int
-	exactLexical bool
-	score        float64
-}
-
-func mergeHybridSuggestions(query string, lexical, semantic []suggestion) []suggestion {
-	byID := make(map[string]*hybridSuggestion, len(lexical)+len(semantic))
-	for rank, item := range lexical {
-		byID[item.ID] = &hybridSuggestion{
-			item: item, lexicalRank: rank, semanticRank: hybridResultWindow,
-			exactLexical: hasExactChineseMatch(query, item), score: reciprocalRank(rank),
-		}
-	}
-	for rank, item := range semantic {
-		candidate, exists := byID[item.ID]
-		if !exists {
-			byID[item.ID] = &hybridSuggestion{
-				item: item, lexicalRank: hybridResultWindow, semanticRank: rank, score: reciprocalRank(rank),
-			}
-			continue
-		}
-		candidate.semanticRank = rank
-		candidate.score += reciprocalRank(rank)
-		candidate.item.Matches = mergeSearchMatches(candidate.item.Matches, item.Matches)
-	}
-	merged := make([]hybridSuggestion, 0, len(byID))
-	for _, item := range byID {
-		merged = append(merged, *item)
-	}
-	sort.Slice(merged, func(left, right int) bool {
-		leftItem, rightItem := merged[left], merged[right]
-		if leftItem.exactLexical != rightItem.exactLexical {
-			return leftItem.exactLexical
-		}
-		if leftItem.score != rightItem.score {
-			return leftItem.score > rightItem.score
-		}
-		if leftItem.lexicalRank != rightItem.lexicalRank {
-			return leftItem.lexicalRank < rightItem.lexicalRank
-		}
-		if leftItem.semanticRank != rightItem.semanticRank {
-			return leftItem.semanticRank < rightItem.semanticRank
-		}
-		return leftItem.item.ID < rightItem.item.ID
-	})
-	results := make([]suggestion, len(merged))
-	for index, item := range merged {
-		results[index] = item.item
-	}
-	return results
-}
-
-func reciprocalRank(rank int) float64 { return 1 / (rrfK + float64(rank+1)) }
-
-func hasExactChineseMatch(query string, item suggestion) bool {
-	for _, match := range item.Matches {
-		if reversesearch.ContainsExactChineseSegment(match.ChineseText, query) {
-			return true
-		}
-	}
-	return false
-}
-
-func mergeSearchMatches(groups ...[]searchMatch) []searchMatch {
-	result := make([]searchMatch, 0, maxSearchMatches)
-	seen := make(map[string]struct{}, maxSearchMatches)
-	for _, matches := range groups {
-		for _, match := range matches {
-			key := strings.Join([]string{
-				string(match.Scope), match.EnglishText, match.ChineseText,
-				string(match.Location.Section), match.Location.Part, match.Location.OwnerID,
-				strings.Join(match.Location.Path, "\x1f"),
-			}, "\x00")
-			if _, exists := seen[key]; exists {
-				continue
-			}
-			seen[key] = struct{}{}
-			result = append(result, match)
-			if len(result) == maxSearchMatches {
-				return result
-			}
-		}
-	}
-	return result
 }
 
 func paginateReverseSuggestions(items []suggestion, offset, limit int) reverseSuggestionPage {

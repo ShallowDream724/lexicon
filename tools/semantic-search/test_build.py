@@ -27,10 +27,10 @@ from sidecar import quantize_block, write_sidecar
 def make_reverse(path: Path) -> None:
     db = sqlite3.connect(path)
     try:
-        db.executescript("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE documents (id INTEGER PRIMARY KEY, entry_id TEXT NOT NULL, headword TEXT NOT NULL, scope TEXT NOT NULL, english_text TEXT NOT NULL, chinese_text TEXT NOT NULL, section TEXT NOT NULL, part TEXT NOT NULL, owner_id TEXT NOT NULL, path_json TEXT NOT NULL, weight INTEGER NOT NULL);")
-        db.executemany("INSERT INTO metadata VALUES (?, ?)", [("projection_version", "1.2"), ("schema_version", "3"), ("normalizer_version", "nfkc")])
-        rows = [("a", "alpha", "sense", "one", "共同文本", "definitions", "n", "a", "[]", 10), ("a", "alpha", "phrase", "two", "共同文本", "idioms", "n", "a", "[]", 9), ("b", "beta", "usage", "three", "其他文本", "grammar-usage", "v", "b", "[]", 8), ("c", "gamma", "example", "four", "第三文本", "definitions", "n", "c", "[]", 7), ("d", "delta", "sense", "five", "第四文本", "definitions", "n", "d", "[]", 6), ("e", "epsilon", "form", "six", "第五文本", "derived-forms", "n", "e", "[]", 5)]
-        db.executemany("INSERT INTO documents(entry_id, headword, scope, english_text, chinese_text, section, part, owner_id, path_json, weight) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
+        db.executescript("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE documents (id INTEGER PRIMARY KEY, entry_id TEXT NOT NULL, headword TEXT NOT NULL, scope TEXT NOT NULL, english_text TEXT NOT NULL, candidate_text TEXT NOT NULL, definition_text TEXT NOT NULL, chinese_text TEXT NOT NULL, section TEXT NOT NULL, part TEXT NOT NULL, owner_id TEXT NOT NULL, path_json TEXT NOT NULL, weight INTEGER NOT NULL);")
+        db.executemany("INSERT INTO metadata VALUES (?, ?)", [("projection_version", "1.3"), ("schema_version", "4"), ("normalizer_version", "nfkc")])
+        rows = [("a", "alpha", "sense", "one", "", "", "共同文本", "definitions", "n", "a", "[]", 10), ("a", "alpha", "phrase", "two", "alpha phrase", "phrase definition", "共同文本", "idioms", "n", "a", "[]", 9), ("b", "beta", "usage", "three", "", "", "其他文本", "grammar-usage", "v", "b", "[]", 8), ("c", "gamma", "example", "four", "", "", "第三文本", "definitions", "n", "c", "[]", 7), ("d", "delta", "sense", "five", "", "", "第四文本", "definitions", "n", "d", "[]", 6), ("e", "epsilon", "form", "six", "", "", "第五文本", "derived-forms", "n", "e", "[]", 5)]
+        db.executemany("INSERT INTO documents(entry_id, headword, scope, english_text, candidate_text, definition_text, chinese_text, section, part, owner_id, path_json, weight) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
         db.commit()
     finally:
         db.close()
@@ -121,11 +121,20 @@ class SemanticBuildTest(unittest.TestCase):
             build._provider_from_args = original
         self.assertLess(len(resumed), len(corpus.texts)); self.assertTrue(np.allclose(matrix[0], [1.0, 0.0]))
         sidecar = output / "semantic.db"; metadata = write_sidecar(sidecar, corpus, matrix, 2, self.primary, "key", "provider", "Q: {query}", {"input_type": "document"}, {"input_type": "query"}, 1)
-        self.assertEqual(metadata["projection_version"], "1.0"); self.assertEqual(metadata["query_extra_json"], '{"input_type":"query"}'); self.assertEqual(metadata["document_extra_json"], '{"input_type":"document"}')
+        self.assertEqual(metadata["projection_version"], "1.1"); self.assertEqual(metadata["query_extra_json"], '{"input_type":"query"}'); self.assertEqual(metadata["document_extra_json"], '{"input_type":"document"}')
         db = sqlite3.connect(sidecar)
         try:
             self.assertEqual(db.execute("PRAGMA page_size").fetchone()[0], 8192); self.assertEqual(db.execute("SELECT COUNT(*) FROM vector_blocks").fetchone()[0], len(corpus.texts)); self.assertEqual(db.execute("SELECT COUNT(*) FROM documents").fetchone()[0], 6)
         finally: db.close()
+
+        reused = output / "semantic-reused.db"
+        write_sidecar(reused, corpus, None, 2, self.primary, "key", "provider", "Q: {query}", {"input_type": "document"}, {"input_type": "query"}, 1, sidecar)
+        source = sqlite3.connect(sidecar); target = sqlite3.connect(reused)
+        try:
+            self.assertEqual(source.execute("SELECT data FROM vector_blocks ORDER BY block_index").fetchall(), target.execute("SELECT data FROM vector_blocks ORDER BY block_index").fetchall())
+            self.assertEqual(target.execute("SELECT candidate_text, definition_text FROM documents WHERE scope='phrase'").fetchone(), ("alpha phrase", "phrase definition"))
+        finally:
+            source.close(); target.close()
 
     def test_runtime_int8_evaluation_and_fingerprint(self) -> None:
         corpus, matrix_path = load_corpus(self.reverse), self.root / "vectors.f16"; build._initialise_matrix(matrix_path, 5, 2)

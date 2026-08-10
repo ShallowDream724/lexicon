@@ -20,6 +20,8 @@ class Document:
     headword: str
     scope: str
     english_text: str
+    candidate_text: str
+    definition_text: str
     chinese_text: str
     section: str
     part: str
@@ -70,7 +72,8 @@ def load_corpus(reverse_db: Path, scopes: Iterable[str] = SCOPES, sample_size: i
         raise FileNotFoundError(f"reverse-search database is missing: {reverse_db}")
     placeholders = ",".join("?" for _ in selected_scopes)
     query = f"""
-        SELECT entry_id, headword, scope, english_text, chinese_text, section, part,
+        SELECT entry_id, headword, scope, english_text, candidate_text, definition_text,
+               chinese_text, section, part,
                owner_id, path_json, weight
         FROM documents
         WHERE scope IN ({placeholders}) AND trim(chinese_text) <> ''

@@ -4,16 +4,17 @@ package reversesearch
 import "io"
 
 const (
-	SchemaVersion     = 3
-	ProjectionVersion = "1.2"
+	SchemaVersion     = 5
+	ProjectionVersion = "1.4"
 	NormalizerVersion = "nfkc-opencc-t2s-v1"
 	defaultPageSize   = 8192
 	defaultCandidates = 4096
 	maxResults        = 512
-	maxMatches        = 3
+	maxMatches        = 8
 	MaxQueryRunes     = 200
 	maxLineBytes      = 1 << 20
 	maxIDBytes        = 256
+	maxHeadwordForms  = 64
 	maxTextBytes      = 32 << 10
 	maxPathParts      = 32
 )
@@ -50,14 +51,17 @@ const (
 
 // SearchDocument is one line of the stable projection NDJSON contract.
 type SearchDocument struct {
-	DictionaryID string   `json:"dictionaryId"`
-	EntryID      string   `json:"entryId"`
-	Scope        Scope    `json:"scope"`
-	Headword     string   `json:"headword"`
-	EnglishText  string   `json:"englishText"`
-	ChineseText  string   `json:"chineseText"`
-	Location     Location `json:"location"`
-	Weight       int      `json:"weight"`
+	DictionaryID   string   `json:"dictionaryId"`
+	EntryID        string   `json:"entryId"`
+	Scope          Scope    `json:"scope"`
+	Headword       string   `json:"headword"`
+	HeadwordForms  []string `json:"headwordForms,omitempty"`
+	EnglishText    string   `json:"englishText"`
+	CandidateText  string   `json:"candidateText,omitempty"`
+	DefinitionText string   `json:"definitionText,omitempty"`
+	ChineseText    string   `json:"chineseText"`
+	Location       Location `json:"location"`
+	Weight         int      `json:"weight"`
 }
 
 type Location struct {
@@ -78,16 +82,30 @@ type ImportConfig struct {
 }
 
 type Match struct {
-	Scope    Scope
-	English  string
-	Chinese  string
-	Location Location
+	Scope          Scope
+	English        string
+	CandidateText  string
+	DefinitionText string
+	Chinese        string
+	Location       Location
+	Relevance      Relevance
+}
+
+// Relevance carries lexical evidence into the source-neutral HTTP fusion layer.
+// Tier is a semantic invariant: 4 is an exact segment, 3 a grammatical
+// extension, 2 a full boundary/substring match, and 1 a partial fallback.
+type Relevance struct {
+	Tier           int
+	Score          float64
+	Corroboration  int
+	DocumentWeight int
 }
 
 type Group struct {
-	EntryID  string
-	Headword string
-	Matches  []Match
+	EntryID   string
+	Headword  string
+	Relevance Relevance
+	Matches   []Match
 }
 
 type Page struct {

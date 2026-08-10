@@ -53,6 +53,7 @@ type OpenAIEmbedder struct {
 	model      string
 	modelKey   string
 	dimensions int
+	timeout    time.Duration
 	client     *http.Client
 }
 
@@ -68,9 +69,9 @@ func NewOpenAIEmbedder(config OpenAIEmbedderConfig) (*OpenAIEmbedder, error) {
 	base.RawQuery, base.Fragment = "", ""
 	timeout := config.Timeout
 	if timeout <= 0 {
-		timeout = 20 * time.Second
+		timeout = 3 * time.Second
 	}
-	return &OpenAIEmbedder{endpoint: base.String(), apiKey: config.APIKey, model: config.Model, modelKey: config.ModelKey, dimensions: config.Dimensions, client: &http.Client{Timeout: timeout}}, nil
+	return &OpenAIEmbedder{endpoint: base.String(), apiKey: config.APIKey, model: config.Model, modelKey: config.ModelKey, dimensions: config.Dimensions, timeout: timeout, client: &http.Client{}}, nil
 }
 
 func embeddingsPath(path string) string {
@@ -140,7 +141,9 @@ func (e *OpenAIEmbedder) Embed(ctx context.Context, query, queryTemplate string,
 	request.Header.Set("Authorization", "Bearer "+e.apiKey)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("User-Agent", "Lexicon-Dictionary-API/1")
-	response, err := e.client.Do(request)
+	requestContext, cancel := context.WithTimeout(request.Context(), e.timeout)
+	defer cancel()
+	response, err := e.client.Do(request.WithContext(requestContext))
 	if err != nil {
 		return nil, &EmbedError{Kind: EmbedErrorRequest, Err: err}
 	}

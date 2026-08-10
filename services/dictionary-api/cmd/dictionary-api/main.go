@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -38,6 +40,11 @@ func main() {
 	semanticModelKey := flag.String("semantic-model-key", defaults.semanticModelKey, "semantic sidecar model key")
 	semanticTimeout := flag.String("semantic-timeout", defaults.semanticTimeout, "semantic embedding request timeout")
 	semanticCache := flag.String("semantic-cache", defaults.semanticCache, "semantic search and query-vector cache capacity")
+	semanticPersistentCache := flag.String("semantic-persistent-cache", defaults.semanticPersistentCache, "enable persistent semantic query-vector cache")
+	semanticPersistentCachePath := flag.String("semantic-persistent-cache-path", defaults.semanticPersistentCachePath, "path to the persistent semantic query-vector cache SQLite database")
+	semanticPersistentCacheKey := flag.String("semantic-persistent-cache-key", defaults.semanticPersistentCacheKey, "HMAC key for persistent semantic query-vector cache")
+	semanticPersistentCacheMaxEntries := flag.String("semantic-persistent-cache-max-entries", defaults.semanticPersistentCacheMaxEntries, "maximum persistent semantic query-vector cache entries")
+	semanticPersistentCacheTTL := flag.String("semantic-persistent-cache-ttl", defaults.semanticPersistentCacheTTL, "persistent semantic query-vector cache TTL")
 	exampleAudioBaseURL := flag.String("example-audio-base-url", defaults.exampleAudioBaseURL, "base URL for example audio objects")
 	illustrationBaseURL := flag.String("illustration-base-url", defaults.illustrationBaseURL, "base URL for illustration objects")
 	illustrationURLTemplate := flag.String("illustration-url-template", defaults.illustrationURLTemplate, "URL template for full illustration objects")
@@ -119,13 +126,19 @@ func main() {
 		path: *semanticSearchPath, dictionaryFingerprint: dictionaryFingerprint, reverseSearchPath: *reverseSearchPath,
 		baseURL: *semanticBaseURL, apiKey: *semanticAPIKey, model: *semanticModel, modelKey: *semanticModelKey,
 		timeout: *semanticTimeout, cache: *semanticCache,
+		persistentCache: *semanticPersistentCache, persistentCachePath: *semanticPersistentCachePath,
+		persistentCacheKey: *semanticPersistentCacheKey, persistentCacheMaxEntries: *semanticPersistentCacheMaxEntries,
+		persistentCacheTTL: *semanticPersistentCacheTTL,
+		warn:               func(message string, err error) { logger.Warn(message, "error", err) },
 	})
 	if err != nil {
-		logger.Error("open semantic-search capability", "error", err)
-		os.Exit(1)
+		logger.Warn("optional semantic-search capability is unavailable", "path", *semanticSearchPath, "error", err)
 	}
-	if strings.TrimSpace(*semanticSearchPath) != "" && semanticEngine == nil {
+	if strings.TrimSpace(*semanticSearchPath) != "" && semanticEngine == nil && err == nil {
 		logger.Warn("optional semantic-search capability is unavailable", "path", *semanticSearchPath)
+	}
+	if semanticEngine != nil {
+		defer semanticEngine.Close()
 	}
 	if semanticStore != nil {
 		defer semanticStore.Close()
@@ -177,27 +190,34 @@ type configDefaults struct {
 	illustrationURLTemplate, illustrationThumbnailURLTemplate                                        string
 	listen, origins                                                                                  string
 	semanticBaseURL, semanticAPIKey, semanticModel, semanticModelKey, semanticTimeout, semanticCache string
+	semanticPersistentCache, semanticPersistentCachePath, semanticPersistentCacheKey                 string
+	semanticPersistentCacheMaxEntries, semanticPersistentCacheTTL                                    string
 }
 
 func defaultConfig() configDefaults {
 	return configDefaults{
-		dbPath:                           envOr("DICTIONARY_RUNTIME_DB_PATH", "./data/dictionary.db"),
-		audioPath:                        envOr("DICTIONARY_AUDIO_ZIP_PATH", ""),
-		etymologyPath:                    envOr("DICTIONARY_ETYMOLOGY_DB_PATH", ""),
-		reverseSearchPath:                envOr("DICTIONARY_REVERSE_SEARCH_DB_PATH", ""),
-		semanticSearchPath:               envOr("DICTIONARY_SEMANTIC_SEARCH_DB_PATH", ""),
-		semanticBaseURL:                  envOr("DICTIONARY_SEMANTIC_BASE_URL", ""),
-		semanticAPIKey:                   envOr("DICTIONARY_SEMANTIC_API_KEY", ""),
-		semanticModel:                    envOr("DICTIONARY_SEMANTIC_MODEL", ""),
-		semanticModelKey:                 envOr("DICTIONARY_SEMANTIC_MODEL_KEY", ""),
-		semanticTimeout:                  envOr("DICTIONARY_SEMANTIC_TIMEOUT", "5s"),
-		semanticCache:                    envOr("DICTIONARY_SEMANTIC_CACHE", "128"),
-		exampleAudioBaseURL:              envOr("DICTIONARY_EXAMPLE_AUDIO_BASE_URL", ""),
-		illustrationBaseURL:              envOr("DICTIONARY_ILLUSTRATION_BASE_URL", ""),
-		illustrationURLTemplate:          envOr("DICTIONARY_ILLUSTRATION_URL_TEMPLATE", ""),
-		illustrationThumbnailURLTemplate: envOr("DICTIONARY_ILLUSTRATION_THUMBNAIL_URL_TEMPLATE", ""),
-		listen:                           envOr("DICTIONARY_LISTEN", "127.0.0.1:8787"),
-		origins:                          envOr("DICTIONARY_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"),
+		dbPath:                            envOr("DICTIONARY_RUNTIME_DB_PATH", "./data/dictionary.db"),
+		audioPath:                         envOr("DICTIONARY_AUDIO_ZIP_PATH", ""),
+		etymologyPath:                     envOr("DICTIONARY_ETYMOLOGY_DB_PATH", ""),
+		reverseSearchPath:                 envOr("DICTIONARY_REVERSE_SEARCH_DB_PATH", ""),
+		semanticSearchPath:                envOr("DICTIONARY_SEMANTIC_SEARCH_DB_PATH", ""),
+		semanticBaseURL:                   envOr("DICTIONARY_SEMANTIC_BASE_URL", ""),
+		semanticAPIKey:                    envOr("DICTIONARY_SEMANTIC_API_KEY", ""),
+		semanticModel:                     envOr("DICTIONARY_SEMANTIC_MODEL", ""),
+		semanticModelKey:                  envOr("DICTIONARY_SEMANTIC_MODEL_KEY", ""),
+		semanticTimeout:                   envOr("DICTIONARY_SEMANTIC_TIMEOUT", "3s"),
+		semanticCache:                     envOr("DICTIONARY_SEMANTIC_CACHE", "128"),
+		semanticPersistentCache:           envOr("DICTIONARY_SEMANTIC_PERSISTENT_CACHE", "true"),
+		semanticPersistentCachePath:       envOr("DICTIONARY_SEMANTIC_PERSISTENT_CACHE_PATH", ""),
+		semanticPersistentCacheKey:        envOr("DICTIONARY_SEMANTIC_PERSISTENT_CACHE_KEY", ""),
+		semanticPersistentCacheMaxEntries: envOr("DICTIONARY_SEMANTIC_PERSISTENT_CACHE_MAX_ENTRIES", "10000"),
+		semanticPersistentCacheTTL:        envOr("DICTIONARY_SEMANTIC_PERSISTENT_CACHE_TTL", "720h"),
+		exampleAudioBaseURL:               envOr("DICTIONARY_EXAMPLE_AUDIO_BASE_URL", ""),
+		illustrationBaseURL:               envOr("DICTIONARY_ILLUSTRATION_BASE_URL", ""),
+		illustrationURLTemplate:           envOr("DICTIONARY_ILLUSTRATION_URL_TEMPLATE", ""),
+		illustrationThumbnailURLTemplate:  envOr("DICTIONARY_ILLUSTRATION_THUMBNAIL_URL_TEMPLATE", ""),
+		listen:                            envOr("DICTIONARY_LISTEN", "127.0.0.1:8787"),
+		origins:                           envOr("DICTIONARY_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"),
 	}
 }
 
@@ -229,17 +249,16 @@ func openOptionalReverseSearch(path, dictionaryFingerprint string) (*reversesear
 }
 
 type semanticRuntimeConfig struct {
-	path, dictionaryFingerprint, reverseSearchPath   string
-	baseURL, apiKey, model, modelKey, timeout, cache string
+	path, dictionaryFingerprint, reverseSearchPath           string
+	baseURL, apiKey, model, modelKey, timeout, cache         string
+	persistentCache, persistentCachePath, persistentCacheKey string
+	persistentCacheMaxEntries, persistentCacheTTL            string
+	warn                                                     func(string, error)
 }
 
 func openOptionalSemanticSearch(config semanticRuntimeConfig) (*semanticsearch.Engine, *semanticsearch.Store, error) {
 	path := strings.TrimSpace(config.path)
 	if path == "" {
-		return nil, nil, nil
-	}
-	if strings.TrimSpace(config.baseURL) == "" || strings.TrimSpace(config.apiKey) == "" ||
-		strings.TrimSpace(config.model) == "" || strings.TrimSpace(config.modelKey) == "" {
 		return nil, nil, nil
 	}
 	if _, err := os.Stat(path); err != nil {
@@ -248,13 +267,25 @@ func openOptionalSemanticSearch(config semanticRuntimeConfig) (*semanticsearch.E
 		}
 		return nil, nil, fmt.Errorf("inspect semantic-search sidecar: %w", err)
 	}
+	missing := make([]string, 0, 5)
+	for name, value := range map[string]string{
+		"DICTIONARY_SEMANTIC_BASE_URL":  config.baseURL,
+		"DICTIONARY_SEMANTIC_API_KEY":   config.apiKey,
+		"DICTIONARY_SEMANTIC_MODEL":     config.model,
+		"DICTIONARY_SEMANTIC_MODEL_KEY": config.modelKey,
+	} {
+		if strings.TrimSpace(value) == "" {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		slices.Sort(missing)
+		return nil, nil, fmt.Errorf("semantic-search sidecar is present but provider configuration is incomplete: missing %s", strings.Join(missing, ", "))
+	}
 	if strings.TrimSpace(config.reverseSearchPath) == "" {
-		return nil, nil, nil
+		return nil, nil, errors.New("semantic-search sidecar requires DICTIONARY_REVERSE_SEARCH_DB_PATH")
 	}
 	if _, err := os.Stat(config.reverseSearchPath); err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil, nil
-		}
 		return nil, nil, fmt.Errorf("inspect Chinese reverse-search sidecar: %w", err)
 	}
 	reverseFingerprint, err := reversesearch.FileSHA256(config.reverseSearchPath)
@@ -281,12 +312,66 @@ func openOptionalSemanticSearch(config semanticRuntimeConfig) (*semanticsearch.E
 		_ = store.Close()
 		return nil, nil, err
 	}
-	engine, err := semanticsearch.NewEngine(store, embedder, cacheCapacity)
+	persistentCache := openOptionalPersistentSemanticCache(config, store)
+	engine, err := semanticsearch.NewEngineWithPersistentVectorCache(store, embedder, cacheCapacity, cacheCapacity, persistentCache)
 	if err != nil {
+		if closer, ok := persistentCache.(interface{ Close() error }); ok {
+			_ = closer.Close()
+		}
 		_ = store.Close()
 		return nil, nil, err
 	}
 	return engine, store, nil
+}
+
+func openOptionalPersistentSemanticCache(config semanticRuntimeConfig, store *semanticsearch.Store) semanticsearch.PersistentVectorCache {
+	enabled := true
+	if value := strings.TrimSpace(config.persistentCache); value != "" {
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			warnSemantic(config, "persistent semantic query-vector cache is disabled", fmt.Errorf("persistent semantic cache enabled must be boolean: %w", err))
+			return nil
+		}
+		enabled = parsed
+	}
+	if !enabled {
+		return nil
+	}
+	cachePath := strings.TrimSpace(config.persistentCachePath)
+	cacheKey := strings.TrimSpace(config.persistentCacheKey)
+	if cachePath == "" && cacheKey == "" {
+		return nil
+	}
+	if cachePath == "" || cacheKey == "" {
+		warnSemantic(config, "persistent semantic query-vector cache is disabled", errors.New("persistent semantic cache path and key must be configured together"))
+		return nil
+	}
+	maxEntries, err := strconv.Atoi(strings.TrimSpace(config.persistentCacheMaxEntries))
+	if err != nil || maxEntries < 1 {
+		warnSemantic(config, "persistent semantic query-vector cache is disabled", fmt.Errorf("persistent semantic cache maximum entries must be a positive integer"))
+		return nil
+	}
+	ttl, err := time.ParseDuration(strings.TrimSpace(config.persistentCacheTTL))
+	if err != nil || ttl <= 0 {
+		warnSemantic(config, "persistent semantic query-vector cache is disabled", fmt.Errorf("persistent semantic cache TTL must be a positive duration"))
+		return nil
+	}
+	cache, err := semanticsearch.NewSQLitePersistentVectorCache(semanticsearch.PersistentVectorCacheConfig{
+		Path: cachePath, Key: []byte(cacheKey), ModelKey: store.ModelKey(),
+		Dimensions: store.Dimensions(), QueryTemplate: store.QueryTemplate(), QueryExtraJSON: store.QueryExtraJSON(),
+		MaxEntries: maxEntries, TTL: ttl,
+	})
+	if err != nil {
+		warnSemantic(config, "persistent semantic query-vector cache is disabled", err)
+		return nil
+	}
+	return cache
+}
+
+func warnSemantic(config semanticRuntimeConfig, message string, err error) {
+	if config.warn != nil {
+		config.warn(message, err)
+	}
 }
 
 func parseOrigins(value string) map[string]struct{} {

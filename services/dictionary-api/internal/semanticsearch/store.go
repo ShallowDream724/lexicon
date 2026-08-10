@@ -456,16 +456,18 @@ func betterCandidate(left, right vectorCandidate) bool {
 }
 
 type documentCandidate struct {
-	documentID int64
-	textID     int
-	entryID    string
-	headword   string
-	scope      Scope
-	english    string
-	chinese    string
-	location   Location
-	weight     int
-	dot        int32
+	documentID     int64
+	textID         int
+	entryID        string
+	headword       string
+	scope          Scope
+	english        string
+	chinese        string
+	candidateText  string
+	definitionText string
+	location       Location
+	weight         int
+	dot            int32
 }
 
 func (s *Store) documentsForCandidates(ctx context.Context, candidates []vectorCandidate, filter ScopeFilter) ([]documentCandidate, error) {
@@ -486,7 +488,7 @@ func (s *Store) documentsForCandidates(ctx context.Context, candidates []vectorC
 		scopeMarks[index] = "?"
 		arguments = append(arguments, scope)
 	}
-	statement := `SELECT rowid, text_id, entry_id, headword, scope, english_text, chinese_text, section, part, owner_id, path_json, weight
+	statement := `SELECT rowid, text_id, entry_id, headword, scope, english_text, chinese_text, candidate_text, definition_text, section, part, owner_id, path_json, weight
 		FROM documents WHERE text_id IN (` + strings.Join(ids, ",") + `) AND scope IN (` + strings.Join(scopeMarks, ",") + `)`
 	rows, err := s.db.QueryContext(ctx, statement, arguments...)
 	if err != nil {
@@ -501,7 +503,7 @@ func (s *Store) documentsForCandidates(ctx context.Context, candidates []vectorC
 		var item documentCandidate
 		var pathJSON string
 		var scope string
-		if err := rows.Scan(&item.documentID, &item.textID, &item.entryID, &item.headword, &scope, &item.english, &item.chinese, &item.location.Section, &item.location.Part, &item.location.OwnerID, &pathJSON, &item.weight); err != nil {
+		if err := rows.Scan(&item.documentID, &item.textID, &item.entryID, &item.headword, &scope, &item.english, &item.chinese, &item.candidateText, &item.definitionText, &item.location.Section, &item.location.Part, &item.location.OwnerID, &pathJSON, &item.weight); err != nil {
 			return nil, err
 		}
 		if scopeIndex(Scope(scope)) < 0 {
@@ -553,7 +555,7 @@ func groupAndPaginate(candidates []documentCandidate, offset, limit int) Page {
 		if len(group.Matches) == maxMatches {
 			continue
 		}
-		group.Matches = append(group.Matches, Match{Scope: candidate.scope, English: candidate.english, Chinese: candidate.chinese, Location: candidate.location, Score: score(candidate.dot)})
+		group.Matches = append(group.Matches, Match{Scope: candidate.scope, English: candidate.english, Chinese: candidate.chinese, CandidateText: candidate.candidateText, DefinitionText: candidate.definitionText, Location: candidate.location, Score: score(candidate.dot)})
 	}
 	if offset >= len(groups) {
 		return Page{Groups: []Group{}}

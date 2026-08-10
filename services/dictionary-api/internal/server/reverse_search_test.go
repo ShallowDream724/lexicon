@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"dictionary-api/internal/importer"
@@ -28,7 +29,8 @@ func TestChineseReverseSearchReturnsGroupedEvidenceWithoutChangingEnglishSearch(
 	}
 	var result struct {
 		Items []struct {
-			ID      string `json:"id"`
+			ID            string   `json:"id"`
+			HeadwordForms []string `json:"headwordForms"`
 			Matches []struct {
 				Scope       string                 `json:"scope"`
 				EnglishText string                 `json:"englishText"`
@@ -43,12 +45,37 @@ func TestChineseReverseSearchReturnsGroupedEvidenceWithoutChangingEnglishSearch(
 	if len(result.Items) != 1 || result.Items[0].ID != "exact" || len(result.Items[0].Matches) != 1 {
 		t.Fatalf("unexpected reverse-search result: %#v", result.Items)
 	}
+	if !reflect.DeepEqual(result.Items[0].HeadwordForms, []string{"alphas"}) {
+		t.Fatalf("headword forms = %#v", result.Items[0].HeadwordForms)
+	}
 	match := result.Items[0].Matches[0]
 	if match.Scope != "sense" || match.EnglishText != "exact definition" || match.ChineseText != "精确释义" || match.Location.OwnerID != "sense-exact" {
 		t.Fatalf("unexpected search evidence: %#v", match)
 	}
 	if got := searchIDs(t, get(t, service, "/api/v1/search?q=alpha&limit=3")); len(got) != 3 || got[0] != "exact" {
 		t.Fatalf("English search changed: %#v", got)
+	}
+}
+
+func TestChineseReverseSearchReturnsStructuredPhraseEvidence(t *testing.T) {
+	service := newFixtureServiceWithReverseSearch(t)
+	response := get(t, service, "/api/v1/search?q=%E5%8F%A6%E4%B8%80%E4%B8%AA%E9%87%8A%E4%B9%89&limit=10")
+	var result struct {
+		Items []struct {
+			Matches []struct {
+				Scope          string `json:"scope"`
+				CandidateText  string `json:"candidateText"`
+				DefinitionText string `json:"definitionText"`
+				Part           string `json:"part"`
+			} `json:"matches"`
+		} `json:"items"`
+	}
+	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &result) != nil || len(result.Items) != 1 || len(result.Items[0].Matches) != 1 {
+		t.Fatalf("structured phrase response: %d %s", response.Code, response.Body.String())
+	}
+	match := result.Items[0].Matches[0]
+	if match.Scope != "phrase" || match.CandidateText != "useful phrase" || match.DefinitionText != "a helpful expression" || match.Part != "verb" {
+		t.Fatalf("structured phrase evidence = %#v", match)
 	}
 }
 
@@ -207,9 +234,10 @@ func newFixtureServiceWithReverseSearchAndSemantic(t testing.TB, semantic server
 	}
 
 	documents := []reversesearch.SearchDocument{
-		{
-			DictionaryID: "fixture", EntryID: "exact", Scope: reversesearch.ScopeSense,
-			Headword: "alpha", EnglishText: "exact definition", ChineseText: "精确释义",
+			{
+				DictionaryID: "fixture", EntryID: "exact", Scope: reversesearch.ScopeSense,
+				Headword: "alpha", EnglishText: "exact definition", ChineseText: "精确释义",
+				HeadwordForms: []string{"alphas"},
 			Location: reversesearch.Location{Section: reversesearch.SectionDefinitions, Part: "noun", OwnerID: "sense-exact", Path: []string{"senses", "0"}}, Weight: 100,
 		},
 		{
@@ -224,8 +252,9 @@ func newFixtureServiceWithReverseSearchAndSemantic(t testing.TB, semantic server
 		},
 		{
 			DictionaryID: "fixture", EntryID: "one", Scope: reversesearch.ScopePhrase,
-			Headword: "Alpha able", EnglishText: "useful phrase", ChineseText: "另一个释义",
-			Location: reversesearch.Location{Section: reversesearch.SectionIdioms, OwnerID: "phrase-one", Path: []string{"idioms", "0"}}, Weight: 100,
+			Headword: "Alpha able", EnglishText: "useful phrase a helpful expression",
+			CandidateText: "useful phrase", DefinitionText: "a helpful expression", ChineseText: "另一个释义",
+			Location: reversesearch.Location{Section: reversesearch.SectionIdioms, Part: "verb", OwnerID: "phrase-one", Path: []string{"idioms", "0"}}, Weight: 100,
 		},
 	}
 	var projection bytes.Buffer

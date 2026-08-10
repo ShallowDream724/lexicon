@@ -17,6 +17,8 @@
     "semantic-search:build": "python tools/semantic-search/build.py --output-dir work/semantic-search --sidecar data/semantic-search.db --quality-file tools/semantic-search/quality/default.json --quality-file tools/semantic-search/quality/extended.json",
     "semantic-search:build:custom": "python tools/semantic-search/build.py",
     "semantic-search:test": "python -m unittest discover -s tools/semantic-search -p \"test_*.py\"",
+    "semantic-search:quality:validate": "python tools/semantic-search/quality-v3/build_dataset.py --check && python tools/semantic-search/quality-v3/validate_dataset.py && python tools/semantic-search/quality_eval.py validate --data tools/semantic-search/quality-v3/development.json --reverse-db data/reverse-search.db",
+    "semantic-search:quality:api": "python tools/semantic-search/quality_eval.py run --data tools/semantic-search/quality-v3/development.json --base-url http://127.0.0.1:8787 --reverse-db data/reverse-search.db --output work/semantic-search/quality-v3-development.json",
     "data:download": "node scripts/runtime-data.mjs download",
     "data:verify": "node scripts/runtime-data.mjs verify",
     "dictionary:benchmark": "go -C services/dictionary-api run ./cmd/dictionary-storage-benchmark",
@@ -51,7 +53,8 @@
     "serwist": "9.5.12",
     "sharp": "^0.35.3",
     "tsx": "^4.23.7",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "wink-lemmatizer": "^3.0.4"
   },
   "type": "module"
 }

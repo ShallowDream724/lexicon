@@ -45,6 +45,12 @@ func TestSemanticSearchOnlyRunsForEligibleHybridChineseQueries(t *testing.T) {
 	if response.Code != http.StatusOK || searcher.calls.Load() != 1 {
 		t.Fatalf("eligible hybrid search: status=%d calls=%d body=%s", response.Code, searcher.calls.Load(), response.Body.String())
 	}
+	var body struct {
+		SemanticStatus string `json:"semanticStatus"`
+	}
+	if json.Unmarshal(response.Body.Bytes(), &body) != nil || body.SemanticStatus != "applied" {
+		t.Fatalf("successful hybrid status = %#v", body)
+	}
 }
 
 func TestSemanticProviderFailureFallsBackToCompleteLexicalPage(t *testing.T) {
@@ -60,6 +66,30 @@ func TestSemanticProviderFailureFallsBackToCompleteLexicalPage(t *testing.T) {
 	}
 	if searcher.calls.Load() != 1 {
 		t.Fatalf("provider calls = %d, want 1", searcher.calls.Load())
+	}
+	var body struct {
+		SemanticStatus string `json:"semanticStatus"`
+	}
+	if json.Unmarshal(hybrid.Body.Bytes(), &body) != nil || body.SemanticStatus != "degraded" {
+		t.Fatalf("fallback status = %#v", body)
+	}
+}
+
+func TestMissingSemanticRuntimeReportsLexicalFallback(t *testing.T) {
+	service := newFixtureServiceWithReverseSearch(t)
+	lexical := get(t, service, "/api/v1/search?q=%E9%87%8A%E4%B9%89&limit=10")
+	hybrid := get(t, service, "/api/v1/search?q=%E9%87%8A%E4%B9%89&limit=10&mode=hybrid")
+	if lexical.Code != http.StatusOK || hybrid.Code != http.StatusOK {
+		t.Fatalf("lexical=%d hybrid=%d", lexical.Code, hybrid.Code)
+	}
+	if got, want := searchIDs(t, hybrid), searchIDs(t, lexical); !reflect.DeepEqual(got, want) {
+		t.Fatalf("missing semantic runtime changed lexical page: got=%v want=%v", got, want)
+	}
+	var body struct {
+		SemanticStatus string `json:"semanticStatus"`
+	}
+	if json.Unmarshal(hybrid.Body.Bytes(), &body) != nil || body.SemanticStatus != "degraded" {
+		t.Fatalf("missing runtime status = %#v", body)
 	}
 }
 

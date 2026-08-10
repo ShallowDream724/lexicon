@@ -83,7 +83,7 @@ func validateStore(db *sql.DB, expectedPrimarySHA256 string) error {
 			return fmt.Errorf("reverse-search metadata %q does not match", key)
 		}
 	}
-	for _, key := range []string{"source_version", "document_count", "segment_count"} {
+	for _, key := range []string{"source_version", "document_count", "segment_count", "form_count"} {
 		var value string
 		if err := db.QueryRow(`SELECT value FROM metadata WHERE key = ?`, key).Scan(&value); err != nil || strings.TrimSpace(value) == "" {
 			return fmt.Errorf("reverse-search metadata %q is missing or empty", key)
@@ -109,6 +109,18 @@ func validateStore(db *sql.DB, expectedPrimarySHA256 string) error {
 	if err := db.QueryRow(`SELECT value FROM metadata WHERE key = 'segment_count'`).Scan(&storedSegmentCount); err != nil || storedSegmentCount != fmt.Sprintf("%d", segmentCount) {
 		return errors.New("reverse-search exact-segment count metadata is invalid")
 	}
+	var formTableSQL string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'entry_headword_forms'`).Scan(&formTableSQL); err != nil || !strings.Contains(strings.ToUpper(formTableSQL), "WITHOUT ROWID") {
+		return errors.New("reverse-search headword-form table is missing or invalid")
+	}
+	var formCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM entry_headword_forms`).Scan(&formCount); err != nil {
+		return errors.New("reverse-search headword-form table is unreadable")
+	}
+	var storedFormCount string
+	if err := db.QueryRow(`SELECT value FROM metadata WHERE key = 'form_count'`).Scan(&storedFormCount); err != nil || storedFormCount != fmt.Sprintf("%d", formCount) {
+		return errors.New("reverse-search headword-form count metadata is invalid")
+	}
 	return nil
 }
 
@@ -122,6 +134,59 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) Available() bool { return s != nil && s.db != nil }
+
+// HeadwordForms returns normalized forms for at most one reverse-search result window.
+func (s *Store) HeadwordForms(ctx context.Context, entryIDs []string) (map[string][]string, error) {
+	formsByEntry := make(map[string][]string)
+	if len(entryIDs) == 0 {
+		return formsByEntry, nil
+	}
+	if s == nil || s.db == nil {
+		return formsByEntry, errors.New("reverse-search store is unavailable")
+	}
+
+	uniqueIDs := make([]string, 0, len(entryIDs))
+	seen := make(map[string]struct{}, len(entryIDs))
+	for _, entryID := range entryIDs {
+		if !validLimited(entryID, maxIDBytes) {
+			return formsByEntry, errors.New("headword-form entry id is invalid or oversized")
+		}
+		if _, exists := seen[entryID]; exists {
+			continue
+		}
+		seen[entryID] = struct{}{}
+		uniqueIDs = append(uniqueIDs, entryID)
+		if len(uniqueIDs) > maxResults {
+			return formsByEntry, fmt.Errorf("headword-form lookup exceeds %d unique entries", maxResults)
+		}
+	}
+
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(uniqueIDs)), ",")
+	arguments := make([]any, len(uniqueIDs))
+	for index, entryID := range uniqueIDs {
+		arguments[index] = entryID
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT entry_id, form
+		FROM entry_headword_forms
+		WHERE entry_id IN (`+placeholders+`)
+		ORDER BY entry_id, form`, arguments...)
+	if err != nil {
+		return formsByEntry, fmt.Errorf("query headword forms: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var entryID, form string
+		if err := rows.Scan(&entryID, &form); err != nil {
+			return formsByEntry, fmt.Errorf("scan headword forms: %w", err)
+		}
+		formsByEntry[entryID] = append(formsByEntry[entryID], form)
+	}
+	if err := rows.Err(); err != nil {
+		return formsByEntry, fmt.Errorf("read headword forms: %w", err)
+	}
+	return formsByEntry, nil
+}
 
 func (s *Store) Search(ctx context.Context, query string, options Options) ([]Group, error) {
 	options.Offset = 0
@@ -234,7 +299,7 @@ func (s *Store) searchCandidates(
 	for _, partition := range partitions {
 		predicate, predicateArguments := candidatePredicate(partition, asciiTerms)
 		statement := fmt.Sprintf(`
-						SELECT d.id, d.entry_id, d.headword, d.scope, d.english_text, d.chinese_text,
+							SELECT d.id, d.entry_id, d.headword, d.scope, d.english_text, d.candidate_text, d.definition_text, d.chinese_text,
 						       d.section, d.part, d.owner_id, d.path_json, d.weight, bm25(documents_fts)
 				FROM documents_fts
 				JOIN documents d ON d.id = documents_fts.rowid
@@ -271,7 +336,7 @@ func (s *Store) searchExactCandidates(
 	for _, partition := range partitions {
 		predicate, predicateArguments := candidatePredicate(partition, asciiTerms)
 		statement := fmt.Sprintf(`
-					SELECT d.id, d.entry_id, d.headword, d.scope, d.english_text, d.chinese_text,
+						SELECT d.id, d.entry_id, d.headword, d.scope, d.english_text, d.candidate_text, d.definition_text, d.chinese_text,
 					       d.section, d.part, d.owner_id, d.path_json, d.weight, 0.0
 					FROM exact_segments x
 					JOIN documents d ON d.id = x.document_id
@@ -363,7 +428,7 @@ func scanCandidates(
 		}
 		var c candidate
 		var pathJSON string
-		if err := rows.Scan(&c.id, &c.document.EntryID, &c.document.Headword, &c.document.Scope, &c.document.EnglishText, &c.document.ChineseText, &c.document.Location.Section, &c.document.Location.Part, &c.document.Location.OwnerID, &pathJSON, &c.document.Weight, &c.bm25); err != nil {
+		if err := rows.Scan(&c.id, &c.document.EntryID, &c.document.Headword, &c.document.Scope, &c.document.EnglishText, &c.document.CandidateText, &c.document.DefinitionText, &c.document.ChineseText, &c.document.Location.Section, &c.document.Location.Part, &c.document.Location.OwnerID, &pathJSON, &c.document.Weight, &c.bm25); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(pathJSON), &c.document.Location.Path); err != nil {
@@ -670,14 +735,36 @@ func groupCandidates(query []rune, candidates []candidate, limit int) []Group {
 			}
 			index = len(groups)
 			byEntry[candidate.document.EntryID] = index
-			groups = append(groups, Group{EntryID: candidate.document.EntryID, Headword: candidate.document.Headword, Matches: make([]Match, 0, maxMatches)})
+			groups = append(groups, Group{
+				EntryID:   candidate.document.EntryID,
+				Headword:  candidate.document.Headword,
+				Relevance: candidateRelevance(candidate),
+				Matches:   make([]Match, 0, maxMatches),
+			})
 		}
 		if len(groups[index].Matches) == maxMatches {
 			continue
 		}
-		groups[index].Matches = append(groups[index].Matches, Match{Scope: candidate.document.Scope, English: candidate.document.EnglishText, Chinese: candidate.document.ChineseText, Location: candidate.document.Location})
+		groups[index].Matches = append(groups[index].Matches, Match{
+			Scope:          candidate.document.Scope,
+			English:        candidate.document.EnglishText,
+			CandidateText:  candidate.document.CandidateText,
+			DefinitionText: candidate.document.DefinitionText,
+			Chinese:        candidate.document.ChineseText,
+			Location:       candidate.document.Location,
+			Relevance:      candidateRelevance(candidate),
+		})
 	}
 	return groups
+}
+
+func candidateRelevance(candidate candidate) Relevance {
+	return Relevance{
+		Tier:           candidate.matchTier,
+		Score:          candidate.score,
+		Corroboration:  candidate.corroboration,
+		DocumentWeight: candidate.document.Weight,
+	}
 }
 
 func compareCandidateRelevance(left, right candidate) int {

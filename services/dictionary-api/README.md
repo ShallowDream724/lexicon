@@ -107,6 +107,11 @@ DICTIONARY_SEMANTIC_MODEL
 DICTIONARY_SEMANTIC_MODEL_KEY
 DICTIONARY_SEMANTIC_TIMEOUT
 DICTIONARY_SEMANTIC_CACHE
+DICTIONARY_SEMANTIC_PERSISTENT_CACHE
+DICTIONARY_SEMANTIC_PERSISTENT_CACHE_PATH
+DICTIONARY_SEMANTIC_PERSISTENT_CACHE_KEY
+DICTIONARY_SEMANTIC_PERSISTENT_CACHE_MAX_ENTRIES
+DICTIONARY_SEMANTIC_PERSISTENT_CACHE_TTL
 DICTIONARY_AUDIO_ZIP_PATH
 DICTIONARY_EXAMPLE_AUDIO_BASE_URL
 DICTIONARY_ILLUSTRATION_BASE_URL
@@ -131,7 +136,8 @@ GET /api/v1/media/illustration?key=illustration-key&variant=thumbnail
 ```
 
 Each search item contains `kind`, `id`, `headword`, `partsOfSpeech`, and
-`translationPreview`. Chinese reverse-search items also contain up to three `matches`
+`translationPreview`. Dictionary results may include bounded `headwordForms` for exact
+evidence highlighting. Chinese reverse-search items also contain up to eight `matches`
 with semantic scope, English and Chinese evidence text, and a canonical location used by
 the browser for part-of-speech switching and exact navigation. Primary dictionary items use `kind: "dictionary"`; terms found
 only in an enabled enhancement use their resource kind. Chinese responses include
@@ -202,16 +208,18 @@ retrieval. Complete matches rank match quality, protected candidate pool, semant
 (sense, then phrase or form, usage, and example), distinct corroborating Chinese evidence,
 and bounded score. Partial matches rank textual relevance before semantic scope; query-leading
 coverage improves suffix and noise cases. Duplicate identical Chinese evidence does not
-increase corroboration. The API returns at most 512 entry groups with three evidence records
+increase corroboration. The API returns at most 512 entry groups with eight evidence records
 per entry. Query length is capped at 200 characters in the HTTP handler and the store. The
-sidecar metadata validates schema, projection, normalizer, document and segment counts, and
-primary database fingerprint before use.
+sidecar metadata validates schema, projection, normalizer, document, segment, and headword-form
+counts, and the primary database fingerprint before use.
 
-Schema 3 stores `documents`, `exact_segments`, and the contentless FTS index without the
-unused entry-order secondary index. Projection 1.2 indexes structured rich-text segments
-once, preserves distinct semantic owners, and separates bilingual token streams. A shared
-OpenCC converter normalizes traditional queries and indexed Chinese while the request path
-derives all query views from one normalized value.
+Schema 5 stores `documents`, `exact_segments`, a normalized `entry_headword_forms` relation,
+and the contentless FTS index without an unused entry-order secondary index. Projection 1.4
+indexes structured rich-text segments once, preserves distinct semantic owners, separates
+bilingual token streams, and resolves authoritative irregular plus bounded regular headword
+forms. One batch query enriches a result window; the browser does not infer morphology. A
+shared OpenCC converter normalizes traditional queries and indexed Chinese while the request
+path derives all query views from one normalized value.
 
 When the reverse-search sidecar is not configured, Chinese search returns
 `503 reverse_search_unavailable`. English search, entries, enhancements, and configured media
@@ -223,7 +231,16 @@ exact primary and reverse-search fingerprints, model key, query contract, source
 and corpus fingerprint. The runtime loads the vector matrix once, scans it with at most four
 workers, and bounds evidence projection to 4,096 text candidates. Separate bounded LRUs
 cache query vectors and complete pages; identical concurrent queries share one embedding
-request. The released 178,382-vector matrix occupies about 174 MiB in memory.
+request. Four provider requests may run concurrently and no more than 64 unique embedding
+flights are admitted; excess requests return through the lexical fallback path. The released
+178,382-vector matrix occupies about 174 MiB in memory.
+
+An optional SQLite cache retains query vectors across restarts. Its primary key is an
+HMAC-SHA-256 over the normalized query and complete embedding contract; query plaintext is
+never persisted. The cache is best-effort, uses WAL, expires rows by TTL, and evicts the
+least recently accessed rows above its fixed capacity. The reference 10,000-entry,
+1,024-dimension configuration occupies roughly 42-50 MiB. A path and private key of at least
+32 bytes are both required; incomplete or invalid cache settings disable only persistence.
 
 Semantic retrieval remains disabled unless the sidecar and all provider settings are present.
 The provider model name may vary across equivalent routes, while the model key and dimensions
