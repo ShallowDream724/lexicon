@@ -14,7 +14,14 @@ from pathlib import Path
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 
-from quality_eval import HTTPSearchClient, evaluate_http, load_cases, validate_against_reverse, validate_cases
+from quality_eval import (
+    HTTPSearchClient,
+    evaluate_http,
+    load_cases,
+    validate_against_reverse,
+    validate_cases,
+    validate_query_disjoint,
+)
 
 
 def target(entry_id: str, headword: str, grade: int = 3) -> dict[str, object]:
@@ -125,6 +132,18 @@ class QualityEvaluationTest(unittest.TestCase):
         grouped_holdout["split"] = "holdout"
         with self.assertRaisesRegex(ValueError, "leakageGroup cannot cross"):
             validate_cases([grouped, grouped_holdout])
+
+    def test_external_reference_corpora_reject_normalized_query_leakage(self) -> None:
+        candidate = case("fresh", [target("a", "alpha")])
+        candidate["query"] = "Wi-Fi 连不上！"
+        with tempfile.TemporaryDirectory() as directory:
+            reference = Path(directory) / "old.json"
+            reference.write_text(
+                json.dumps([{"query": "ｗｉ－ｆｉ连不上"}], ensure_ascii=False),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "query leakage"):
+                validate_query_disjoint([candidate], [reference])
 
     def test_http_rejects_unknown_semantic_status(self) -> None:
         SearchHandler.payload = {"semanticStatus": "mystery", "items": []}

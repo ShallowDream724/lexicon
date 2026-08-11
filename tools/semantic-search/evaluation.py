@@ -49,10 +49,11 @@ def score_matrices(matrix: np.memmap, queries: np.ndarray, block_size: int = 819
     return float_scores, int8_scores
 
 
-def rank(corpus: Corpus, scores: np.ndarray, expected: set[str], top_k: int) -> int | None:
+def rank_targets(corpus: Corpus, scores: np.ndarray, expected: set[str], top_k: int) -> dict[str, int]:
     # Stable sort makes score ties deterministic by text ID, matching sidecar order.
     order = np.argsort(-scores, kind="stable")
     seen: set[str] = set()
+    found: dict[str, int] = {}
     position = 0
     for index in order:
         for document in corpus.documents[corpus.texts[int(index)]]:
@@ -60,29 +61,66 @@ def rank(corpus: Corpus, scores: np.ndarray, expected: set[str], top_k: int) -> 
                 continue
             seen.add(document.entry_id)
             position += 1
-            if document.headword.casefold() in expected:
-                return position
+            headword = document.headword.casefold()
+            if headword in expected and headword not in found:
+                found[headword] = position
             if position >= top_k:
-                return None
-    return None
+                return found
+    return found
 
 
-def summarize(ranks: list[int | None], top_k: int) -> dict[str, float | int]:
+def summarize(
+    ranks: list[dict[str, int]],
+    expected: list[set[str]],
+    top_k: int,
+) -> dict[str, object]:
     count = len(ranks) or 1
-    found = [rank for rank in ranks if rank is not None]
-    return {"queries": len(ranks), "hitAt1": sum(rank == 1 for rank in found) / count, "recallAtK": len(found) / count, "meanReciprocalRank": sum(1.0 / rank for rank in found) / count, "topK": top_k}
+    cutoffs = tuple(sorted({cutoff for cutoff in (1, 3, 8, top_k) if cutoff <= top_k}))
+    first_ranks = [min(row.values()) if row else None for row in ranks]
+    hit_at = {
+        str(cutoff): sum(rank is not None and rank <= cutoff for rank in first_ranks) / count
+        for cutoff in cutoffs
+    }
+    labeled_target_recall_at = {
+        str(cutoff): sum(
+            sum(rank <= cutoff for rank in row.values()) / len(targets)
+            for row, targets in zip(ranks, expected, strict=True)
+        ) / count
+        for cutoff in cutoffs
+    }
+    return {
+        "queries": len(ranks),
+        "cutoffs": list(cutoffs),
+        "hitAtK": hit_at,
+        "labeledTargetRecallAtK": labeled_target_recall_at,
+        "meanReciprocalRank": sum(1.0 / rank for rank in first_ranks if rank is not None) / count,
+    }
 
 
 def evaluate(corpus: Corpus, matrix: np.memmap, query_embed: Callable[[list[str]], np.ndarray], cases: list[dict[str, object]], query_template: str, top_k: int) -> dict[str, object]:
     queries = [query_template.replace("{query}", str(item["query"])) for item in cases]
     query_vectors = np.asarray(query_embed(queries), dtype=np.float32)
     float_scores, int8_scores = score_matrices(matrix, query_vectors)
-    float_ranks, int8_ranks, rows = [], [], []
+    float_ranks: list[dict[str, int]] = []
+    int8_ranks: list[dict[str, int]] = []
+    expected_rows: list[set[str]] = []
+    rows = []
     for index, item in enumerate(cases):
         expected = {str(value).casefold() for value in item["mustHit"]}
-        float_rank = rank(corpus, float_scores[:, index], expected, top_k)
-        int8_rank = rank(corpus, int8_scores[:, index], expected, top_k)
-        float_ranks.append(float_rank)
-        int8_ranks.append(int8_rank)
-        rows.append({"query": item["query"], "mustHit": item["mustHit"], "float16Rank": float_rank, "runtimeInt8Rank": int8_rank})
-    return {"queryTemplate": query_template, "float16": summarize(float_ranks, top_k), "runtimeInt8": summarize(int8_ranks, top_k), "rows": rows}
+        float_target_ranks = rank_targets(corpus, float_scores[:, index], expected, top_k)
+        int8_target_ranks = rank_targets(corpus, int8_scores[:, index], expected, top_k)
+        float_ranks.append(float_target_ranks)
+        int8_ranks.append(int8_target_ranks)
+        expected_rows.append(expected)
+        rows.append({
+            "query": item["query"],
+            "mustHit": item["mustHit"],
+            "float16TargetRanks": float_target_ranks,
+            "runtimeInt8TargetRanks": int8_target_ranks,
+        })
+    return {
+        "queryTemplate": query_template,
+        "float16": summarize(float_ranks, expected_rows, top_k),
+        "runtimeInt8": summarize(int8_ranks, expected_rows, top_k),
+        "rows": rows,
+    }

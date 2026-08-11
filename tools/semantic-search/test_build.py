@@ -19,7 +19,7 @@ sys.path.insert(0, str(HERE))
 
 import build
 from corpus import SCOPE_BITS, load_corpus
-from evaluation import evaluate, load_quality, score_matrices
+from evaluation import evaluate, load_quality, score_matrices, summarize
 from provider import OpenAIEmbeddingProvider, ProviderError, UsageLedger
 from sidecar import quantize_block, write_sidecar
 
@@ -144,11 +144,34 @@ class SemanticBuildTest(unittest.TestCase):
         np.testing.assert_allclose(float_scores, np.asarray(matrix, dtype=np.float32) @ queries.T)
         np.testing.assert_array_equal(int8_scores, quantize_block(matrix).astype(np.int32) @ quantize_block(queries).astype(np.int32).T)
         result = evaluate(corpus, matrix, lambda _: queries[:1], [{"query": "first", "mustHit": ["engrossing", "alpha"]}], "Q: {query}", 4)
-        self.assertEqual(result["float16"]["hitAt1"], 1.0); self.assertEqual(result["runtimeInt8"]["hitAt1"], 1.0)
+        self.assertEqual(result["float16"]["hitAtK"]["1"], 1.0)
+        self.assertEqual(result["runtimeInt8"]["hitAtK"]["1"], 1.0)
+        self.assertEqual(result["float16"]["labeledTargetRecallAtK"]["1"], 0.5)
+        self.assertEqual(result["rows"][0]["float16TargetRanks"], {"alpha": 1})
         self.assertEqual(quantize_block(np.asarray([[0.5, -0.5]], dtype=np.float32)).tolist(), [[64, -64]])
         first = build.build_fingerprint(corpus, self.primary, "key", "model", 2, "Q: {query}", {}, {})
         second = build.build_fingerprint(corpus, self.primary, "key", "model", 2, "Q: {query}", {"input_type": "document"}, {})
         self.assertNotEqual(first, second)
+
+    def test_quality_summary_separates_hit_rate_from_labeled_target_recall(self) -> None:
+        summary = summarize(
+            [
+                {"alpha": 1, "beta": 3},
+                {"gamma": 2},
+                {},
+            ],
+            [
+                {"alpha", "beta", "missing"},
+                {"gamma"},
+                {"delta"},
+            ],
+            8,
+        )
+        self.assertEqual(summary["hitAtK"], {"1": 1 / 3, "3": 2 / 3, "8": 2 / 3})
+        self.assertAlmostEqual(summary["labeledTargetRecallAtK"]["1"], 1 / 9)
+        self.assertAlmostEqual(summary["labeledTargetRecallAtK"]["3"], 5 / 9)
+        self.assertAlmostEqual(summary["labeledTargetRecallAtK"]["8"], 5 / 9)
+        self.assertAlmostEqual(summary["meanReciprocalRank"], 0.5)
 
     def test_request_reservation_uses_utf8_input_size(self) -> None:
         templated = "Instruct: retrieve a dictionary answer\nQuery: " + "中文描述" * 10

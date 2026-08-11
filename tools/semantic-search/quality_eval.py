@@ -186,6 +186,30 @@ def load_cases(paths: Iterable[Path]) -> list[dict[str, Any]]:
     return validate_cases(merged, "combined quality data")
 
 
+def validate_query_disjoint(
+    cases: Iterable[dict[str, Any]],
+    reference_paths: Iterable[Path],
+) -> None:
+    """Reject exact normalized-query leakage from any earlier evaluation corpus."""
+    current = {_query_signature(case["query"]): case["query"] for case in cases}
+    collisions: list[str] = []
+    for path in reference_paths:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        _require(isinstance(data, list), f"disjoint reference must be an array: {path}")
+        for index, row in enumerate(data):
+            _require(
+                isinstance(row, dict) and isinstance(row.get("query"), str) and row["query"].strip(),
+                f"{path}[{index}]: disjoint reference needs a non-empty query",
+            )
+            signature = _query_signature(row["query"])
+            if signature in current:
+                collisions.append(
+                    f"{current[signature]!r} overlaps {row['query']!r} in {path}",
+                )
+    if collisions:
+        raise ValueError("query leakage:\n" + "\n".join(sorted(set(collisions))))
+
+
 def validate_against_reverse(cases: Iterable[dict[str, Any]], reverse_db: Path) -> None:
     """Ensure every labelled target is anchored in its requested search scope."""
     uri = reverse_db.resolve().as_uri() + "?mode=ro"
@@ -569,6 +593,7 @@ def main() -> None:
     validate = commands.add_parser("validate", help="validate quality data and optional pinned sidecar evidence")
     validate.add_argument("--data", type=Path, action="append", required=True)
     validate.add_argument("--reverse-db", type=Path)
+    validate.add_argument("--disjoint-from", type=Path, action="append", default=[])
     run = commands.add_parser("run", help="evaluate an HTTP reverse-search endpoint")
     run.add_argument("--data", type=Path, action="append", required=True)
     run.add_argument("--base-url", required=True)
@@ -582,9 +607,11 @@ def main() -> None:
     run.add_argument("--model-metadata-json", help="opaque model metadata JSON, without provider-specific assumptions")
     run.add_argument("--asset", action="append", default=[], metavar="NAME=PATH", help="hash a runtime asset into the report")
     run.add_argument("--reverse-db", type=Path)
+    run.add_argument("--disjoint-from", type=Path, action="append", default=[])
     run.add_argument("--output", type=Path)
     args = parser.parse_args()
     cases = load_cases(args.data)
+    validate_query_disjoint(cases, args.disjoint_from)
     if args.reverse_db:
         validate_against_reverse(cases, args.reverse_db)
     if args.command == "validate":
