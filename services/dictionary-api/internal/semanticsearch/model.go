@@ -4,12 +4,14 @@ package semanticsearch
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 )
 
 const (
-	SchemaVersion     = "2"
-	ProjectionVersion = "1.1"
+	SchemaVersion     = "5"
+	ProjectionVersion = "2.2"
+	EvidenceScoreBand = float32(0.005)
 
 	maxMatches           = 8
 	maxDimensions        = 4096
@@ -23,14 +25,71 @@ const (
 type Scope string
 
 const (
-	ScopeSense   Scope = "sense"
-	ScopePhrase  Scope = "phrase"
-	ScopeForm    Scope = "form"
-	ScopeUsage   Scope = "usage"
-	ScopeExample Scope = "example"
+	ScopeSense    Scope = "sense"
+	ScopePhrase   Scope = "phrase"
+	ScopeForm     Scope = "form"
+	ScopeExample  Scope = "example"
+	ScopeResource Scope = "resource"
 )
 
-var orderedScopes = [...]Scope{ScopeSense, ScopePhrase, ScopeForm, ScopeUsage, ScopeExample}
+var orderedScopes = [...]Scope{ScopeSense, ScopePhrase, ScopeForm, ScopeExample, ScopeResource}
+
+// SemanticRole describes how a SearchDocument contributes to a semantic answer.
+// Its ordering is intentionally shared with the hybrid ranking policy.
+type SemanticRole string
+
+const (
+	SemanticRoleDefinition SemanticRole = "definition"
+	SemanticRoleQualifier  SemanticRole = "qualifier"
+	SemanticRoleGuidance   SemanticRole = "guidance"
+	SemanticRoleExpression SemanticRole = "expression"
+	SemanticRoleExample    SemanticRole = "example"
+	SemanticRoleHeading    SemanticRole = "heading"
+	SemanticRoleContext    SemanticRole = "context"
+)
+
+func (value SemanticRole) RetrievalPriority() int {
+	switch value {
+	case SemanticRoleDefinition, SemanticRoleGuidance, SemanticRoleExpression, SemanticRoleExample:
+		return 2
+	case SemanticRoleQualifier, SemanticRoleContext:
+		return 1
+	case SemanticRoleHeading:
+		return 0
+	default:
+		return -1
+	}
+}
+
+func (value SemanticRole) EvidencePriority() int {
+	switch value {
+	case SemanticRoleDefinition, SemanticRoleExpression:
+		return 3
+	case SemanticRoleGuidance, SemanticRoleExample:
+		return 2
+	case SemanticRoleQualifier, SemanticRoleContext:
+		return 1
+	case SemanticRoleHeading:
+		return 0
+	default:
+		return -1
+	}
+}
+
+type ResourceCategory string
+
+func (value ResourceCategory) Valid() bool {
+	switch value {
+	case "", "grammar", "express-yourself", "vocabulary-building", "synonyms", "which-word", "language-bank", "collocations", "homophones", "british-american", "more-about", "wordfinder", "help", "origin", "note", "other":
+		return true
+	default:
+		return false
+	}
+}
+
+func EvidenceBand(score float32) int {
+	return int(math.Round(float64(score) / float64(EvidenceScoreBand)))
+}
 
 // ScopeFilter is a validated bit set that maps to the sidecar's scope_mask.
 type ScopeFilter struct{ mask uint32 }
@@ -109,13 +168,15 @@ type Location struct {
 }
 
 type Match struct {
-	Scope          Scope
-	English        string
-	Chinese        string
-	CandidateText  string
-	DefinitionText string
-	Location       Location
-	Score          float32
+	Scope            Scope
+	SemanticRole     SemanticRole
+	ResourceCategory ResourceCategory
+	English          string
+	Chinese          string
+	CandidateText    string
+	DefinitionText   string
+	Location         Location
+	Score            float32
 }
 
 type Group struct {

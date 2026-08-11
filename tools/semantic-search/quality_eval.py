@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import math
@@ -150,6 +151,13 @@ def validate_cases(value: Any, source: str = "quality data") -> list[dict[str, A
         relevance = [_validate_target(target, label, True) for target in case["relevance"]]
         _require(all(target["grade"] >= 1 for target in relevance), f"{label}: relevance grades must be from 1 to 3")
         _require(not any(_same_target_identity(left, right) for index, left in enumerate(relevance) for right in relevance[index + 1:]), f"{label}: duplicate relevance target")
+        preferred = [target for target in relevance if "preferredRank" in target]
+        for target in preferred:
+            _require(isinstance(target["preferredRank"], int) and 1 <= target["preferredRank"] <= 3, f"{label}: preferredRank must be an integer from 1 to 3")
+            _require(target["grade"] >= 2, f"{label}: preferred targets must have grade 2 or 3")
+        preferred_ranks = sorted(target["preferredRank"] for target in preferred)
+        preferred_tiers = sorted(set(preferred_ranks))
+        _require(not preferred or preferred_tiers == list(range(1, preferred_tiers[-1] + 1)), f"{label}: preferredRank tiers must form a contiguous prefix from 1")
         positive = any(target["grade"] >= 2 for target in relevance)
         expectation = case.get("expectation", "retrieval")
         _require(expectation in ("retrieval", "gap"), f"{label}: expectation must be retrieval or gap")
@@ -174,6 +182,8 @@ def validate_cases(value: Any, source: str = "quality data") -> list[dict[str, A
             }, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
             _require(evidence_key not in evidence_keys, f"{label}: duplicate evidence expectation")
             evidence_keys.add(evidence_key)
+        for target in preferred:
+            _require("evidence" in target or any(_same_target_identity(target, expectation) for expectation in evidence_expectations), f"{label}: every preferred target needs an evidence expectation")
         cases.append(case)
     return cases
 
@@ -184,6 +194,70 @@ def load_cases(paths: Iterable[Path]) -> list[dict[str, Any]]:
         data = json.loads(path.read_text(encoding="utf-8"))
         merged.extend(validate_cases(data, str(path)))
     return validate_cases(merged, "combined quality data")
+
+
+def apply_preference_overlays(
+    cases: Iterable[dict[str, Any]],
+    paths: Iterable[Path],
+) -> list[dict[str, Any]]:
+    """Join independently reviewed preference tiers onto immutable quality cases."""
+    merged = copy.deepcopy(list(cases))
+    by_id = {case["id"]: case for case in merged}
+    seen_cases: set[str] = set()
+    for path in paths:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        _require(isinstance(data, list), f"{path}: preference root must be an array")
+        for index, overlay in enumerate(data):
+            source = f"{path}[{index}]"
+            _require(isinstance(overlay, dict), f"{source}: preference case must be an object")
+            case_id = overlay.get("id")
+            _require(isinstance(case_id, str) and case_id, f"{source}: preference case needs a non-empty id")
+            _require(case_id in by_id, f"{source}: unknown quality case {case_id}")
+            _require(case_id not in seen_cases, f"{source}: duplicate preference case {case_id}")
+            seen_cases.add(case_id)
+            preferred = overlay.get("preferred")
+            _require(isinstance(preferred, list) and preferred, f"{source}: preferred must be a non-empty array")
+            case = by_id[case_id]
+            _require(
+                not any("preferredRank" in target for target in case["relevance"]),
+                f"{source}: quality case already contains preference ranks",
+            )
+            seen_targets: list[dict[str, Any]] = []
+            for preferred_index, raw_target in enumerate(preferred):
+                target_source = f"{source}.preferred[{preferred_index}]"
+                target = _validate_target(raw_target, target_source, True)
+                _require(
+                    isinstance(target.get("preferredRank"), int),
+                    f"{target_source}: preferredRank must be an integer",
+                )
+                _require(
+                    not any(_same_target_identity(target, previous) for previous in seen_targets),
+                    f"{target_source}: duplicate preferred target",
+                )
+                seen_targets.append(target)
+                matches = [item for item in case["relevance"] if _same_target_identity(item, target)]
+                _require(len(matches) == 1, f"{target_source}: target must match exactly one relevance item")
+                relevance = matches[0]
+                if target.get("entryId") and target.get("headword") and relevance.get("headword"):
+                    _require(
+                        _normalized_headword(target["headword"]) == _normalized_headword(relevance["headword"]),
+                        f"{target_source}: headword disagrees with the quality case",
+                    )
+                _require(target.get("grade") == relevance.get("grade"), f"{target_source}: grade disagrees with the quality case")
+                evidence = target.get("evidence")
+                _require(isinstance(evidence, dict) and evidence, f"{target_source}: preferred target needs exact evidence")
+                _require(
+                    any(
+                        _same_target_identity(target, expectation)
+                        and expectation.get("grade") == target.get("grade")
+                        and expectation.get("evidence") == evidence
+                        for expectation in case.get("evidenceExpectations", [])
+                    ),
+                    f"{target_source}: evidence is not an exact reviewed expectation",
+                )
+                relevance["preferredRank"] = target["preferredRank"]
+                relevance["evidence"] = copy.deepcopy(evidence)
+    return validate_cases(merged, "quality data with preference overlays")
 
 
 def validate_query_disjoint(
@@ -214,6 +288,7 @@ def validate_against_reverse(cases: Iterable[dict[str, Any]], reverse_db: Path) 
     """Ensure every labelled target is anchored in its requested search scope."""
     uri = reverse_db.resolve().as_uri() + "?mode=ro"
     db = sqlite3.connect(uri, uri=True)
+    issues: list[str] = []
     try:
         for case in cases:
             for target in (*case["relevance"], *case.get("forbidden", []), *case.get("evidenceExpectations", [])):
@@ -225,7 +300,9 @@ def validate_against_reverse(cases: Iterable[dict[str, Any]], reverse_db: Path) 
                     clauses.append("headword = ?"); values.append(target["headword"])
                 evidence = target.get("evidence", {})
                 target_scopes = [evidence["scope"]] if "scope" in evidence else case["scopes"]
-                _require(set(target_scopes).issubset(case["scopes"]), f"{case['id']}: target evidence scope is outside requested scopes")
+                if not set(target_scopes).issubset(case["scopes"]):
+                    issues.append(f"{case['id']}: target evidence scope is outside requested scopes")
+                    continue
                 placeholders = ",".join("?" for _ in target_scopes)
                 clauses.append(f"scope IN ({placeholders})"); values.extend(target_scopes)
                 location = evidence.get("location", {})
@@ -235,13 +312,23 @@ def validate_against_reverse(cases: Iterable[dict[str, Any]], reverse_db: Path) 
                 if "path" in location:
                     clauses.append("path_json = ?")
                     values.append(json.dumps(location["path"], ensure_ascii=False, separators=(",", ":")))
-                rows = db.execute("SELECT chinese_text, english_text FROM documents WHERE " + " AND ".join(clauses), values).fetchall()
+                rows = db.execute(
+                    "SELECT chinese_text, english_text, candidate_text, definition_text FROM documents WHERE "
+                    + " AND ".join(clauses),
+                    values,
+                ).fetchall()
                 if "contains" in evidence:
                     needle = _normalized_text(evidence["contains"])
-                    rows = [row for row in rows if needle in _normalized_text(row[0]) or needle in _normalized_text(row[1])]
-                _require(bool(rows), f"{case['id']}: labelled target is absent from requested scopes in {reverse_db.name}")
+                    rows = [row for row in rows if any(needle in _normalized_text(value) for value in row)]
+                if not rows:
+                    identity = target.get("entryId") or target.get("headword") or "unknown"
+                    issues.append(
+                        f"{case['id']} ({identity}): labelled target is absent from requested scopes in {reverse_db.name}",
+                    )
     finally:
         db.close()
+    if issues:
+        raise ValueError("reverse evidence validation failed:\n" + "\n".join(sorted(set(issues))))
 
 
 def file_metadata(path: Path) -> dict[str, Any]:
@@ -278,6 +365,86 @@ def _matches_target(item: dict[str, Any], target: dict[str, Any]) -> bool:
 
 def _item_grade(item: dict[str, Any], case: dict[str, Any]) -> int:
     return max((target["grade"] for target in case["relevance"] if _matches_identity(item, target)), default=0)
+
+
+def _preferred_metrics(
+    case: dict[str, Any],
+    ranked: list[dict[str, Any]],
+    evidence_expectations: list[dict[str, Any]],
+) -> dict[str, Any]:
+    preferred = sorted(
+        (target for target in case["relevance"] if "preferredRank" in target),
+        key=lambda target: (
+            target["preferredRank"],
+            str(target.get("entryId", "")),
+            _normalized_headword(target.get("headword", "")),
+        ),
+    )
+    if not preferred:
+        return {
+            "preferredCount": 0,
+            "preferredWidth": 0,
+            "canonicalEntryAt1": None,
+            "canonicalEntryAndEvidenceAt1": None,
+            "preferredPrefixSetAtAvailable": None,
+            "preferredPrefixOrderAtAvailable": None,
+            "preferredPrefixNdcgAtAvailable": None,
+            "preferredFirstEvidenceRate": None,
+            "firstScreenPassAtAvailable": None,
+            "preferredSetAt3": None,
+            "preferredOrderAt3": None,
+            "preferredNdcgAt3": None,
+            "preferredEvidenceAt1": None,
+            "firstScreenPassAt3": None,
+        }
+
+    width = min(3, len(preferred))
+    actual = ranked[:width]
+    canonical_entry = bool(actual and any(target["preferredRank"] == 1 and _matches_identity(actual[0], target) for target in preferred))
+    actual_targets = [next((target for target in preferred if _matches_identity(item, target)), None) for item in actual]
+    actual_tiers = [target["preferredRank"] if target else 0 for target in actual_targets]
+    ideal_tiers = sorted(target["preferredRank"] for target in preferred)[:width]
+    set_pass = len(actual) == width and sorted(actual_tiers) == ideal_tiers
+    order_pass = set_pass and actual_tiers == ideal_tiers
+
+    gains_by_rank = {target["preferredRank"]: 4 - target["preferredRank"] for target in preferred}
+    actual_gains = [
+        next((gains_by_rank[target["preferredRank"]] for target in preferred if _matches_identity(item, target)), 0)
+        for item in ranked[:3]
+    ]
+    ideal_gains = [4 - tier for tier in ideal_tiers]
+    dcg = sum((2**gain - 1) / math.log2(index + 2) for index, gain in enumerate(actual_gains))
+    idcg = sum((2**gain - 1) / math.log2(index + 2) for index, gain in enumerate(ideal_gains))
+
+    evidence_hits: list[bool] = []
+    for item, target in zip(actual, actual_targets):
+        expectations = [] if target is None else [expectation for expectation in evidence_expectations if _same_target_identity(target, expectation)]
+        if target is not None and not expectations and isinstance(target.get("evidence"), dict):
+            expectations = [target]
+        evidence_hits.append(bool(
+            target
+            and item.get("matches")
+            and any(_matches_evidence(item["matches"][0], expectation["evidence"]) for expectation in expectations)
+        ))
+    evidence_rate = sum(evidence_hits) / width
+    canonical_evidence = canonical_entry and bool(evidence_hits and evidence_hits[0])
+    return {
+        "preferredCount": len(preferred),
+        "preferredWidth": width,
+        "canonicalEntryAt1": float(canonical_entry),
+        "canonicalEntryAndEvidenceAt1": float(canonical_evidence),
+        "preferredPrefixSetAtAvailable": float(set_pass),
+        "preferredPrefixOrderAtAvailable": float(order_pass),
+        "preferredPrefixNdcgAtAvailable": dcg / idcg if idcg else 0.0,
+        "preferredFirstEvidenceRate": evidence_rate,
+        "firstScreenPassAtAvailable": float(order_pass and all(evidence_hits)),
+        # Compatibility aliases for reports produced during quality-v3.1 development.
+        "preferredSetAt3": float(set_pass),
+        "preferredOrderAt3": float(order_pass),
+        "preferredNdcgAt3": dcg / idcg if idcg else 0.0,
+        "preferredEvidenceAt1": evidence_rate,
+        "firstScreenPassAt3": float(order_pass and all(evidence_hits)) if width == 3 else None,
+    }
 
 
 def _percentile(values: list[float], percentile: float) -> float | None:
@@ -371,6 +538,45 @@ def _mean(values: Iterable[float]) -> float | None:
     return statistics.fmean(selected) if selected else None
 
 
+def _pass_summary(values: Iterable[float]) -> dict[str, Any]:
+    selected = list(values)
+    total = len(selected)
+    passed = sum(value == 1.0 for value in selected)
+    if total == 0:
+        return {"cases": 0, "passed": 0, "rate": None, "wilson95Lower": None}
+    rate = passed / total
+    z = 1.959963984540054
+    denominator = 1 + z * z / total
+    centre = rate + z * z / (2 * total)
+    margin = z * math.sqrt(rate * (1 - rate) / total + z * z / (4 * total * total))
+    return {
+        "cases": total,
+        "passed": passed,
+        "rate": rate,
+        "wilson95Lower": max(0.0, (centre - margin) / denominator),
+    }
+
+
+def _preference_gate_summary(rows: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    selected = list(rows)
+    fields = (
+        "canonicalEntryAt1",
+        "canonicalEntryAndEvidenceAt1",
+        "preferredPrefixSetAtAvailable",
+        "preferredPrefixOrderAtAvailable",
+        "firstScreenPassAtAvailable",
+        "firstScreenPassAt3",
+    )
+    return {
+        field: _pass_summary(
+            row["metrics"][field]
+            for row in selected
+            if row["metrics"].get(field) is not None
+        )
+        for field in fields
+    }
+
+
 def _summarize(rows: list[dict[str, Any]], mode: str | None) -> dict[str, Any]:
     retrieval = [row for row in rows if row["metrics"]["entryNdcgAtK"] is not None]
     gaps = [row for row in rows if row["expectation"] == "gap"]
@@ -382,6 +588,8 @@ def _summarize(rows: list[dict[str, Any]], mode: str | None) -> dict[str, Any]:
         for row in rows
     ) if mode is not None else Counter()
     semantic_expected = sum(row["semanticExpected"] for row in rows)
+    preferred = [row for row in rows if row["metrics"]["preferredCount"] > 0]
+    preferred_three = [row for row in preferred if row["metrics"]["preferredWidth"] == 3]
     summary: dict[str, Any] = {
         "cases": len(rows),
         "retrievalCases": len(retrieval),
@@ -396,6 +604,20 @@ def _summarize(rows: list[dict[str, Any]], mode: str | None) -> dict[str, Any]:
         "evidenceMrrWithinEntry": (sum(row["metrics"]["evidenceReciprocalRankSum"] for row in rows) / evidence_targets if evidence_targets else None),
         "evidenceHitAt1WithinEntry": (sum(row["metrics"]["evidenceHitAt1"] for row in rows) / evidence_targets if evidence_targets else None),
         "evidenceHitAt3WithinEntry": (sum(row["metrics"]["evidenceHitAt3"] for row in rows) / evidence_targets if evidence_targets else None),
+        "preferredCases": len(preferred),
+        "preferredThreeCases": len(preferred_three),
+        "canonicalEntryAt1": _mean(row["metrics"]["canonicalEntryAt1"] for row in preferred),
+        "canonicalEntryAndEvidenceAt1": _mean(row["metrics"]["canonicalEntryAndEvidenceAt1"] for row in preferred),
+        "preferredPrefixSetAtAvailable": _mean(row["metrics"]["preferredPrefixSetAtAvailable"] for row in preferred),
+        "preferredPrefixOrderAtAvailable": _mean(row["metrics"]["preferredPrefixOrderAtAvailable"] for row in preferred),
+        "preferredPrefixNdcgAtAvailable": _mean(row["metrics"]["preferredPrefixNdcgAtAvailable"] for row in preferred),
+        "preferredFirstEvidenceRate": _mean(row["metrics"]["preferredFirstEvidenceRate"] for row in preferred),
+        "firstScreenPassAtAvailable": _mean(row["metrics"]["firstScreenPassAtAvailable"] for row in preferred),
+        "preferredSetAt3": _mean(row["metrics"]["preferredSetAt3"] for row in preferred),
+        "preferredOrderAt3": _mean(row["metrics"]["preferredOrderAt3"] for row in preferred),
+        "preferredNdcgAt3": _mean(row["metrics"]["preferredNdcgAt3"] for row in preferred),
+        "preferredEvidenceAt1": _mean(row["metrics"]["preferredEvidenceAt1"] for row in preferred),
+        "firstScreenPassAt3": _mean(row["metrics"]["firstScreenPassAt3"] for row in preferred_three),
         "forbiddenItemRate": (sum(row["forbiddenCount"] for row in rows) / returned_count if returned_count else 0.0),
         "forbiddenCaseRate": (sum(row["forbiddenCount"] > 0 for row in rows) / len(rows) if rows else 0.0),
         "scopeLeakageItemRate": (sum(row["scopeLeakageCount"] for row in rows) / returned_count if returned_count else 0.0),
@@ -416,6 +638,16 @@ def _summarize(rows: list[dict[str, Any]], mode: str | None) -> dict[str, Any]:
     # Compatibility aliases remain for existing report consumers.
     summary["forbiddenRate"] = summary["forbiddenItemRate"]
     summary["scopeLeakageRate"] = summary["scopeLeakageItemRate"]
+    summary["preferenceGates"] = _preference_gate_summary(preferred)
+    summary["preferenceByWidth"] = {
+        str(width): {
+            "cases": sum(row["metrics"]["preferredWidth"] == width for row in preferred),
+            "gates": _preference_gate_summary(
+                row for row in preferred if row["metrics"]["preferredWidth"] == width
+            ),
+        }
+        for width in (1, 2, 3)
+    }
     return summary
 
 
@@ -426,6 +658,11 @@ def _macro_summary(summaries: dict[str, dict[str, Any]]) -> dict[str, Any]:
         *(f"hitAt{cutoff}" for cutoff in HIT_CUTOFFS),
         "evidenceNdcgAt3WithinEntry", "evidenceMrrWithinEntry",
         *(f"evidenceRecallAt{cutoff}" for cutoff in HIT_CUTOFFS),
+        "canonicalEntryAt1", "canonicalEntryAndEvidenceAt1",
+        "preferredPrefixSetAtAvailable", "preferredPrefixOrderAtAvailable",
+        "preferredPrefixNdcgAtAvailable", "preferredFirstEvidenceRate",
+        "preferredSetAt3", "preferredOrderAt3", "preferredNdcgAt3",
+        "preferredEvidenceAt1", "firstScreenPassAtAvailable", "firstScreenPassAt3",
     )
     return {
         key: _mean(
@@ -528,6 +765,7 @@ def evaluate_http(
             "evidenceHitAt1": sum(outcome["rankWithinEntry"] == 1 for outcome in evidence_targets),
             "evidenceHitAt3": sum(outcome["rankWithinEntry"] is not None and outcome["rankWithinEntry"] <= 3 for outcome in evidence_targets),
         })
+        metrics.update(_preferred_metrics(case, ranked, evidence_expectations))
         rows.append({
             "id": case["id"], "query": case["query"], "split": case["split"], "category": case["category"], "expectation": case.get("expectation", "retrieval"),
             "scopes": case["scopes"], "tags": case.get("tags", []), "queryLength": case.get("queryLength", len(case["query"])),
@@ -549,7 +787,7 @@ def evaluate_http(
         "high-recall": _summarize([row for row in rows if "high-recall" in row["tags"]], mode),
     }
     return {
-        "schemaVersion": "quality-v3.0",
+        "schemaVersion": "quality-v3.1",
         "metadata": metadata or {},
         "summary": summary,
         "byCategory": by_category,
@@ -592,10 +830,12 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     validate = commands.add_parser("validate", help="validate quality data and optional pinned sidecar evidence")
     validate.add_argument("--data", type=Path, action="append", required=True)
+    validate.add_argument("--preferences", type=Path, action="append", default=[])
     validate.add_argument("--reverse-db", type=Path)
     validate.add_argument("--disjoint-from", type=Path, action="append", default=[])
     run = commands.add_parser("run", help="evaluate an HTTP reverse-search endpoint")
     run.add_argument("--data", type=Path, action="append", required=True)
+    run.add_argument("--preferences", type=Path, action="append", default=[])
     run.add_argument("--base-url", required=True)
     run.add_argument("--endpoint", default="/api/v1/search")
     run.add_argument("--split", choices=(*sorted(SPLITS), "all"), default="development")
@@ -611,11 +851,21 @@ def main() -> None:
     run.add_argument("--output", type=Path)
     args = parser.parse_args()
     cases = load_cases(args.data)
+    cases = apply_preference_overlays(cases, args.preferences)
     validate_query_disjoint(cases, args.disjoint_from)
     if args.reverse_db:
         validate_against_reverse(cases, args.reverse_db)
     if args.command == "validate":
-        print(json.dumps({"cases": len(cases), "splits": dict(Counter(case["split"] for case in cases))}, ensure_ascii=False))
+        preferred_widths = Counter(
+            min(3, sum("preferredRank" in target for target in case["relevance"]))
+            for case in cases
+            if any("preferredRank" in target for target in case["relevance"])
+        )
+        print(json.dumps({
+            "cases": len(cases),
+            "splits": dict(Counter(case["split"] for case in cases)),
+            "preferredWidths": dict(sorted(preferred_widths.items())),
+        }, ensure_ascii=False))
         return
     filtered = cases if args.split == "all" else [case for case in cases if case["split"] == args.split]
     metadata = _parse_metadata(args.metadata_json)

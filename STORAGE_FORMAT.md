@@ -127,22 +127,25 @@ into an external dependency.
 
 ## Chinese Reverse-Search Sidecar
 
-Chinese lookup is a derived, project-owned SQLite sidecar with five structures:
+Chinese lookup is a derived, project-owned SQLite sidecar with six core tables:
 
 ```text
 metadata       schema, normalizer, projection, source, count, and primary fingerprint
 documents      display evidence, grouping identity, weight, and canonical location
 exact_segments deduplicated normalized segments for complete-match lookup
 entry_headword_forms deduplicated entry-level surface forms used by evidence highlighting
+entry_headword_terms normalized headword and form terms used by query-aware anchoring
 documents_fts  contentless FTS5 candidate index using detail=none
 ```
 
 The sidecar is generated from validated `CanonicalEntry` values through the shared
-`SearchDocument` projector. The current schema 5 / projection 1.4 build contains 188,851
-documents, 347,486 exact segments, and 16,857 headword forms from 40,974 entries in a
-72,228,864-byte file.
-Repeating the same projection and import produced the byte-identical SHA-256
-`6a5288a931c1818fa064e030dc6476b72724717444ee751f52e26fc38e73fab0`.
+`SearchDocument` projector. The current schema 9 / projection 2.2 build contains 197,340
+documents, 361,278 exact segments, 16,861 headword forms, 55,975 normalized headword terms,
+and 117,214 English terms in a 102,408,192-byte file. Its SHA-256 is
+`9677b91a2d2f4fc6dc825a989ea2e157a77f2e19646aeb1b3a60a8e2dcd39630`.
+The default scope is `sense,phrase,form`. The four UI filters select definitions
+(`sense,form`), phrases (`phrase`), examples (`example`), or supplementary resources
+(`resource`).
 
 Headword forms are projected once per canonical entry. Explicit canonical inflections
 carry irregular forms such as `think` to `thought`. A build-only lemmatizer supplements them
@@ -152,6 +155,15 @@ Entry-level alternative spellings are accepted as lexical surfaces. Sense wordin
 constructions, derivatives, differently named nested entries, and unobserved guesses are
 excluded. The API fetches forms for one result window with a single bounded query, so evidence
 rendering never performs per-entry lookups or request-time morphology.
+
+`entry_headword_terms` stores normalized exact tokens from the canonical headword and accepted
+forms. A shared query profile extracts meaningful ASCII terms and multiword candidates from a
+mixed-language query. Exact token equality can anchor `help`, `plz`, or `on no account`; a
+substring such as `helper` cannot satisfy `help`. Scope predicates join the anchor lookup before
+its 4,096-entry limit, preventing a dense unrelated scope from displacing the requested one.
+
+The projection contains 84,821 sense, 12,423 phrase, 5 form, 92,016 example, and 8,075
+resource documents. Etymology records are excluded from Chinese and semantic search.
 
 Normalization applies Unicode NFKC, OpenCC traditional-to-simplified conversion, and
 collapsed punctuation and whitespace boundaries. One process-wide, race-safe OpenCC
@@ -165,7 +177,7 @@ query with one Chinese character excludes example-only matches.
 
 Single-segment queries also probe the `exact_segments` primary key, preserving complete
 short meanings even when frequent terms fill the FTS window. Scope filters are applied in
-both exact and FTS SQL before their candidate limits, so optional usage and example
+both exact and FTS SQL before their candidate limits, so optional resource and example
 searches do not displace default definition, phrase, and form candidates. Each semantic
 ranking tier retrieves at most 4,096 documents, with no more than three pools for one
 expression. Multi-token lookup tries the all-token expression independently per semantic
@@ -175,7 +187,7 @@ The selected candidates then receive bounded Go refinement.
 Candidate retrieval remains separate from final ranking. Ranking first separates complete
 segments, grammatical extensions, continuous boundary matches, and partial matches into hard
 tiers. Within complete matches, match quality, protected candidate pool, semantic scope
-(sense, then phrase or form, usage, and example), distinct corroborating Chinese evidence, and
+(sense and form, then phrase, example, and resource), distinct corroborating Chinese evidence, and
 bounded score determine order. Within partial matches, textual relevance precedes semantic scope;
 query-leading coverage improves suffix and noise cases. Duplicate identical Chinese evidence does
 not increase corroboration. Parenthetical-only matches are demoted. Long partial matches require
@@ -233,18 +245,17 @@ documents      source-neutral evidence and canonical locations keyed by text id
 vector_blocks  contiguous symmetric-int8 vector blocks
 ```
 
-The current schema 2 / projection 1.1 build groups 188,851 documents into 178,382 unique text vectors with
-1,024 dimensions. It covers 2,139,356 Chinese characters and occupies 252,542,976 bytes.
-Its SHA-256 is
-`c17d6b478e0ab0dfa5868abf32209b84dab6b1c82abacfac8ae5ccc24fe4273b`.
+The current schema 5 / projection 2.2 build groups 197,340 documents into 181,883 unique text vectors with
+1,024 dimensions and occupies 259,973,120 bytes. Its SHA-256 is
+`f76c97820fc44485696a19a2829bb6be4f0d298b9fc3524dabef5b26b2915033`.
 Metadata pins the primary runtime SHA-256, reverse-search SHA-256, corpus fingerprint,
-source projection 1.4, semantic projection 1.1, model key
+source and semantic projection 2.2, model key
 `qwen3-embedding-4b-1024-v1`, query template, provider options, and every vector-format
 parameter. The API rejects an incompatible combination before serving requests.
 
 Document vectors are L2-normalized during import, cached as float16 only in ignored build
 state, then quantized to `round(clamp(value * 127, -127, 127))`. The runtime loads the
-resulting 174.2 MiB int8 matrix and compact scope masks once. Each uncached query is
+resulting approximately 177.6 MiB int8 matrix and compact scope masks once. Each uncached query is
 normalized and quantized in the same way, scanned by at most four workers, and reduced
 through bounded per-worker heaps. Depending on the requested page, 192 to 4,096 text ids
 reach SQLite evidence projection. No approximate-nearest-neighbor graph, native extension,
@@ -257,19 +268,13 @@ text-embedding-3-small routes. On the full 67-query suite, float16 retrieval rea
 Hit@1, 100% Recall@32, and 0.660 MRR. The exact runtime int8 path reached 58.2% Hit@1,
 100% Recall@32, and 0.672 MRR.
 
-The production build used 1,677,023 document input tokens and 2,000 quality-evaluation
-tokens. With the measured provider's 4x input multiplier, total recorded usage was
-6,716,092 weighted units. One quality query averaged 29.85 input tokens including its
-instruction, or 119.4 weighted units at the same multiplier. A resumable checkpoint and
-pre-request reservations keep rebuilds and provider quota bounded.
-
-Loopback end-to-end probes measured 0.66-1.42 seconds for a first provider-backed query. The
-quality-v3 development run measured 125 ms at p50 and 163 ms at p95 for complete warm hybrid
-requests over the stable 512-entry fusion window. The semantic-enabled Windows API process
+Loopback end-to-end probes measured 0.66-1.42 seconds for a first provider-backed query. A
+40-request loopback sample measured 32.7 ms at p50 and 45.3 ms at p95 for complete cached
+hybrid requests. The semantic-enabled Windows API process
 used 385.5 MiB of working-set memory and 421.2 MiB of private memory after real queries;
 these figures also include the pronunciation ZIP index and normal Go/SQLite state.
 
-The dense rank is not returned directly. The API protects full-boundary lexical evidence,
+The dense rank is not returned directly. Scores below 0.590489181 are excluded. The API protects full-boundary lexical evidence,
 then compares each entry's semantic evidence profile lexicographically: the strongest match
 wins, another match breaks ties only inside the 0.005 similarity band, and evidence counts are
 never summed. Query-vector and page LRUs avoid repeat provider calls; provider errors return
@@ -278,7 +283,7 @@ the lexical page.
 An optional writable SQLite cache preserves normalized query vectors across process and
 container restarts. Its key is HMAC-SHA-256 over the query plus the complete embedding
 contract; query plaintext is never stored. Float32 vectors use 4,096 bytes each at 1,024
-dimensions. The default 10,000-row TTL/LRU bound occupies roughly 42-50 MiB including SQLite
+dimensions. The default 10,000-row TTL/LRU bound occupies roughly 12-16 MiB including SQLite
 indexes and page overhead. Cache failures disable only persistence and never the lexical or
 semantic request path. See [SEMANTIC_SEARCH.md](SEMANTIC_SEARCH.md) for the build command,
 runtime contract, model comparison, cache settings, and configuration.

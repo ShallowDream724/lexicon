@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"dictionary-api/internal/importer"
@@ -31,11 +32,12 @@ func TestChineseReverseSearchReturnsGroupedEvidenceWithoutChangingEnglishSearch(
 		Items []struct {
 			ID            string   `json:"id"`
 			HeadwordForms []string `json:"headwordForms"`
-			Matches []struct {
-				Scope       string                 `json:"scope"`
-				EnglishText string                 `json:"englishText"`
-				ChineseText string                 `json:"chineseText"`
-				Location    reversesearch.Location `json:"location"`
+			Matches       []struct {
+				Scope        string                 `json:"scope"`
+				EnglishText  string                 `json:"englishText"`
+				ChineseText  string                 `json:"chineseText"`
+				SemanticRole string                 `json:"semanticRole"`
+				Location     reversesearch.Location `json:"location"`
 			} `json:"matches"`
 		} `json:"items"`
 	}
@@ -49,7 +51,7 @@ func TestChineseReverseSearchReturnsGroupedEvidenceWithoutChangingEnglishSearch(
 		t.Fatalf("headword forms = %#v", result.Items[0].HeadwordForms)
 	}
 	match := result.Items[0].Matches[0]
-	if match.Scope != "sense" || match.EnglishText != "exact definition" || match.ChineseText != "精确释义" || match.Location.OwnerID != "sense-exact" {
+	if match.Scope != "sense" || match.EnglishText != "exact definition" || match.ChineseText != "精确释义" || match.SemanticRole != "definition" || match.Location.OwnerID != "sense-exact" {
 		t.Fatalf("unexpected search evidence: %#v", match)
 	}
 	if got := searchIDs(t, get(t, service, "/api/v1/search?q=alpha&limit=3")); len(got) != 3 || got[0] != "exact" {
@@ -76,6 +78,215 @@ func TestChineseReverseSearchReturnsStructuredPhraseEvidence(t *testing.T) {
 	match := result.Items[0].Matches[0]
 	if match.Scope != "phrase" || match.CandidateText != "useful phrase" || match.DefinitionText != "a helpful expression" || match.Part != "verb" {
 		t.Fatalf("structured phrase evidence = %#v", match)
+	}
+}
+
+func TestEnglishSearchReturnsOrderedGroupsAndPhraseHitLocation(t *testing.T) {
+	service := newFixtureServiceWithReverseSearch(t)
+	response := get(t, service, "/api/v1/search?q=alpha+useful+phrase&limit=10&submitted=true")
+	if response.Code != http.StatusOK {
+		t.Fatalf("English search: %d %s", response.Code, response.Body.String())
+	}
+	var result struct {
+		Groups []struct {
+			Text  string `json:"text"`
+			Kind  string `json:"kind"`
+			Items []struct {
+				ID      string `json:"id"`
+				Matches []struct {
+					Scope          string                 `json:"scope"`
+					MatchKind      string                 `json:"matchKind"`
+					CandidateText  string                 `json:"candidateText"`
+					DefinitionText string                 `json:"definitionText"`
+					ChineseText    string                 `json:"chineseText"`
+					SemanticRole   string                 `json:"semanticRole"`
+					Location       reversesearch.Location `json:"location"`
+				} `json:"matches"`
+			} `json:"items"`
+		} `json:"groups"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Groups) < 2 || result.Groups[0].Kind != "exact" || result.Groups[1].Kind != "phrase" || result.Groups[1].Text != "useful phrase" {
+		t.Fatalf("English group order = %#v", result.Groups)
+	}
+	phraseItems := result.Groups[1].Items
+	if len(phraseItems) != 1 || phraseItems[0].ID != "one" || len(phraseItems[0].Matches) != 1 || phraseItems[0].Matches[0].Scope != "phrase" || phraseItems[0].Matches[0].MatchKind != "phrase" || phraseItems[0].Matches[0].CandidateText != "useful phrase" || phraseItems[0].Matches[0].DefinitionText != "a helpful expression" || phraseItems[0].Matches[0].ChineseText != "另一个释义" || phraseItems[0].Matches[0].SemanticRole != "expression" || phraseItems[0].Matches[0].Location.OwnerID != "phrase-one" {
+		t.Fatalf("phrase match contract = %#v", phraseItems)
+	}
+}
+
+func TestEnglishDirectHeadwordKeepsTheNormalEntryCard(t *testing.T) {
+	service := newFixtureServiceWithReverseSearch(t)
+	response := get(t, service, "/api/v1/search?q=alpha&limit=10&submitted=true")
+	if response.Code != http.StatusOK {
+		t.Fatalf("English search: %d %s", response.Code, response.Body.String())
+	}
+	var result struct {
+		Groups []struct {
+			Kind  string `json:"kind"`
+			Items []struct {
+				ID                 string          `json:"id"`
+				TranslationPreview string          `json:"translationPreview"`
+				Matches            json.RawMessage `json:"matches"`
+			} `json:"items"`
+		} `json:"groups"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Groups) == 0 || result.Groups[0].Kind != "exact" || len(result.Groups[0].Items) != 1 || result.Groups[0].Items[0].ID != "exact" || result.Groups[0].Items[0].TranslationPreview == "" || len(result.Groups[0].Items[0].Matches) != 0 {
+		t.Fatalf("direct headword response = %#v", result.Groups)
+	}
+}
+
+func TestEnglishGrammarPatternReturnsItsOwningSenseEvidence(t *testing.T) {
+	service := newFixtureServiceWithReverseSearch(t)
+	response := get(t, service, "/api/v1/search?q=alpha+sth&limit=10&submitted=true")
+	if response.Code != http.StatusOK {
+		t.Fatalf("English pattern search: %d %s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Groups []struct {
+			Kind  string `json:"kind"`
+			Items []struct {
+				ID      string `json:"id"`
+				Matches []struct {
+					Scope          string `json:"scope"`
+					MatchKind      string `json:"matchKind"`
+					CandidateText  string `json:"candidateText"`
+					DefinitionText string `json:"definitionText"`
+					ChineseText    string `json:"chineseText"`
+				} `json:"matches"`
+			} `json:"items"`
+		} `json:"groups"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Groups) == 0 || body.Groups[0].Kind != "exact" || len(body.Groups[0].Items) != 1 || body.Groups[0].Items[0].ID != "exact" || len(body.Groups[0].Items[0].Matches) != 1 {
+		t.Fatalf("pattern response = %#v", body.Groups)
+	}
+	match := body.Groups[0].Items[0].Matches[0]
+	if match.Scope != "sense" || match.MatchKind != "pattern" || match.CandidateText != "alpha sth" || match.DefinitionText != "exact definition" || match.ChineseText != "精确释义" {
+		t.Fatalf("pattern evidence = %#v", match)
+	}
+}
+
+func TestEnglishTypeAheadSkipsSubmittedSentencePlanning(t *testing.T) {
+	service := newFixtureServiceWithReverseSearch(t)
+	response := get(t, service, "/api/v1/search?q=alpha+useful+phrase&limit=10")
+	if response.Code != http.StatusOK {
+		t.Fatalf("English type-ahead: %d %s", response.Code, response.Body.String())
+	}
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := body["groups"]; exists {
+		t.Fatalf("type-ahead unexpectedly returned submitted groups: %s", response.Body.String())
+	}
+	if _, exists := body["correction"]; exists {
+		t.Fatalf("type-ahead unexpectedly returned a submitted correction: %s", response.Body.String())
+	}
+
+	invalid := get(t, service, "/api/v1/search?q=alpha&submitted=maybe")
+	if invalid.Code != http.StatusBadRequest || !strings.Contains(invalid.Body.String(), "invalid_submitted") {
+		t.Fatalf("invalid submitted flag: %d %s", invalid.Code, invalid.Body.String())
+	}
+}
+
+func TestEnglishSearchGroupsCoverFormsTokensAndExplicitCorrections(t *testing.T) {
+	service := newFixtureServiceWithReverseSearch(t)
+
+	form := get(t, service, "/api/v1/search?q=alphas&submitted=true")
+	var formBody struct {
+		Groups []struct {
+			Kind  string `json:"kind"`
+			Items []struct {
+				ID      string `json:"id"`
+				Matches []struct {
+					MatchKind string `json:"matchKind"`
+					Location  struct {
+						Path json.RawMessage `json:"path"`
+					} `json:"location"`
+				} `json:"matches"`
+			} `json:"items"`
+		} `json:"groups"`
+	}
+	if form.Code != http.StatusOK || json.Unmarshal(form.Body.Bytes(), &formBody) != nil || len(formBody.Groups) == 0 || len(formBody.Groups[0].Items) != 1 {
+		t.Fatalf("form group response: %d %s", form.Code, form.Body.String())
+	}
+	formItem := formBody.Groups[0].Items[0]
+	if formBody.Groups[0].Kind != "exact" || formItem.ID != "exact" || len(formItem.Matches) != 1 || formItem.Matches[0].MatchKind != "inflection" {
+		t.Fatalf("form group contract = %#v", formBody.Groups)
+	}
+	if string(formItem.Matches[0].Location.Path) != "[]" {
+		t.Fatalf("form location path must be an explicit empty array: %s", form.Body.String())
+	}
+
+	token := get(t, service, "/api/v1/search?q=unknown+alphas&submitted=true")
+	var tokenBody struct {
+		Groups []struct {
+			Text  string `json:"text"`
+			Kind  string `json:"kind"`
+			Items []struct {
+				ID                 string `json:"id"`
+				TranslationPreview string `json:"translationPreview"`
+			} `json:"items"`
+		} `json:"groups"`
+	}
+	if token.Code != http.StatusOK || json.Unmarshal(token.Body.Bytes(), &tokenBody) != nil {
+		t.Fatalf("token group response: %d %s", token.Code, token.Body.String())
+	}
+	foundToken := false
+	for _, group := range tokenBody.Groups {
+		if group.Kind == "token" && group.Text == "alphas" && len(group.Items) == 1 && group.Items[0].ID == "exact" && group.Items[0].TranslationPreview != "" {
+			foundToken = true
+		}
+	}
+	if !foundToken {
+		t.Fatalf("uncovered form token was not returned: %#v", tokenBody.Groups)
+	}
+
+	correction := get(t, service, "/api/v1/search?q=teh&submitted=true")
+	var correctionBody struct {
+		Correction *struct {
+			Input      string `json:"input"`
+			Suggestion string `json:"suggestion"`
+			Items      []struct {
+				ID string `json:"id"`
+			} `json:"items"`
+		} `json:"correction"`
+	}
+	if correction.Code != http.StatusOK || json.Unmarshal(correction.Body.Bytes(), &correctionBody) != nil || correctionBody.Correction == nil || correctionBody.Correction.Input != "teh" || correctionBody.Correction.Suggestion != "the" || len(correctionBody.Correction.Items) != 1 || correctionBody.Correction.Items[0].ID != "the" {
+		t.Fatalf("correction must stay advisory: %d %s", correction.Code, correction.Body.String())
+	}
+}
+
+func TestEnglishEtymologyOnlyTermIsAnExactPlannerAnchor(t *testing.T) {
+	service := newFixtureServiceWithEtymology(t)
+	response := get(t, service, "/api/v1/search?q=etymo-only&submitted=true")
+	var body struct {
+		Groups []struct {
+			Kind  string `json:"kind"`
+			Items []struct {
+				ID   string `json:"id"`
+				Kind string `json:"kind"`
+			} `json:"items"`
+		} `json:"groups"`
+	}
+	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &body) != nil || len(body.Groups) == 0 || body.Groups[0].Kind != "exact" || len(body.Groups[0].Items) != 1 || body.Groups[0].Items[0].ID != "etymo-only" || body.Groups[0].Items[0].Kind != "etymology" {
+		t.Fatalf("etymology anchor response: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestEnglishSearchRejectsOversizedQueriesBeforePlanning(t *testing.T) {
+	service := newFixtureServiceWithReverseSearch(t)
+	response := get(t, service, "/api/v1/search?q="+url.QueryEscape(strings.Repeat("a", reversesearch.MaxQueryRunes+1)))
+	if response.Code != http.StatusBadRequest || !bytes.Contains(response.Body.Bytes(), []byte(`"code":"query_too_long"`)) {
+		t.Fatalf("oversized English query: %d %s", response.Code, response.Body.String())
 	}
 }
 
@@ -170,11 +381,11 @@ func TestChineseSearchRejectsUnboundedWindows(t *testing.T) {
 
 func TestSearchScopeValidationDefaultsAndDeduplication(t *testing.T) {
 	service := newFixtureServiceWithReverseSearch(t)
-	usageQuery := url.QueryEscape("用法释义")
+	usageQuery := url.QueryEscape("扩展释义")
 	if response := get(t, service, "/api/v1/search?q="+usageQuery); response.Code != http.StatusOK || len(searchIDs(t, response)) != 0 {
-		t.Fatalf("default scopes included usage: %d %s", response.Code, response.Body.String())
+		t.Fatalf("default scopes included resource: %d %s", response.Code, response.Body.String())
 	}
-	response := get(t, service, "/api/v1/search?q="+usageQuery+"&scope=usage,usage")
+	response := get(t, service, "/api/v1/search?q="+usageQuery+"&scope=resource,resource")
 	if response.Code != http.StatusOK {
 		t.Fatalf("deduplicated scope: %d %s", response.Code, response.Body.String())
 	}
@@ -182,19 +393,23 @@ func TestSearchScopeValidationDefaultsAndDeduplication(t *testing.T) {
 		Items []struct {
 			ID      string `json:"id"`
 			Matches []struct {
-				Scope string `json:"scope"`
+				Scope            string `json:"scope"`
+				ResourceCategory string `json:"resourceCategory"`
 			} `json:"matches"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &scoped); err != nil {
 		t.Fatal(err)
 	}
-	if len(scoped.Items) != 1 || scoped.Items[0].ID != "exact" || len(scoped.Items[0].Matches) != 1 || scoped.Items[0].Matches[0].Scope != "usage" {
+	if len(scoped.Items) != 1 || scoped.Items[0].ID != "exact" || len(scoped.Items[0].Matches) != 1 || scoped.Items[0].Matches[0].Scope != "resource" || scoped.Items[0].Matches[0].ResourceCategory != "grammar" {
 		t.Fatalf("scoped response = %#v", scoped)
+	}
+	empty := get(t, service, "/api/v1/search?q="+usageQuery+"&scope=")
+	if empty.Code != http.StatusOK || len(searchIDs(t, empty)) != 0 {
+		t.Fatalf("explicit empty scope must not fall back to defaults: %d %s", empty.Code, empty.Body.String())
 	}
 
 	invalidTargets := []string{
-		"/api/v1/search?q=" + usageQuery + "&scope=",
 		"/api/v1/search?q=" + usageQuery + "&scope=unknown",
 		"/api/v1/search?q=" + usageQuery + "&scope=sense,",
 		"/api/v1/search?q=" + usageQuery + "&scope=sense&scope=phrase",
@@ -234,27 +449,37 @@ func newFixtureServiceWithReverseSearchAndSemantic(t testing.TB, semantic server
 	}
 
 	documents := []reversesearch.SearchDocument{
-			{
-				DictionaryID: "fixture", EntryID: "exact", Scope: reversesearch.ScopeSense,
-				Headword: "alpha", EnglishText: "exact definition", ChineseText: "精确释义",
-				HeadwordForms: []string{"alphas"},
-			Location: reversesearch.Location{Section: reversesearch.SectionDefinitions, Part: "noun", OwnerID: "sense-exact", Path: []string{"senses", "0"}}, Weight: 100,
+		{
+			DictionaryID: "fixture", EntryID: "exact", Scope: reversesearch.ScopeSense,
+			Headword: "alpha", EnglishText: "exact definition", ChineseText: "精确释义",
+			HeadwordForms: []string{"alphas"}, EnglishLookupTerms: []reversesearch.EnglishLookupTerm{{Kind: reversesearch.EnglishTermPattern, Text: "alpha sth"}},
+			SemanticRole: reversesearch.SemanticRoleDefinition,
+			Location:     reversesearch.Location{Section: reversesearch.SectionDefinitions, Part: "noun", OwnerID: "sense-exact", Path: []string{"senses", "0"}}, Weight: 100,
 		},
 		{
-			DictionaryID: "fixture", EntryID: "exact", Scope: reversesearch.ScopeUsage,
-			Headword: "alpha", EnglishText: "usage note", ChineseText: "用法释义",
+			DictionaryID: "fixture", EntryID: "exact", Scope: reversesearch.ScopeResource,
+			Headword: "alpha", EnglishText: "resource note", ChineseText: "扩展释义",
+			SemanticRole: reversesearch.SemanticRoleGuidance, ResourceCategory: reversesearch.ResourceGrammar,
 			Location: reversesearch.Location{Section: reversesearch.SectionGrammarUsage, OwnerID: "usage-exact", Path: []string{"usage", "0"}}, Weight: 60,
 		},
 		{
 			DictionaryID: "fixture", EntryID: "exact", Scope: reversesearch.ScopeExample,
 			Headword: "alpha", EnglishText: "example sentence", ChineseText: "例句释义",
-			Location: reversesearch.Location{Section: reversesearch.SectionDefinitions, OwnerID: "example-exact", Path: []string{"examples", "0"}}, Weight: 30,
+			SemanticRole: reversesearch.SemanticRoleExample,
+			Location:     reversesearch.Location{Section: reversesearch.SectionDefinitions, OwnerID: "example-exact", Path: []string{"examples", "0"}}, Weight: 30,
 		},
 		{
 			DictionaryID: "fixture", EntryID: "one", Scope: reversesearch.ScopePhrase,
 			Headword: "Alpha able", EnglishText: "useful phrase a helpful expression",
 			CandidateText: "useful phrase", DefinitionText: "a helpful expression", ChineseText: "另一个释义",
-			Location: reversesearch.Location{Section: reversesearch.SectionIdioms, Part: "verb", OwnerID: "phrase-one", Path: []string{"idioms", "0"}}, Weight: 100,
+			SemanticRole: reversesearch.SemanticRoleExpression,
+			Location:     reversesearch.Location{Section: reversesearch.SectionIdioms, Part: "verb", OwnerID: "phrase-one", Path: []string{"idioms", "0"}}, Weight: 100,
+		},
+		{
+			DictionaryID: "fixture", EntryID: "the", Scope: reversesearch.ScopeSense,
+			Headword: "the", EnglishText: "definite article", ChineseText: "定冠词",
+			SemanticRole: reversesearch.SemanticRoleDefinition,
+			Location:     reversesearch.Location{Section: reversesearch.SectionDefinitions, OwnerID: "sense-the", Path: []string{"senses", "0"}}, Weight: 50,
 		},
 	}
 	var projection bytes.Buffer

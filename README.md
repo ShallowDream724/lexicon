@@ -11,7 +11,7 @@
     <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-1.24-2f7f8f" alt="Go 1.24"></a>
   </p>
 
-  <p><strong>40,974 entries · 188,851 Chinese search records · 178,382 semantic vectors · 51,716 etymology articles · 128,010 headword pronunciations</strong><br><strong>40,974 个词条 · 188,851 条中文反查记录 · 178,382 个语义向量 · 51,716 篇词源文章 · 128,010 个词头发音</strong></p>
+  <p><strong>40,974 entries · 197,340 Chinese search records · 181,883 semantic vectors · 51,716 etymology articles · 128,010 headword pronunciations</strong><br><strong>40,974 个词条 · 197,340 条中文反查记录 · 181,883 个语义向量 · 51,716 篇词源文章 · 128,010 个词头发音</strong></p>
 </div>
 
 <img src="docs/readme/hero-desktop.webp" width="100%" alt="Lexicon desktop entry view / Lexicon 桌面端词条页面">
@@ -20,9 +20,9 @@
 
 **找到真正想查的那个词**
 
-Search by spelling when you know the English word. When only a Chinese meaning comes to mind, Lexicon combines literal evidence with semantic intent to find likely English entries. A short description can reach the right term even when it does not repeat the dictionary translation word for word. The matching definition, phrase, form, usage note, or example stays directly beneath each result, so the order remains understandable at a glance.
+Search by spelling when you know the English word. When only a Chinese meaning comes to mind, Lexicon combines literal evidence with semantic intent to find likely English entries. A short description can reach a useful term even when it does not repeat the dictionary translation word for word. The matching definition, phrase, form, example, or reference card stays directly beneath each result, so the reason for a match remains visible.
 
-知道英文时直接按拼写查询；只记得中文意思时，Lexicon 会把字面命中与语义意图结合起来。即使输入的是一段没有照抄词典释义的描述，也有机会找到真正想查的词。命中的词义、短语、词形、用法或例句会直接列在每个结果下方，排序依据一眼可见。
+知道英文时直接按拼写查询；只记得中文意思时，Lexicon 会结合字面证据与语义意图。即使输入没有照抄词典释义的简短描述，也能找到相关词条。命中的词义、短语、词形、例句或扩展资料会直接列在结果下方，匹配依据始终可见。
 
 Selecting an evidence line opens the correct entry, switches to the right part of speech, and highlights the exact content after scrolling finishes. Broad searches begin with 32 results and can progressively reveal up to 512 without making the first request carry the full list.
 
@@ -85,14 +85,14 @@ Indexed lookup, bounded candidate pools, and independently compressed entries le
 | Dataset<br>数据集 | Coverage<br>规模 | Runtime asset<br>运行资源 |
 | --- | ---: | ---: |
 | Core bilingual dictionary<br>双语主词典 | 40,974 entries<br>40,974 个词条 | 51.5 MiB |
-| Chinese reverse search<br>中文反查 | 188,851 documents · 347,486 exact segments · 16,857 headword forms<br>188,851 条文档 · 347,486 个精确片段 · 16,857 个词形 | 68.9 MiB |
-| Semantic intent search<br>语义意图检索 | 178,382 vectors · 1,024 dimensions<br>178,382 个向量 · 1,024 维 | 240.8 MiB |
+| Chinese reverse search<br>中文反查 | 197,340 documents · 361,278 exact segments · 16,861 headword forms · 117,214 English lookup keys<br>197,340 条文档 · 361,278 个精确片段 · 16,861 个词形 · 117,214 个英文检索键 | 97.7 MiB |
+| Semantic intent search<br>语义意图检索 | 181,883 vectors · 1,024 dimensions<br>181,883 个向量 · 1,024 维 | 247.9 MiB |
 | Etymology enhancement<br>词源扩展 | 46,773 terms · 51,716 articles<br>46,773 个词语 · 51,716 篇文章 | 43.3 MiB |
 | Headword pronunciation<br>词头发音 | 128,010 MP3 assets<br>128,010 个 MP3 | 1.06 GiB |
 
-The local reverse-search sidecar answers representative multi-character queries in roughly 0.6–2.5 ms at p95 on the documented reference machine; an intentionally broad one-character query remains below 42 ms at p95. Semantic search is reserved for explicit multi-character submissions: recorded first calls took 0.66–1.42 seconds, while repeated queries and pagination reused the cached vector and completed in roughly 20–75 ms. Reproducible storage, quality, and cost details live in [STORAGE_FORMAT.md](STORAGE_FORMAT.md) and [SEMANTIC_SEARCH.md](SEMANTIC_SEARCH.md).
+The local reverse-search sidecar answers representative multi-character queries in roughly 0.6–2.5 ms at p95 on the documented reference machine; an intentionally broad one-character query remains below 42 ms at p95. Semantic search is reserved for explicit multi-character submissions: recorded first calls took 0.66–1.42 seconds. A 40-request loopback sample of cached hybrid search measured 32.7 ms at p50 and 45.3 ms at p95. Reproducible storage, quality, and cost details live in [STORAGE_FORMAT.md](STORAGE_FORMAT.md) and [SEMANTIC_SEARCH.md](SEMANTIC_SEARCH.md).
 
-在文档记录的参考环境中，本地中文反查侧库的典型多字查询 p95 约为 0.6–2.5 ms；刻意选择的宽泛单字查询 p95 仍低于 42 ms。语义检索只在用户明确提交多字中文时触发：实测首次调用上游约需 0.66–1.42 秒，重复查询与分页会复用缓存向量，完整请求约为 20–75 ms。可复现的存储、质量与成本细节见 [STORAGE_FORMAT.md](STORAGE_FORMAT.md) 和 [SEMANTIC_SEARCH.md](SEMANTIC_SEARCH.md)。
+在文档记录的参考环境中，本地中文反查侧库的典型多字查询 p95 约为 0.6–2.5 ms；刻意选择的宽泛单字查询 p95 仍低于 42 ms。语义检索只在用户明确提交多字中文时触发：实测首次调用上游约需 0.66–1.42 秒；缓存命中的 40 次完整 hybrid 请求，p50/p95 为 32.7/45.3 ms。可复现的存储、质量与成本细节见 [STORAGE_FORMAT.md](STORAGE_FORMAT.md) 和 [SEMANTIC_SEARCH.md](SEMANTIC_SEARCH.md)。
 
 ## Quick start
 
@@ -107,9 +107,9 @@ npm ci
 npm run data:download
 ```
 
-The download is about 1.45 GiB. It retrieves the versioned [runtime-data-v1 Release](https://github.com/ShallowDream724/lexicon/releases/tag/runtime-data-v1), verifies every file against `runtime-assets.json`, and creates the shared runtime layout of four databases and one packed audio archive:
+The download is about 1.49 GiB. It retrieves the versioned [runtime-data-v1 Release](https://github.com/ShallowDream724/lexicon/releases/tag/runtime-data-v1), verifies every file against `runtime-assets.json`, and creates the shared runtime layout of four databases and one packed audio archive:
 
-完整下载量约为 1.45 GiB。命令会获取带版本的 [runtime-data-v1 Release](https://github.com/ShallowDream724/lexicon/releases/tag/runtime-data-v1)，依据 `runtime-assets.json` 校验每个文件，并创建由四个数据库和一个压缩音频包组成的运行目录：
+完整下载量约为 1.49 GiB。命令会获取带版本的 [runtime-data-v1 Release](https://github.com/ShallowDream724/lexicon/releases/tag/runtime-data-v1)，依据 `runtime-assets.json` 校验每个文件，并创建由四个数据库和一个压缩音频包组成的运行目录：
 
 ```text
 data/
@@ -157,7 +157,7 @@ docker compose --env-file deploy/server/.env -f deploy/server/compose.yaml up -d
 
 **为后续扩展留出清楚边界**
 
-The interface reads one canonical entry model. Import adapters, Chinese search projection, and enhancement resources remain independent of rendering. Content mapped to canonical senses, examples, phrases, usage blocks, forms, and cards enters the relevant search and presentation paths without spreading source-specific branches through the UI.
+The interface reads one canonical entry model. Import adapters, search projections, and enhancement resources remain independent of rendering. Content mapped to canonical senses, phrases, forms, examples, guidance, and cards enters the relevant search and presentation paths without spreading source-specific branches through the UI.
 
 界面只读取统一的规范词条模型；导入适配器、中文搜索投影与增强资源独立于渲染层。映射到规范义项、例句、短语、用法、词形和卡片的数据，会进入对应的搜索与展示路径，无需把针对来源的分支散落到 UI 各处。
 

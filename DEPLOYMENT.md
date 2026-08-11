@@ -22,7 +22,7 @@ Go dictionary API
    +-- optional outbound query-embedding provider
 ```
 
-The browser calls a same-origin `/api/v1` path. The repository's Compose file uses Caddy to
+The browser calls a same-origin `/api/v1` path. The public reference Compose file uses Caddy to
 keep application containers on a private network, obtain TLS certificates when a domain
 is configured, and expose only HTTP and HTTPS. This is a public reference topology; an
 existing reverse proxy can provide the same routing without running the included gateway.
@@ -39,8 +39,8 @@ The measured production assets are:
 | Asset | Stored size | Runtime treatment |
 | --- | ---: | --- |
 | Runtime SQLite schema v3 | 53,952,512 bytes | opened read-only |
-| Reverse-search sidecar schema v5 | 72,228,864 bytes | opened read-only; scoped exact lookup, bounded FTS, grouped refinement, and batched headword forms |
-| Semantic-search sidecar schema v2 | 252,542,976 bytes | 178,382 int8 vectors loaded once; evidence read from SQLite on demand |
+| Reverse-search sidecar schema v9 | 102,408,192 bytes | opened read-only; scoped exact lookup, bounded FTS, grouped refinement, headword anchors, and batched headword forms |
+| Semantic-search sidecar schema v5 | 259,973,120 bytes | 181,883 int8 vectors loaded once; evidence read from SQLite on demand |
 | Etymology sidecar schema v3 | 45,400,064 bytes | opened read-only; articles decoded on demand |
 | Headword pronunciation ZIP | 1,135,490,706 bytes | indexed once, streamed without extraction |
 | Usable headword MP3 assets | 128,010 files / 1,143,628,003 bytes | not extracted |
@@ -54,7 +54,7 @@ as one archive would lose random access.
 A full-archive probe without semantic search measured API readiness in about 1.2 seconds,
 a 125 MiB working set, and 156 MiB of private memory. After loading semantic search and
 serving real queries, the measured Windows API process used 385.5 MiB of working-set memory
-and 421.2 MiB of private memory. The 174 MiB resident int8 matrix accounts for most of the
+and 421.2 MiB of private memory. The approximately 177.6 MiB resident int8 matrix accounts for most of the
 increase. A sampled 8,377-byte MP3 streamed in 3.6 ms. These numbers exclude the Next.js and
 Caddy containers and serve as a sizing reference, not a cross-platform guarantee.
 
@@ -162,7 +162,7 @@ rate limit, or malformed response returns the complete local lexical page. The r
 Compose keeps the query-vector cache in its own writable volume while every content asset
 remains read-only. The cache stores HMAC keys instead of query text, survives container
 restarts, expires entries after 30 days, and evicts least-recently-used rows above 10,000.
-That default bound is approximately 42-50 MiB. Generate the private cache key with
+That default bound is approximately 12-16 MiB. Generate the private cache key with
 `openssl rand -hex 32`; set `DICTIONARY_SEMANTIC_PERSISTENT_CACHE=false` to opt out. A
 one-shot init service gives the non-root API user ownership of the cache volume before the
 API starts.

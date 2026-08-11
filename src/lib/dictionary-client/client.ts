@@ -6,7 +6,6 @@ import {
 } from "../../../packages/adapters/src/index";
 import type { CanonicalEntry } from "../../../packages/dictionary-schema/src/index";
 import {
-  SEARCH_DOCUMENT_SCOPES,
   searchDocumentLocationSchema,
 } from "../../../packages/dictionary-search/src/index";
 import {
@@ -22,28 +21,55 @@ import {
 } from "./api-url";
 import {
   isChineseSearchQuery,
+  DICTIONARY_SEARCH_SCOPE_ORDER,
   serializeDictionarySearchScopes,
-  type DictionarySearchScope,
 } from "./search-scope";
 import {
   dictionarySearchQueryLimit,
   type DictionarySearchMode,
 } from "./search-mode";
-import type { SearchTarget } from "./search-target";
+import type {
+  EnglishSearchCorrection,
+  EnglishSearchGroup,
+  SearchTarget,
+} from "./search-target";
 
 const dictionarySearchMatchSchema = z.object({
-  scope: z.enum(SEARCH_DOCUMENT_SCOPES),
+  scope: z.enum(DICTIONARY_SEARCH_SCOPE_ORDER),
   englishText: z.string().optional().default(""),
   chineseText: z.string(),
   location: searchDocumentLocationSchema,
   candidateText: z.string().optional(),
   definitionText: z.string().optional(),
   part: z.string().optional(),
+  resourceCategory: z.string().min(1).max(64).optional(),
+  semanticRole: z.enum([
+    "definition",
+    "qualifier",
+    "guidance",
+    "expression",
+    "example",
+    "heading",
+    "context",
+  ]).optional(),
+  matchKind: z.enum([
+    "headword",
+    "variant",
+    "phrase",
+    "pattern",
+    "etymology",
+    "inflection",
+  ]).optional(),
+  relation: z.string().min(1).max(256).optional(),
 }).transform((match) => ({
   ...match,
   ...(match.part ?? match.location.part
     ? { part: match.part ?? match.location.part }
     : {}),
+  ...(match.resourceCategory ? { resourceCategory: match.resourceCategory } : {}),
+  ...(match.semanticRole ? { semanticRole: match.semanticRole } : {}),
+  ...(match.matchKind ? { matchKind: match.matchKind } : {}),
+  ...(match.relation ? { relation: match.relation } : {}),
 }));
 
 const searchItemBaseSchema = z
@@ -92,9 +118,23 @@ const searchItemSchema = z.discriminatedUnion("kind", [
   etymologySearchItemSchema,
 ]);
 
+const englishSearchGroupSchema = z.object({
+  text: z.string(),
+  kind: z.enum(["exact", "phrase", "token"]),
+  items: z.array(searchItemSchema),
+});
+
+const englishSearchCorrectionSchema = z.object({
+  input: z.string(),
+  suggestion: z.string().min(1),
+  items: z.array(searchItemSchema),
+});
+
 const searchResponseSchema = z.object({
   query: z.string().optional(),
   items: z.array(searchItemSchema),
+  groups: z.array(englishSearchGroupSchema).optional(),
+  correction: englishSearchCorrectionSchema.optional(),
   nextOffset: z.number().int().min(1).max(511).optional(),
   semanticStatus: z.enum(["applied", "degraded"]).optional(),
 });
@@ -107,6 +147,8 @@ export type DictionarySearchPage = {
   items: SearchTarget[];
   nextOffset: number | null;
   semanticStatus?: "applied" | "degraded";
+  groups?: EnglishSearchGroup[];
+  correction?: EnglishSearchCorrection;
 };
 
 export function parseSearchPage(payload: unknown): DictionarySearchPage {
@@ -115,6 +157,8 @@ export function parseSearchPage(payload: unknown): DictionarySearchPage {
     items: result.items,
     nextOffset: result.nextOffset ?? null,
     ...(result.semanticStatus ? { semanticStatus: result.semanticStatus } : {}),
+    ...(result.groups ? { groups: result.groups } : {}),
+    ...(result.correction ? { correction: result.correction } : {}),
   };
 }
 
@@ -131,6 +175,8 @@ const errorResponseSchema = z.object({
 export type {
   DictionarySearchItem,
   DictionarySearchMatch,
+  EnglishSearchCorrection,
+  EnglishSearchGroup,
   EtymologySearchItem,
   SearchTarget,
 } from "./search-target";
@@ -211,7 +257,7 @@ export const dictionaryClient = {
     query: string,
     options: {
       limit?: number;
-      scope?: readonly DictionarySearchScope[];
+      scope?: readonly string[];
       mode?: DictionarySearchMode;
       signal?: AbortSignal;
     } = {},
@@ -226,7 +272,7 @@ export const dictionaryClient = {
     const url = apiUrl("search");
     url.searchParams.set("q", normalized);
     url.searchParams.set("limit", String(Math.min(Math.max(options.limit ?? 10, 1), 20)));
-    if (options.scope?.length && isChineseSearchQuery(normalized)) {
+    if (options.scope !== undefined && isChineseSearchQuery(normalized)) {
       url.searchParams.set("scope", serializeDictionarySearchScopes(options.scope));
     }
     if (options.mode === "hybrid") {
@@ -241,7 +287,7 @@ export const dictionaryClient = {
     options: {
       limit?: number;
       offset?: number;
-      scope?: readonly DictionarySearchScope[];
+      scope?: readonly string[];
       mode?: DictionarySearchMode;
       signal?: AbortSignal;
     } = {},
@@ -256,7 +302,8 @@ export const dictionaryClient = {
     const url = apiUrl("search");
     url.searchParams.set("q", normalized);
     url.searchParams.set("limit", String(Math.min(Math.max(options.limit ?? 32, 1), 256)));
-    if (options.scope?.length && isChineseSearchQuery(normalized)) {
+    url.searchParams.set("submitted", "true");
+    if (options.scope !== undefined && isChineseSearchQuery(normalized)) {
       url.searchParams.set("scope", serializeDictionarySearchScopes(options.scope));
     }
     if (options.mode === "hybrid") {

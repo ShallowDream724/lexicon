@@ -169,11 +169,11 @@ adds an adapter and fixtures; it does not add source conditionals to components.
 ### Reverse-Search Projection
 
 `packages/dictionary-search` is the single projection boundary between canonical content
-and Chinese lookup. It recursively traverses root entries, subentries, senses, examples,
-phrases, usage segments, forms, and grammar or usage boxes. Each bilingual projection is
-a `SearchDocument` with a semantic scope, English and Chinese text, a stable entry id,
-and a source-neutral location consisting of section, part of speech, owner id, and
-canonical object path.
+and lookup sidecars. It recursively traverses root entries, subentries, senses, examples,
+phrases, guidance segments, forms, and reference cards. Each bilingual projection is a
+`SearchDocument` with one of five storage scopes (`sense`, `phrase`, `form`, `example`, or
+`resource`), English and Chinese text, a stable entry id, and a source-neutral location
+consisting of section, part of speech, owner id, and canonical object path.
 
 The same traversal builds the browser's object-to-location index. Search evidence and
 rendered anchors therefore cannot acquire separate path conventions. Content from a new
@@ -193,6 +193,16 @@ form relation. The reverse sidecar stores that relation once, and the API enrich
 result window through one batch query. React receives explicit forms and contains no
 irregular-word table or morphology rules; build-only morphology code is absent from the web
 bundle and request path.
+
+Explanatory text stays inside the scope of its owner instead of becoming an independent product
+category. It carries a structural origin and an answerability role such as direct expression,
+guidance, context, or heading. Phrase and form traversal pass their visible subject through the
+same recursion, so an inline note can show the expression it qualifies and retain the original
+English explanation. Root-entry notes rely on the result headword instead of duplicating it.
+Complete grammar, synonym, collocation, language-bank, and similar cards use `resource`; examples
+inside those cards remain resource evidence because selecting them opens that card. This is
+canonical context, not a source-name or individual-word branch. Direct expressions and guidance
+may protect a strong literal result; navigation-only headings cannot outrank answerable evidence.
 
 The build script streams projected documents into the Go importer. The importer validates
 ordering and bounds, creates a deduplicated exact-segment B-tree beside the contentless FTS
@@ -279,7 +289,14 @@ links render a stable loading state instead of briefly rendering home content. L
 history navigation uses the same route resolver. Repeated submission of the same
 normalized query shares one in-flight transition through search and entry loading.
 
-English exact, prefix, correction, and etymology search keep their existing orchestration.
+English typing uses bounded prefix lookup. An explicit submit first resolves the complete input
+against headwords, authoritative forms, grammar patterns, and indexed phrases. If that complete
+input resolves, it is returned once. Otherwise the planner selects longest stored phrases and
+then the informative words not covered by those phrases. A single submitted ASCII word may
+receive one-edit spelling correction. Canonical inflection ownership allows `thought` to show its
+independent entry and its relation to `think`, while `frightened` does not cause an unrelated
+expansion to `frightening`. English lookup never calls the embedding provider or interprets a
+sentence as a free-form semantic query.
 A query containing Han characters uses the reverse-search sidecar and always remains on a
 grouped results page, even when one entry matches. Each evidence row carries its canonical
 location. Selecting it loads the entry, switches to the matching part of speech, opens a
@@ -299,17 +316,17 @@ browser scope changes and continuation requests keep the hybrid mode but never h
 in client state. An optional bounded SQLite cache stores only keyed query hashes and vectors
 across restarts; its namespace includes the complete embedding contract.
 
-Chinese results default to definitions, phrases, and forms. Users may include usage notes
-or examples through one canonical scope control. Scope is part of the request identity,
-URL, cancellation boundary, and every continuation page. The API applies it before its
-candidate limit, so changing scope searches the complete eligible projection instead of
-filtering an already truncated browser result. Each semantic ranking tier owns an independent,
-fixed candidate budget. Complete-token matches suppress partial fallback only within their
-own tier, so enabling examples cannot evict or disable term and phrase candidates. All tiers
-then share the existing deterministic scorer, grouping, and pagination boundary. A scope
-change keeps the controls and current result list mounted while the replacement request is
-pending, updates the checked state immediately, and announces progress through a non-visual
-live region. New submitted queries retain the full loading transition.
+The result page exposes four user ranges: definitions (`sense` plus `form`), phrases (`phrase`),
+examples (`example`), and reference cards (`resource`). Definitions and phrases are selected by
+default. Qualifiers and guidance follow their owning definition, phrase, or form; they do not
+create another filter. Scope is part of the request identity, URL, cancellation boundary, and
+every continuation page. The API applies it before its candidate limit, so changing scope
+searches the complete eligible projection instead of filtering an already truncated browser
+result. Candidate pools remain bounded and independently retrieve core meanings, resources, and
+examples before deterministic grouping and pagination. A scope change keeps the controls and
+current result list mounted while the replacement request is pending, updates the checked state
+immediately, and announces progress through a non-visual live region. New submitted queries
+retain the full loading transition.
 
 Result-page navigation keeps a bounded three-query in-memory session cache keyed by the
 canonical query and scope. Each session retains the loaded result window and scroll offset,
@@ -490,12 +507,13 @@ GET /api/v1/media/illustration?key=<url-encoded asset key>
 ```
 
 Chinese search items additionally include up to eight bounded evidence records. Each
-record contains `scope`, `englishText`, `chineseText`, and a validated `location`. English
-search items retain their existing compact response shape. Chinese requests accept an
+record contains `scope`, `englishText`, `chineseText`, and a validated `location`. Submitted
+English responses may add ordered `groups` for the complete input, matched phrases, and uncovered
+informative words, plus an explicit correction suggestion. Chinese requests accept an
 optional `offset`; their default page contains 32 groups, a page contains at most 256, and
 `nextOffset` is returned only while more of the stable 512-group result window remains.
 Their optional comma-separated `scope` uses the stable order
-`sense,phrase,form,usage,example`; omission defaults to `sense,phrase,form`. Empty,
+`sense,phrase,form,example,resource`; omission defaults to `sense,phrase,form`. Empty,
 repeated, whitespace-bearing, or unknown values are rejected, and English requests reject
 the parameter. `mode=hybrid` is accepted only as an explicit opt-in; ineligible queries use
 the lexical path, and an unavailable semantic provider does not remove lexical results.
@@ -531,15 +549,16 @@ requests as distinct outcomes.
   512. Each request transfers only the next page, and route changes cancel in-flight pages.
 - Scope predicates run in exact and FTS SQL before their candidate limits. Candidate retrieval
   remains separate from final ranking. Complete matches rank match quality, protected candidate
-  pool, semantic scope (sense, then phrase or form, usage, and example), distinct corroborating
-  Chinese evidence, and bounded score. Partial matches rank textual relevance before semantic
-  scope; query-leading coverage improves suffix and noise cases. Identical Chinese evidence does
+  pool, semantic scope (sense, then phrase or form, resource, and example), distinct corroborating
+  Chinese evidence, and bounded score. Exact segments and grammatical extensions remain protected
+  during hybrid fusion; broader substring or distributed matches compete with semantic evidence.
+  Partial matches rank textual relevance before semantic scope. Identical Chinese evidence does
   not increase corroboration.
 - Traditional-to-simplified conversion uses one process-wide, race-safe converter. A query
   is normalized once before its CJK sequences, runes, and FTS tokens are derived.
 - Semantic document vectors use L2-normalized symmetric int8 storage. Startup validates a
-  512 MiB resident-vector ceiling; the bundled 178,382 by 1,024 matrix occupies about
-  174 MiB. One uncached query scans it with at most four workers and keeps at most 4,096
+  512 MiB resident-vector ceiling; the bundled 181,883 by 1,024 matrix occupies about
+  177.6 MiB. One uncached query scans it with at most four workers and keeps at most 4,096
   text candidates before evidence projection.
 - Semantic queries require at least two Han characters. Typing suggestions, English lookup,
   one-character Chinese lookup, invalid input, and oversized input never call the provider.

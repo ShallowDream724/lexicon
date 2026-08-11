@@ -19,8 +19,10 @@ import {
   type CanonicalPartOfSpeech,
   type CanonicalPhrase,
   type CanonicalPronunciation,
+  type CanonicalResourceCategory,
   type CanonicalSense,
   type CanonicalText,
+  type CanonicalTextOrigin,
   type JsonObject,
   type JsonValue,
   type SourceToken,
@@ -175,6 +177,10 @@ function canonicalText(value: unknown): CanonicalText {
   };
 }
 
+function canonicalTextWithOrigin(value: unknown, origin: CanonicalTextOrigin): CanonicalText {
+  return { ...canonicalText(value), origin };
+}
+
 function joinedCanonicalText(values: unknown[], separator = " "): CanonicalText {
   const parts = values
     .map(canonicalText)
@@ -302,52 +308,62 @@ function metadataLabelsFrom(item: Record<string, unknown>): CanonicalLabel[] {
     if (!code) {
       continue;
     }
-
-    const frequency = /^Ox(3000|5000)\b/i.exec(code);
-    if (frequency) {
-      labels.push({ text: frequency[1]!, kind: "frequency", raw: item as JsonValue });
-      continue;
-    }
-
-    const level = /^CEFR_([A-C][12])(?:_|$)/i.exec(code);
-    if (level) {
-      labels.push({
-        text: level[1]!.toLocaleUpperCase(),
-        kind: "level",
-        raw: item as JsonValue,
-      });
-      continue;
-    }
-
-    const opal = /^OPAL_([OSW])$/i.exec(code);
-    if (opal) {
-      labels.push({
-        text: opal[1]!.toLocaleUpperCase(),
-        kind: "academic-register",
-        raw: item as JsonValue,
-      });
-      continue;
-    }
-
-    if (/^(?:CET\d+|NETM|TEM\d+|IELTS|TOEFL|GRE)$/i.test(code)) {
-      labels.push({
-        text: code.toLocaleUpperCase(),
-        kind: "exam",
-        raw: item as JsonValue,
-      });
-      continue;
-    }
-
-    if (/^[A-C][12]$/i.test(code)) {
-      labels.push({
-        text: code.toLocaleUpperCase(),
-        kind: "level",
-        raw: item as JsonValue,
-      });
+    const label = metadataLabelFromCode(code);
+    if (label) {
+      labels.push({ ...label, raw: item as JsonValue });
     }
   }
 
   return labels;
+}
+
+function metadataLabelFromCode(
+  code: string,
+): Pick<CanonicalLabel, "text" | "kind"> | undefined {
+  const frequency = /^Ox(3000|5000)\b/i.exec(code);
+  if (frequency) {
+    return { text: frequency[1]!, kind: "frequency" };
+  }
+
+  const level = /^CEFR_([A-C][12])(?:_|$)/i.exec(code);
+  if (level) {
+    return { text: level[1]!.toLocaleUpperCase(), kind: "level" };
+  }
+
+  const opal = /^OPAL_([OSW])$/i.exec(code);
+  if (opal) {
+    return { text: opal[1]!.toLocaleUpperCase(), kind: "academic-register" };
+  }
+
+  if (/^(?:CET\d+|NETM|TEM\d+|IELTS|TOEFL|GRE)$/i.test(code)) {
+    return { text: code.toLocaleUpperCase(), kind: "exam" };
+  }
+
+  if (/^[A-C][12]$/i.test(code)) {
+    return { text: code.toLocaleUpperCase(), kind: "level" };
+  }
+
+  return undefined;
+}
+
+function stripMetadataMarkers(value: string): string {
+  return value
+    .replace(/\[([^\]]+)\]/g, (marker, code: string) =>
+      metadataLabelFromCode(code.trim()) ? "" : marker,
+    )
+    .trimEnd();
+}
+
+function canonicalPhraseDisplay(value: unknown): CanonicalText {
+  const projected = canonicalText(value);
+  return {
+    ...projected,
+    text: stripMetadataMarkers(projected.text),
+    tokens: projected.tokens.map((token) => ({
+      ...token,
+      text: stripMetadataMarkers(token.text),
+    })),
+  };
 }
 
 function headingLabelsFrom(value: unknown): CanonicalLabel[] {
@@ -489,33 +505,33 @@ function patternsFrom(
 function inlineUsageFrom(value: unknown): CanonicalText[] {
   const usage: CanonicalText[] = [];
   let current: Record<string, unknown>[] = [];
-  let currentKind: "display" | "usage" | undefined;
+  let currentOrigin: CanonicalTextOrigin | undefined;
 
   const flush = (): void => {
     if (current.length) {
-      const projected = canonicalText(current);
+      const projected = canonicalTextWithOrigin(current, currentOrigin!);
       if (projected.text.replace(/[()\s]/g, "")) {
         usage.push(projected);
       }
     }
     current = [];
-    currentKind = undefined;
+    currentOrigin = undefined;
   };
 
   for (const item of asArray(value).filter(isRecord)) {
-    const kind = isSenseUsageToken(item)
-      ? "usage"
+    const origin = isSenseUsageToken(item)
+      ? "use"
       : belongsToSourcePath(item, "dis-g")
-        ? "display"
+        ? "dis-g"
         : undefined;
-    if (!kind) {
+    if (!origin) {
       flush();
       continue;
     }
-    if (currentKind && currentKind !== kind) {
+    if (currentOrigin && currentOrigin !== origin) {
       flush();
     }
-    currentKind = kind;
+    currentOrigin = origin;
     current.push(item);
   }
   flush();
@@ -967,7 +983,54 @@ function flatExampleFrom(
   );
 }
 
-function boxSegmentsFrom(value: unknown): CanonicalBoxSegment[] {
+type BoxSegmentContext = "flow" | "list-item" | "table-cell";
+
+const boxTermPrefixTags = new Set(["label-g", "geo", "reg", "gram-g", "gram"]);
+
+function boxTextTermFrom(items: unknown[], context: BoxSegmentContext): CanonicalText | undefined {
+  if (context === "flow") {
+    return undefined;
+  }
+
+  const sourceTokens = items.filter(isRecord);
+  const boundary = sourceTokens.findIndex((item) => {
+    const tag = stringValue(item.tag)?.toLocaleLowerCase();
+    return tag === "custom-br" || tag === "simp" || tag === "trad" || tag === "zh" || tag === "zho";
+  });
+  const prefix = boundary >= 0 ? sourceTokens.slice(0, boundary) : sourceTokens;
+  const visible = prefix.filter((item) => textOf(item).trim());
+  if (!visible.length) {
+    return undefined;
+  }
+
+  const fullPrefix = canonicalText(prefix);
+  if (/\[(?:diomond|diamond)\]/iu.test(fullPrefix.text)) {
+    const term = fullPrefix.text.replace(/\[(?:diomond|diamond)\]/giu, "").replace(/\s+/gu, " ").trim();
+    return term ? { text: term, tokens: [], raw: prefix as JsonValue } : undefined;
+  }
+
+  let firstSemantic = 0;
+  while (firstSemantic < visible.length) {
+    const tag = stringValue(visible[firstSemantic]!.tag)?.toLocaleLowerCase();
+    if (!tag || !boxTermPrefixTags.has(tag)) {
+      break;
+    }
+    firstSemantic += 1;
+  }
+  const lead = visible[firstSemantic];
+  if (!lead) {
+    return undefined;
+  }
+  const tag = stringValue(lead.tag)?.toLocaleLowerCase();
+  const marked = tag === "eb" || (tag === "eng" && (lead.bold === true || lead.bold === 1 || lead.bold === "1"));
+  if (!marked) {
+    return undefined;
+  }
+  const term = textOf(lead).replace(/\s+/gu, " ").trim();
+  return term ? { text: term, tokens: [], raw: lead as JsonValue } : undefined;
+}
+
+function boxSegmentsFrom(value: unknown, context: BoxSegmentContext = "flow"): CanonicalBoxSegment[] {
   const segments: CanonicalBoxSegment[] = [];
   let buffered: unknown[] = [];
 
@@ -982,9 +1045,11 @@ function boxSegmentsFrom(value: unknown): CanonicalBoxSegment[] {
     }
     const text = canonicalText(buffered);
     if (text.text.replace(/\[(?:diomond|diamond)\]/gi, "").trim()) {
+      const term = boxTextTermFrom(buffered, context);
       segments.push({
         kind: "text",
         value: text,
+        ...(term ? { term } : {}),
         raw: buffered as JsonValue,
       });
     }
@@ -1171,7 +1236,7 @@ function boxTableBlockFrom(content: unknown, raw: JsonObject): CanonicalBoxBlock
           return [{
             header: true,
             value: boxContentTextFrom(cell.th),
-            segments: boxSegmentsFrom(cell.th),
+            segments: boxSegmentsFrom(cell.th, "table-cell"),
             raw: asJsonObject(cell),
           }];
         }
@@ -1179,7 +1244,7 @@ function boxTableBlockFrom(content: unknown, raw: JsonObject): CanonicalBoxBlock
           return [{
             header: false,
             value: boxContentTextFrom(cell.td),
-            segments: boxSegmentsFrom(cell.td),
+            segments: boxSegmentsFrom(cell.td, "table-cell"),
             raw: asJsonObject(cell),
           }];
         }
@@ -1225,7 +1290,7 @@ function boxBlocksFrom(value: unknown): CanonicalBoxBlock[] {
       const items = asArray(content)
         .filter(isRecord)
         .map((item) => ({
-          segments: boxSegmentsFrom(item.li ?? item),
+          segments: boxSegmentsFrom(item.li ?? item, "list-item"),
           raw: asJsonObject(item),
         }))
         .filter((item) => item.segments.length > 0);
@@ -1255,6 +1320,35 @@ function boxBlocksFrom(value: unknown): CanonicalBoxBlock[] {
       raw: asJsonObject(block),
     }];
   });
+}
+
+const resourceCategoryBySourceType = new Map<string, CanonicalResourceCategory>([
+  ["GRAMMAR POINT", "grammar"],
+  ["EXPRESS YOURSELF", "express-yourself"],
+  ["VOCABULARY BUILDING", "vocabulary-building"],
+  ["SYNONYMS", "synonyms"],
+  ["WHICH WORD?", "which-word"],
+  ["LANGUAGE BANK", "language-bank"],
+  ["COLLOCATIONS", "collocations"],
+  ["HOMOPHONES", "homophones"],
+  ["BRITISH/AMERICAN", "british-american"],
+  ["BRITISH AND AMERICAN ENGLISH", "british-american"],
+  ["MORE ABOUT", "more-about"],
+  ["WORDFINDER", "wordfinder"],
+  ["HELP", "help"],
+  ["ORIGIN", "origin"],
+  ["NOTE", "note"],
+]);
+
+function resourceCategoryFrom(type: string | undefined): CanonicalResourceCategory {
+  const normalized = type?.trim().replace(/\s+/gu, " ").toLocaleUpperCase();
+  if (!normalized) return "other";
+  for (const [sourceType, category] of resourceCategoryBySourceType) {
+    if (normalized === sourceType || normalized.startsWith(`${sourceType} `)) {
+      return category;
+    }
+  }
+  return "other";
 }
 
 function grammarUsageBoxesFrom(value: unknown): CanonicalGrammarUsageBox[] {
@@ -1305,9 +1399,11 @@ function grammarUsageBoxesFrom(value: unknown): CanonicalGrammarUsageBox[] {
             }];
           })
         : [];
+      const type = tile ? stringValue(tile.type) : undefined;
       return {
         id: stringValue(item.id),
-        type: tile ? stringValue(tile.type) : undefined,
+        type,
+        resourceCategory: resourceCategoryFrom(type),
         title,
         references,
         blocks: boxBlocksFrom(item.body),
@@ -1336,6 +1432,7 @@ function topUsageBoxesFrom(topData: Record<string, unknown>): CanonicalGrammarUs
   const raw = { top_un: rawItems as JsonValue } satisfies JsonObject;
   return [{
     type: topUsageBoxTypes.get(marker) ?? "NOTE 词典说明",
+    resourceCategory: marker === "[HELP]" ? "help" : marker === "[ORIGIN]" ? "origin" : "note",
     blocks: [{
       kind: "paragraph",
       value: boxContentTextFrom(content),
@@ -2057,7 +2154,7 @@ function canonicalSenseFrom(
     examples: examplesFrom(value.x_gs),
     inlineUsage: inlineUsageFrom(value.sng_text),
     usage: usageSources.map(canonicalText),
-    usageSegments: usageSources.flatMap(boxSegmentsFrom),
+    usageSegments: usageSources.flatMap((source) => boxSegmentsFrom(source)),
     crossReferences: crossReferencesFrom(value),
     illustrations: illustrationsFrom(value),
     grammarUsageBoxes: grammarUsageBoxesFrom(value),
@@ -2090,25 +2187,31 @@ function phrasesFrom(
       const phrases = asArray(group[phraseField]).filter(isRecord);
       const groupReferences = crossReferencesFrom({ xrgs: group.xrgs });
       const groupUsage = phraseUsageFrom(group.un);
-      return phrases.map((phrase, index) => ({
-        id: stringValue(phrase.id),
-        display: canonicalText(phrase[nameField] ?? []),
-        labels: labelsOutsideVariantGroupsFrom(phrase[textField]),
-        variants: phraseVariantsFrom(phrase[textField]),
-        leadingUsage: [
-          ...(index === 0 ? groupUsage : []),
-          ...phraseUsageFrom(phrase.un),
-        ],
-        senses: sensesFrom(
-          phrase,
-          unambiguousPartOfSpeechFrom(group) ?? inheritedPartOfSpeech,
-        ),
-        trailingCrossReferences: [
-          ...crossReferencesFrom(phrase),
-          ...(index === phrases.length - 1 ? groupReferences : []),
-        ],
-        raw: asJsonObject(phrase),
-      }));
+      return phrases.map((phrase, index) => {
+        const displaySource = phrase[nameField] ?? [];
+        return {
+          id: stringValue(phrase.id),
+          display: canonicalPhraseDisplay(displaySource),
+          labels: dedupeLabels([
+            ...headingLabelsFrom(displaySource),
+            ...labelsOutsideVariantGroupsFrom(phrase[textField]),
+          ]),
+          variants: phraseVariantsFrom(phrase[textField]),
+          leadingUsage: [
+            ...(index === 0 ? groupUsage : []),
+            ...phraseUsageFrom(phrase.un),
+          ],
+          senses: sensesFrom(
+            phrase,
+            unambiguousPartOfSpeechFrom(group) ?? inheritedPartOfSpeech,
+          ),
+          trailingCrossReferences: [
+            ...crossReferencesFrom(phrase),
+            ...(index === phrases.length - 1 ? groupReferences : []),
+          ],
+          raw: asJsonObject(phrase),
+        };
+      });
     });
 }
 

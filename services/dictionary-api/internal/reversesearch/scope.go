@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-var orderedScopes = [...]Scope{ScopeSense, ScopePhrase, ScopeForm, ScopeUsage, ScopeExample}
+var orderedScopes = [...]Scope{ScopeSense, ScopePhrase, ScopeForm, ScopeExample, ScopeResource}
 
 func DefaultScopeFilter() ScopeFilter {
 	filter, _ := NewScopeFilter(ScopeSense, ScopePhrase, ScopeForm)

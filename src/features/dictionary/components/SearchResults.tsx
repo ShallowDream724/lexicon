@@ -3,13 +3,18 @@ import { Fragment, type ReactNode, useState } from "react";
 
 import type {
   DictionarySearchMatch,
+  EnglishSearchCorrection,
+  EnglishSearchGroup,
   SearchTarget,
 } from "../../../lib/dictionary-client/search-target";
 import {
+  DICTIONARY_SEARCH_SCOPE_CATEGORY_LABELS,
+  DICTIONARY_SEARCH_SCOPE_CATEGORY_ORDER,
+  dictionarySearchMatchSourceLabel,
+  dictionarySearchMatchSource,
   searchScopeCategoryEnabled,
   toggleSearchScopeCategory,
   type DictionarySearchScope,
-  type DictionarySearchScopeCategory,
 } from "../../../lib/dictionary-client/search-scope";
 import {
   isChineseSearchQuery,
@@ -30,26 +35,13 @@ type SearchResultsProps = {
   scope?: readonly DictionarySearchScope[];
   mode?: "hybrid";
   semanticStatus?: "applied" | "degraded";
+  groups?: readonly EnglishSearchGroup[];
+  correction?: EnglishSearchCorrection;
   onSelect: (target: SearchTarget, match?: DictionarySearchMatch) => void;
+  onCorrectionSelect?: (suggestion: string) => void;
   onLoadMore?: () => void;
   onRetry?: () => void;
   onScopeChange?: (scope: DictionarySearchScope[]) => void;
-};
-
-const scopeCategoryLabels: Record<DictionarySearchScopeCategory, string> = {
-  terms: "词义与短语",
-  usage: "用法",
-  example: "例句",
-};
-
-const scopeCategories: readonly DictionarySearchScopeCategory[] = ["terms", "usage", "example"];
-
-const matchLabels: Record<DictionarySearchMatch["scope"], string> = {
-  sense: "词义",
-  phrase: "短语",
-  example: "例句",
-  usage: "用法",
-  form: "词形",
 };
 
 const compactPartLabels: Readonly<Record<string, string>> = {
@@ -76,6 +68,12 @@ const compactPartLabels: Readonly<Record<string, string>> = {
   suffix: "suff.",
   symbol: "symb.",
   verb: "v.",
+};
+
+const englishGroupLabels: Record<EnglishSearchGroup["kind"], string> = {
+  exact: "精确词条",
+  phrase: "短语",
+  token: "句中词语",
 };
 
 export function compactEvidencePartLabel(part: string): string {
@@ -157,7 +155,10 @@ export function SearchResults({
   scope,
   mode,
   semanticStatus,
+  groups,
+  correction,
   onSelect,
+  onCorrectionSelect,
   onLoadMore,
   onRetry,
   onScopeChange,
@@ -169,9 +170,122 @@ export function SearchResults({
   const reverseLookup = isChineseSearchQuery(query);
   const semanticDegraded =
     reverseLookup && mode === "hybrid" && semanticStatus === "degraded";
-  const enabledScopeCategories = scopeCategories.filter((category) =>
-    searchScopeCategoryEnabled(scope ?? [], category),
-  );
+  const hasPopulatedEnglishGroups = groups?.some((group) => group.items.length > 0) ?? false;
+  const englishGroups = !reverseLookup
+    ? hasPopulatedEnglishGroups || correction
+      ? groups ?? []
+      : [{ text: query, kind: "exact" as const, items }]
+    : [];
+  const hasResults = reverseLookup
+    ? items.length > 0
+    : englishGroups.some((group) => group.items.length > 0);
+  const renderResultItem = (item: SearchTarget) => {
+    const matches = item.kind === "dictionary" ? item.matches ?? [] : [];
+    const headwordForms = item.kind === "dictionary" ? item.headwordForms ?? [] : [];
+    const evidenceCount = item.kind === "dictionary"
+      ? item.matchesTotal ?? matches.length
+      : 0;
+    const evidenceKey = `${query}\u0000${item.kind}\u0000${item.id}`;
+    const expanded = evidenceExpansion.query === query
+      && evidenceExpansion.keys.has(evidenceKey);
+    const visibleMatches = expanded ? matches : matches.slice(0, initialEvidenceCount);
+    const canToggleEvidence =
+      evidenceCount > initialEvidenceCount && matches.length > initialEvidenceCount;
+    const evidenceListId = `search-result-evidence-${item.kind}-${item.id}`;
+    return (
+      <li key={`${item.kind}-${item.id}`}>
+        <div className={`search-result${matches.length ? " has-evidence" : ""}`}>
+          <button
+            className="search-result-item"
+            type="button"
+            onClick={() => onSelect(item, matches[0])}
+          >
+            <strong>{item.headword}</strong>
+            {item.partsOfSpeech.length ? (
+              <span className="search-result-pos">{item.partsOfSpeech.join(", ")}</span>
+            ) : null}
+            {item.translationPreview && (!reverseLookup || !matches.length) ? (
+              <span className="search-result-translation">{item.translationPreview}</span>
+            ) : null}
+            {item.kind === "etymology" ? (
+              <span className="search-result-translation">仅词源</span>
+            ) : null}
+          </button>
+          {matches.length ? (
+            <ul
+              className="search-result-evidence-list"
+              id={evidenceListId}
+              aria-label={`${item.headword} 的匹配内容`}
+            >
+              {visibleMatches.map((match, index) => (
+                <li key={`${match.scope}-${match.location.path.join("-")}-${index}`}>
+                  <button type="button" onClick={() => onSelect(item, match)}>
+                    <span
+                      className="search-result-scope"
+                      data-scope={dictionarySearchMatchSource(match.scope)}
+                    >
+                      <span className="search-result-scope-label">
+                        {dictionarySearchMatchSourceLabel(
+                          match.scope,
+                          match.resourceCategory,
+                          match.matchKind,
+                          match.semanticRole,
+                        )}
+                      </span>
+                      {match.part ? (
+                        <span className="search-result-scope-part">
+                          {compactEvidencePartLabel(match.part)}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="search-result-evidence-copy">
+                      {match.candidateText || match.englishText ? (
+                        <span className="search-result-candidate">
+                          {evidenceText(
+                            match.candidateText || match.englishText,
+                            item.headword,
+                            headwordForms,
+                          )}
+                        </span>
+                      ) : null}
+                      <span className="search-result-chinese">{match.chineseText}</span>
+                      {match.definitionText ? (
+                        <span className="search-result-definition">
+                          {evidenceText(match.definitionText, item.headword, headwordForms)}
+                        </span>
+                      ) : null}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {matches.length && canToggleEvidence ? (
+            <div className="search-result-evidence-toggle">
+              <button
+                aria-controls={evidenceListId}
+                aria-expanded={expanded}
+                type="button"
+                onClick={() => {
+                  setEvidenceExpansion((current) => {
+                    const next = new Set(current.query === query ? current.keys : []);
+                    if (next.has(evidenceKey)) {
+                      next.delete(evidenceKey);
+                    } else {
+                      next.add(evidenceKey);
+                    }
+                    return { query, keys: next };
+                  });
+                }}
+              >
+                {expanded ? "收起匹配内容" : `显示全部 ${evidenceCount} 条匹配`}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </li>
+    );
+  };
   return (
     <section
       aria-busy={pending}
@@ -182,32 +296,45 @@ export function SearchResults({
         <h1>
           {reverseLookup
             ? `“${query}”的相关英文词条`
-            : items.length ? "你要找的是不是：" : "查询结果"}
+            : "查询结果"}
         </h1>
-        {semanticDegraded ? (
+        {reverseLookup && mode === "hybrid" && pending ? (
           <p className="search-results-semantic-status" role="status">
-            部分相关结果暂未显示
+            正在查找相关内容
+          </p>
+        ) : semanticDegraded ? (
+          <p className="search-results-semantic-status" role="status">
+            本次使用本地结果
           </p>
         ) : null}
       </div>
 
       {reverseLookup && scope && onScopeChange ? (
         <div className="search-results-scope" role="group" aria-label="搜索范围">
-          {scopeCategories.map((category) => {
+          {DICTIONARY_SEARCH_SCOPE_CATEGORY_ORDER.map((category) => {
             const checked = searchScopeCategoryEnabled(scope, category);
             return (
               <label key={category}>
                 <input
                   checked={checked}
-                  disabled={checked && enabledScopeCategories.length === 1}
                   type="checkbox"
                   onChange={() => onScopeChange(toggleSearchScopeCategory(scope, category))}
                 />
-                <span>{scopeCategoryLabels[category]}</span>
+                <span>{DICTIONARY_SEARCH_SCOPE_CATEGORY_LABELS[category]}</span>
               </label>
             );
           })}
         </div>
+      ) : null}
+
+      {!reverseLookup && correction && onCorrectionSelect ? (
+        <p className="search-results-correction">
+          是否要找
+          <button type="button" onClick={() => onCorrectionSelect(correction.suggestion)}>
+            {correction.suggestion}
+          </button>
+          ？
+        </p>
       ) : null}
 
       {pending ? <p className="visually-hidden" role="status">正在查询</p> : null}
@@ -219,111 +346,26 @@ export function SearchResults({
         </div>
       ) : null}
 
-      {!error && items.length ? (
+      {!error && reverseLookup && items.length ? (
         <ul className="search-results-list" aria-label="词条">
-          {items.map((item) => {
-            const matches = item.kind === "dictionary" ? item.matches ?? [] : [];
-            const headwordForms = item.kind === "dictionary" ? item.headwordForms ?? [] : [];
-            const evidenceCount = item.kind === "dictionary"
-              ? item.matchesTotal ?? matches.length
-              : 0;
-            const evidenceKey = `${query}\u0000${item.kind}\u0000${item.id}`;
-            const expanded = evidenceExpansion.query === query
-              && evidenceExpansion.keys.has(evidenceKey);
-            const visibleMatches = expanded ? matches : matches.slice(0, initialEvidenceCount);
-            const canToggleEvidence =
-              evidenceCount > initialEvidenceCount && matches.length > initialEvidenceCount;
-            const evidenceListId = `search-result-evidence-${item.kind}-${item.id}`;
-            return (
-            <li key={`${item.kind}-${item.id}`}>
-              <div className={`search-result${matches.length ? " has-evidence" : ""}`}>
-              <button
-                className="search-result-item"
-                type="button"
-                onClick={() => onSelect(item, matches[0])}
-              >
-                <strong>{item.headword}</strong>
-                {item.partsOfSpeech.length ? (
-                  <span className="search-result-pos">{item.partsOfSpeech.join(", ")}</span>
-                ) : null}
-                {item.translationPreview && !matches.length ? (
-                  <span className="search-result-translation">{item.translationPreview}</span>
-                ) : null}
-                {item.kind === "etymology" ? (
-                  <span className="search-result-translation">仅词源</span>
-                ) : null}
-              </button>
-              {matches.length ? (
-                <ul
-                  className="search-result-evidence-list"
-                  id={evidenceListId}
-                  aria-label={`${item.headword} 的匹配内容`}
-                >
-                  {visibleMatches.map((match, index) => (
-                    <li key={`${match.scope}-${match.location.path.join("-")}-${index}`}>
-                      <button type="button" onClick={() => onSelect(item, match)}>
-                        <span className="search-result-scope" data-scope={match.scope}>
-                          <span className="search-result-scope-label">
-                            {matchLabels[match.scope]}
-                          </span>
-                          {match.part ? (
-                            <span className="search-result-scope-part">
-                              {compactEvidencePartLabel(match.part)}
-                            </span>
-                          ) : null}
-                        </span>
-                        <span className="search-result-evidence-copy">
-                          {match.candidateText || match.englishText ? (
-                            <span className="search-result-candidate">
-                              {evidenceText(
-                                match.candidateText || match.englishText,
-                                item.headword,
-                                headwordForms,
-                              )}
-                            </span>
-                          ) : null}
-                          <span className="search-result-chinese">{match.chineseText}</span>
-                          {match.definitionText ? (
-                            <span className="search-result-definition">
-                              {evidenceText(match.definitionText, item.headword, headwordForms)}
-                            </span>
-                          ) : null}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-              {matches.length && canToggleEvidence ? (
-                <div className="search-result-evidence-toggle">
-                  <button
-                    aria-controls={evidenceListId}
-                    aria-expanded={expanded}
-                    type="button"
-                    onClick={() => {
-                      setEvidenceExpansion((current) => {
-                        const next = new Set(current.query === query ? current.keys : []);
-                        if (next.has(evidenceKey)) {
-                          next.delete(evidenceKey);
-                        } else {
-                          next.add(evidenceKey);
-                        }
-                        return { query, keys: next };
-                      });
-                    }}
-                  >
-                    {expanded ? "收起匹配内容" : `显示全部 ${evidenceCount} 条匹配`}
-                  </button>
-                </div>
-              ) : null}
-              </div>
-            </li>
-            );
-          })}
+          {items.map(renderResultItem)}
         </ul>
       ) : null}
 
-      {!pending && !error && !items.length ? (
+      {!error && !reverseLookup && hasResults ? (
+        <div className="search-results-english-groups">
+          {englishGroups.filter((group) => group.items.length > 0).map((group) => (
+            <section className="search-results-english-group" key={`${group.kind}-${group.text}`}>
+              <h2>{englishGroupLabels[group.kind]}</h2>
+              <ul className="search-results-list" aria-label={englishGroupLabels[group.kind]}>
+                {group.items.map(renderResultItem)}
+              </ul>
+            </section>
+          ))}
+        </div>
+      ) : null}
+
+      {!pending && !error && !hasResults && !correction ? (
         <p className="search-results-empty">没有找到与“{query}”匹配的词条</p>
       ) : null}
 

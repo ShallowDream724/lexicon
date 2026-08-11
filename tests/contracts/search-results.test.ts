@@ -61,10 +61,59 @@ test("renders scope controls only for Chinese reverse search", () => {
     onSelect: () => undefined,
   }));
 
-  assert.match(chinese, /词义与短语/);
-  assert.match(chinese, /用法/);
+  assert.match(chinese, /词义/);
+  assert.match(chinese, /短语/);
   assert.match(chinese, /例句/);
-  assert.doesNotMatch(english, /词义与短语/);
+  assert.match(chinese, /扩展资料/);
+  assert.doesNotMatch(english, /扩展资料/);
+});
+
+test("labels sense-owned guidance precisely without creating another filter", () => {
+  const html = renderToStaticMarkup(createElement(SearchResults, {
+    query: "行事的理由",
+    items: [{
+      kind: "dictionary",
+      id: "ulterior",
+      headword: "ulterior",
+      partsOfSpeech: ["adj."],
+      translationPreview: "隐秘的",
+      matches: [{
+        scope: "sense",
+        semanticRole: "qualifier",
+        englishText: "of a reason for doing something",
+        chineseText: "行事的理由",
+        location: { section: "definitions", path: ["senses", "0", "groupHeading"] },
+      }],
+    }],
+    pending: false,
+    onSelect: () => undefined,
+  }));
+
+  assert.match(html, /适用范围/);
+  assert.doesNotMatch(html, />用法</);
+});
+
+test("shows a submitted typo as a correction without an empty-result message", () => {
+  const html = renderToStaticMarkup(createElement(SearchResults, {
+    query: "frigtened",
+    items: [{
+      kind: "dictionary",
+      id: "frightened",
+      headword: "frightened",
+      partsOfSpeech: ["adj."],
+      translationPreview: "害怕的",
+    }],
+    groups: [{ kind: "exact", text: "frigtened", items: [] }],
+    correction: { input: "frigtened", suggestion: "frightened", items: [] },
+    pending: false,
+    onCorrectionSelect: () => undefined,
+    onSelect: () => undefined,
+  }));
+
+  assert.match(html, /是否要找/);
+  assert.match(html, />frightened<\/button>/);
+  assert.doesNotMatch(html, /没有找到/);
+  assert.doesNotMatch(html, /精确词条/);
 });
 
 test("keeps scope controls and current results mounted during a scope refresh", () => {
@@ -86,7 +135,8 @@ test("keeps scope controls and current results mounted during a scope refresh", 
 
   assert.match(html, /aria-busy="true"/);
   assert.match(html, /正在查询/);
-  assert.match(html, /词义与短语/);
+  assert.match(html, /词义/);
+  assert.match(html, /短语/);
   assert.match(html, /例句/);
   assert.match(html, /aria-label="词条"/);
   assert.match(html, />rest</);
@@ -139,7 +189,7 @@ test("renders structured phrase evidence with a neutral degraded status and expa
     onSelect: () => undefined,
   }));
 
-  assert.match(html, /部分相关结果暂未显示/);
+  assert.match(html, /本次使用本地结果/);
   assert.match(html, /data-scope="phrase"/);
   assert.match(html, /短语/);
   assert.match(html, /search-result-scope-part">v\.<\/span>/);
@@ -338,4 +388,88 @@ test("does not show degraded status for lexical Chinese or non-Chinese results",
 
   assert.doesNotMatch(lexical, /部分相关结果暂未显示/);
   assert.doesNotMatch(english, /部分相关结果暂未显示/);
+});
+
+test("renders submitted English groups and keeps correction separate from input suggestions", () => {
+  const html = renderToStaticMarkup(createElement(SearchResults, {
+    query: "I thought about it",
+    items: [],
+    pending: false,
+    groups: [{
+      text: "thought",
+      kind: "exact",
+      items: [{ kind: "dictionary", id: "thought", headword: "thought", partsOfSpeech: ["noun"], translationPreview: "想法" }, {
+        kind: "etymology",
+        id: "thought-origin",
+        headword: "thought",
+        partsOfSpeech: [],
+        translationPreview: "",
+      }],
+    }, {
+      text: "think about",
+      kind: "phrase",
+      items: [{ kind: "dictionary", id: "think-about", headword: "think about", partsOfSpeech: [], translationPreview: "考虑" }],
+    }, {
+      text: "it",
+      kind: "token",
+      items: [{
+        kind: "dictionary",
+        id: "it",
+        headword: "it",
+        partsOfSpeech: ["pron."],
+        translationPreview: "它",
+        matches: [{
+          scope: "form",
+          englishText: "it",
+          chineseText: "它",
+          matchKind: "inflection",
+          relation: "it",
+          location: { section: "definitions", path: ["senses", "0"] },
+        }],
+      }],
+    }],
+    correction: { input: "thnik", suggestion: "think", items: [] },
+    onCorrectionSelect: () => undefined,
+    onSelect: () => undefined,
+  }));
+
+  assert.match(html, /精确词条/);
+  assert.match(html, /短语/);
+  assert.match(html, /句中词语/);
+  assert.match(html, /是否要找/);
+  assert.match(html, />think<\/button>/);
+  assert.match(html, /仅词源/);
+  assert.match(html, /词形/);
+});
+
+test("keeps an English token translation preview beside its inflection evidence", () => {
+  const html = renderToStaticMarkup(createElement(SearchResults, {
+    query: "I thought",
+    items: [],
+    pending: false,
+    groups: [{
+      text: "thought",
+      kind: "token",
+      items: [{
+        kind: "dictionary",
+        id: "think",
+        headword: "think",
+        partsOfSpeech: ["verb"],
+        translationPreview: "认为",
+        matches: [{
+          scope: "form",
+          englishText: "thought",
+          chineseText: "词形匹配",
+          matchKind: "inflection",
+          relation: "think",
+          location: { section: "definitions", path: [] },
+        }],
+      }],
+    }],
+    onSelect: () => undefined,
+  }));
+
+  assert.match(html, /认为/);
+  assert.match(html, /词形/);
+  assert.match(html, /thought/);
 });

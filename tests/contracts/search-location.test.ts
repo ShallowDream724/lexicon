@@ -126,3 +126,44 @@ test("starts the full target highlight only after scrolling settles", (context) 
   assert.equal(attributes.has("data-search-highlight"), false);
   context.mock.timers.reset();
 });
+
+test("cancels an earlier location highlight when a later result becomes active", (context) => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  const ownerDocument = new EventTarget() as unknown as Document;
+  Object.defineProperty(ownerDocument, "defaultView", { value: null });
+  const createTarget = (path: string) => {
+    const attributes = new Map<string, string>();
+    return {
+      attributes,
+      target: {
+        dataset: { searchPath: path },
+        offsetWidth: 240,
+        ownerDocument,
+        removeAttribute(name: string) {
+          attributes.delete(name);
+        },
+        scrollIntoView() {},
+        setAttribute(name: string, value: string) {
+          attributes.set(name, value);
+        },
+      } as unknown as HTMLElement,
+    };
+  };
+  const first = createTarget("senses/0");
+  const second = createTarget("senses/1");
+  const root = {
+    querySelectorAll(selector: string) {
+      return selector === "[data-search-path]" ? [first.target, second.target] : [];
+    },
+  } as unknown as ParentNode;
+
+  revealSearchLocation({ section: "definitions", path: ["senses", "0"] }, root);
+  revealSearchLocation({ section: "definitions", path: ["senses", "1"] }, root);
+  context.mock.timers.tick(120);
+
+  assert.equal(first.attributes.has("data-search-highlight"), false);
+  assert.equal(second.attributes.get("data-search-highlight"), "true");
+  context.mock.timers.tick(3_000);
+  assert.equal(second.attributes.has("data-search-highlight"), false);
+  context.mock.timers.reset();
+});

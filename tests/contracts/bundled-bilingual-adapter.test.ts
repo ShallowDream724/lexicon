@@ -909,6 +909,42 @@ test("preserves bilingual display qualifiers that precede sense definitions", ()
     entry.senses.map((sense) => sense.inlineUsage?.map((usage) => usage.text)),
     [[" (of a person 人) "], [" (of a dog 狗) "]],
   );
+  assert.deepEqual(
+    entry.senses.map((sense) => sense.inlineUsage?.map((usage) => usage.origin)),
+    [["dis-g"], ["dis-g"]],
+  );
+});
+
+test("distinguishes ulterior definition qualifiers from true use notes", () => {
+  const entry = adapter.parse({
+    entryId: "entry-ulterior",
+    headword: "ulterior",
+    sourceVersion: "2026.08",
+    body: {
+      top_data: { h: [{ tag: "h", value: "ulterior" }] },
+      sngs_data: { sn_g: [{
+        id: "ulterior-sense",
+        sng_text: [
+          { tag: "dtxt", value: " (", path: "h-g/sn-gs/sn-g/dis-g/dtxt" },
+          { tag: "eng", value: "usually disapproving", path: "h-g/sn-gs/sn-g/dis-g/dtxt/eng" },
+          { tag: "dtxt", value: ") ", path: "h-g/sn-gs/sn-g/dis-g/dtxt" },
+          { tag: "use", value: " (", path: "h-g/sn-gs/sn-g/use" },
+          { tag: "eng", value: "not usually before a noun", path: "h-g/sn-gs/sn-g/use/eng" },
+          { tag: "use_end", value: ")", path: "h-g/sn-gs/sn-g/use" },
+        ],
+        def_eng: [{ tag: "eng", value: "existing but not obvious" }],
+        def_simp: [{ tag: "simp", value: "隐蔽存在的" }],
+      }] },
+    },
+  });
+
+  assert.deepEqual(entry.senses[0]?.inlineUsage?.map((usage) => ({
+    text: usage.text.trim(),
+    origin: usage.origin,
+  })), [
+    { text: "(usually disapproving)", origin: "dis-g" },
+    { text: "(not usually before a noun)", origin: "use" },
+  ]);
 });
 
 test("combines split inflection tokens once and never exposes their source fragments as labels", () => {
@@ -1461,6 +1497,7 @@ test("retains grammar and usage boxes without flattening their bodies", () => {
 
   assert.equal(entry.grammarUsageBoxes.length, 1);
   assert.equal(entry.grammarUsageBoxes[0]?.type, "GRAMMAR POINT");
+  assert.equal(entry.grammarUsageBoxes[0]?.resourceCategory, "grammar");
   assert.equal(entry.grammarUsageBoxes[0]?.title?.text, "Grammar语法说明");
   assert.equal(entry.grammarUsageBoxes[0]?.body.length, 4);
   assert.deepEqual(entry.grammarUsageBoxes[0]?.blocks.map((block) => block.kind), [
@@ -1495,6 +1532,95 @@ test("retains grammar and usage boxes without flattening their bodies", () => {
   assert.deepEqual(entry.grammarUsageBoxes[0]?.raw.custom_box_field, {
     preserved: "yes",
   });
+});
+
+test("normalizes resource card types at the adapter boundary", () => {
+  const entry = adapter.parse({
+    entryId: "entry-resource-categories",
+    headword: "say",
+    sourceVersion: "2026.08",
+    body: {
+      top_data: { h: [{ tag: "h", value: "say" }] },
+      sngs_data: [],
+      unbox: [{
+        id: "express-yourself",
+        tile: { type: "EXPRESS YOURSELF", eng: "Say it naturally" },
+        body: [{ p: [{ tag: "eng", value: "Use a direct phrase." }, { tag: "simp", value: "使用直接表达。" }] }],
+      }, {
+        id: "which-word",
+        tile: { type: "WHICH WORD?", eng: "say or tell" },
+        body: [{ p: [{ tag: "eng", value: "Choose by listener." }, { tag: "simp", value: "根据听者选择。" }] }],
+      }, {
+        id: "british-american",
+        tile: { type: "BRITISH/AMERICAN 英式 / 美式英语", eng: "Different terms" },
+        body: [{ p: [{ tag: "eng", value: "Use lift or elevator." }, { tag: "simp", value: "使用不同词语。" }] }],
+      }],
+    },
+  });
+
+  assert.deepEqual(entry.grammarUsageBoxes.map((box) => ({
+    id: box.id,
+    resourceCategory: box.resourceCategory,
+  })), [
+    { id: "express-yourself", resourceCategory: "express-yourself" },
+    { id: "which-word", resourceCategory: "which-word" },
+    { id: "british-american", resourceCategory: "british-american" },
+  ]);
+});
+
+test("marks source-defined terms and patterns without treating explanatory prose as a term", () => {
+  const entry = adapter.parse({
+    entryId: "entry-usage-terms",
+    headword: "mad",
+    sourceVersion: "2026.08",
+    body: {
+      top_data: { h: [{ tag: "h", value: "mad" }] },
+      sngs_data: [],
+      unbox: [{
+        id: "box-usage-terms",
+        tile: { type: "SYNONYMS", eng: "mad" },
+        body: [{
+          ul: [{ li: [
+            { tag: "eb", value: "nuts", bold: 1 },
+            { tag: "label-g", value: " (" },
+            { tag: "reg", value: "informal" },
+            { tag: "label-g", value: ")" },
+            { tag: "custom-br", value: "" },
+            { tag: "eng", value: "mad" },
+            { tag: "simp", value: " 指发疯、神经错乱" },
+          ] }, { li: [
+            { tag: "li_text", value: "[diomond]to " },
+            { tag: "eb", value: "drive sb", bold: 1 },
+            { tag: "li_text", value: " mad/crazy/nuts" },
+          ] }, { li: [
+            { tag: "eng", value: "Do not use " },
+            { tag: "eb", value: "mad", bold: 1 },
+            { tag: "eng", value: " for a real mental illness." },
+            { tag: "simp", value: " 不要这样使用。" },
+          ] }],
+        }, {
+          table: [{ tr: [{ td: [
+            { tag: "eng", value: "burst", bold: 1 },
+            { tag: "simp", value: "爆裂" },
+          ] }] }],
+        }],
+      }],
+    },
+  });
+
+  const list = entry.grammarUsageBoxes[0]?.blocks[0];
+  assert.equal(list?.kind, "list");
+  if (list?.kind !== "list") assert.fail("expected a usage list");
+  const terms = list.items.map((item) => {
+    const segment = item.segments[0];
+    return segment?.kind === "text" ? segment.term?.text : undefined;
+  });
+  assert.deepEqual(terms, ["nuts", "to drive sb mad/crazy/nuts", undefined]);
+
+  const table = entry.grammarUsageBoxes[0]?.blocks[1];
+  assert.equal(table?.kind, "table");
+  const cell = table?.kind === "table" ? table.rows[0]?.cells[0]?.segments[0] : undefined;
+  assert.equal(cell?.kind === "text" ? cell.term?.text : undefined, "burst");
 });
 
 test("preserves ordered pronunciation runs inside a top-level help note", () => {
@@ -2251,6 +2377,49 @@ test("maps idioms and phrasal verbs from root and subentry phrase groups", () =>
   assert.deepEqual(subentry?.phrasalVerbs.map((phrase) => phrase.display.text), [
     "fuck off",
   ]);
+});
+
+test("separates phrase proficiency metadata from visible dictionary notation", () => {
+  const entry = adapter.parse({
+    entryId: "entry-hand",
+    headword: "hand",
+    sourceVersion: "2026.08",
+    body: {
+      top_data: { h: [{ tag: "h", value: "hand" }] },
+      idm_gs: [{
+        idm_g: [{
+          id: "hand-contrast",
+          idm_name: [{
+            tag: "idm",
+            value: "(on the one hand…) on the other (hand)…[Ox3000 key_S] [CEFR_B1_S]",
+          }],
+          sn_g: [],
+        }, {
+          id: "hand-literal-brackets",
+          idm_name: [{ tag: "idm", value: "keep [someone] posted" }],
+          sn_g: [],
+        }],
+      }],
+    },
+  });
+
+  assert.equal(
+    entry.idioms[0]?.display.text,
+    "(on the one hand…) on the other (hand)…",
+  );
+  assert.equal(
+    entry.idioms[0]?.display.tokens[0]?.text,
+    "(on the one hand…) on the other (hand)…",
+  );
+  assert.deepEqual(entry.idioms[0]?.labels.map((label) => [label.text, label.kind]), [
+    ["3000", "frequency"],
+    ["B1", "level"],
+  ]);
+  assert.equal(
+    (entry.idioms[0]?.raw.idm_name as Array<{ value: string }> | undefined)?.[0]?.value,
+    "(on the one hand…) on the other (hand)…[Ox3000 key_S] [CEFR_B1_S]",
+  );
+  assert.equal(entry.idioms[1]?.display.text, "keep [someone] posted");
 });
 
 test("preserves phrase-group usage and structured alternative phrase wording", () => {

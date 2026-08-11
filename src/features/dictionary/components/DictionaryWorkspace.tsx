@@ -11,12 +11,17 @@ import type {
 } from "../../../../packages/enhancement-schema/src/index";
 import {
   dictionaryClient,
+  type EnglishSearchCorrection,
+  type EnglishSearchGroup,
   type SearchTarget,
 } from "../../../lib/dictionary-client/client";
 import { searchTargetKey } from "../../../lib/dictionary-client/search-target";
 import {
+  DEFAULT_CHINESE_SEARCH_SCOPES,
   dictionarySearchRequestKey,
+  hasSelectedChineseSearchScope,
   parseChineseSearchScopes,
+  serializeDictionarySearchScopes,
   type DictionarySearchScope,
 } from "../../../lib/dictionary-client/search-scope";
 import { isHybridSearchEligible } from "../../../lib/dictionary-client/search-mode";
@@ -75,6 +80,8 @@ type SearchResultsState = {
   pending: boolean;
   error: string | null;
   semanticStatus?: "applied" | "degraded";
+  groups?: EnglishSearchGroup[];
+  correction?: EnglishSearchCorrection;
   nextOffset: number | null;
   loadingMore: boolean;
   loadMoreError: string | null;
@@ -117,6 +124,19 @@ function updateRoute(url: string, mode: "push" | "replace"): void {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
+}
+
+export function isCurrentSearchResultRequest(
+  activeRequestKey: string | null,
+  responseRequestKey: string,
+): boolean {
+  return activeRequestKey === responseRequestKey;
+}
+
+export function hasContextualEnglishSearchResults(
+  groups: readonly EnglishSearchGroup[] | undefined,
+): boolean {
+  return groups?.some((group) => group.kind !== "exact" && group.items.length > 0) ?? false;
 }
 
 export function DictionaryWorkspace({
@@ -642,6 +662,8 @@ export function DictionaryWorkspace({
         pending: true,
         error: null,
         semanticStatus: undefined,
+        groups: undefined,
+        correction: undefined,
         nextOffset: null,
         loadingMore: false,
         loadMoreError: null,
@@ -649,25 +671,28 @@ export function DictionaryWorkspace({
 
       try {
         const primaryPage = reverseLookup
-          ? await dictionaryClient.searchPage(requestedQuery, {
-              limit: initialReverseResultCount,
-              scope,
-              mode,
-              signal: controller.signal,
-            })
-          : {
-              items: await dictionaryClient.search(requestedQuery, {
-                limit: 20,
+          ? !hasSelectedChineseSearchScope(scope ?? [])
+            ? { items: [], nextOffset: null }
+            : await dictionaryClient.searchPage(requestedQuery, {
+                limit: initialReverseResultCount,
+                scope,
+                mode,
                 signal: controller.signal,
-              }),
-              nextOffset: null,
-            };
-        if (submittedSearchRequest.current !== controller || controller.signal.aborted) {
+              })
+          : await dictionaryClient.searchPage(requestedQuery, {
+              limit: 20,
+              signal: controller.signal,
+            });
+        if (
+          submittedSearchRequest.current !== controller ||
+          controller.signal.aborted ||
+          !isCurrentSearchResultRequest(submittedSearchKey.current, requestKey)
+        ) {
           return null;
         }
 
         let resolution = resolveSearchMatches(requestedQuery, primaryPage.items);
-        if (resolution.kind === "candidates" && resolution.items.length === 0) {
+        if (!reverseLookup && resolution.kind === "candidates" && resolution.items.length === 0) {
           for (const fallbackQuery of fallbackSearchQueries(requestedQuery)) {
             const fallbackItems = await dictionaryClient.search(fallbackQuery, {
               limit: 20,
@@ -679,10 +704,24 @@ export function DictionaryWorkspace({
             }
           }
         }
-        if (submittedSearchRequest.current !== controller || controller.signal.aborted) {
+        if (
+          submittedSearchRequest.current !== controller ||
+          controller.signal.aborted ||
+          !isCurrentSearchResultRequest(submittedSearchKey.current, requestKey)
+        ) {
           return null;
         }
-        if (resolution.kind === "direct") {
+        const exactEnglishTarget = resolution.kind === "direct"
+          && !reverseLookup
+          && !primaryPage.correction
+          && !hasContextualEnglishSearchResults(primaryPage.groups)
+          && primaryPage.groups?.find((group) => group.kind === "exact")?.items.some(
+            (item) => searchTargetKey(item) === searchTargetKey(resolution.target),
+          );
+        if (
+          resolution.kind === "direct"
+          && (!primaryPage.groups?.length || exactEnglishTarget)
+        ) {
           submittedSearchRequest.current = null;
           const route = options.route === "none" ? "replace" : options.route ?? "push";
           const articleTarget = options.targetArticleId
@@ -690,17 +729,22 @@ export function DictionaryWorkspace({
             : undefined;
           return await selectSearchTarget(resolution.target, { route, articleTarget });
         }
+        const resolvedItems = resolution.kind === "candidates"
+          ? resolution.items
+          : primaryPage.items;
 
         setSearchResults({
           query: requestedQuery,
           scope,
           mode,
-          items: resolution.items,
+          items: resolvedItems,
           pending: false,
           error: null,
           semanticStatus: reverseLookup && mode === "hybrid"
             ? primaryPage.semanticStatus
             : undefined,
+          groups: reverseLookup ? undefined : primaryPage.groups,
+          correction: reverseLookup ? undefined : primaryPage.correction,
           nextOffset: reverseLookup ? primaryPage.nextOffset : null,
           loadingMore: false,
           loadMoreError: null,
@@ -734,6 +778,8 @@ export function DictionaryWorkspace({
           pending: false,
           error: dictionarySearchErrorMessage(error),
           semanticStatus: undefined,
+          groups: undefined,
+          correction: undefined,
           nextOffset: null,
           loadingMore: false,
           loadMoreError: null,
@@ -986,8 +1032,16 @@ export function DictionaryWorkspace({
       (view === "etymology" && normalizeSearchQuery(etymology?.term ?? "") === normalizedQuery);
     const currentResultsAreShown =
       view === "search-results" &&
+      !searchResults.pending &&
       !searchResults.error &&
       normalizeSearchQuery(searchResults.query) === normalizedQuery;
+    const hasDefaultChineseScope =
+      serializeDictionarySearchScopes(searchResults.scope ?? []) ===
+      serializeDictionarySearchScopes(DEFAULT_CHINESE_SEARCH_SCOPES);
+    if (normalizedQuery && currentResultsAreShown && isChineseSearchQuery(normalizedQuery) && !hasDefaultChineseScope) {
+      void runSearch(query, { route: "push", scope: DEFAULT_CHINESE_SEARCH_SCOPES });
+      return;
+    }
     if (normalizedQuery && (currentEntryIsOpen || currentResultsAreShown)) {
       setSearchOpen(false);
       setSearchPending(false);
@@ -1225,6 +1279,8 @@ export function DictionaryWorkspace({
             <SearchResults
               error={searchResults.error}
               hasMore={searchResults.nextOffset !== null}
+              correction={searchResults.correction}
+              groups={searchResults.groups}
               items={searchResults.items}
               loadingMore={searchResults.loadingMore}
               loadMoreError={searchResults.loadMoreError}
@@ -1233,6 +1289,11 @@ export function DictionaryWorkspace({
                 ? undefined
                 : nextReverseResultCount(searchResults.nextOffset)}
               onLoadMore={() => void loadMoreSearchResults()}
+              onCorrectionSelect={(suggestion) => {
+                setQuery(suggestion);
+                recordExplicitQuery(suggestion);
+                void runSearch(suggestion, { route: "push" });
+              }}
               onRetry={() => void runSearch(searchResults.query, {
                 route: "none",
                 scope: searchResults.scope,

@@ -218,7 +218,7 @@ function entryFixture(): CanonicalEntry {
 test("projects canonical bilingual content recursively with stable document locations", () => {
   const documents = projectCanonicalEntrySearchDocuments(entryFixture());
   searchDocumentsSchema.parse(documents);
-  assert.equal(SEARCH_DOCUMENT_SCHEMA_VERSION, "1.4");
+  assert.equal(SEARCH_DOCUMENT_SCHEMA_VERSION, "2.2");
 
   const rootSense = documents.find((document) => document.location.ownerId === "sense-root");
   assert.deepEqual(rootSense?.location, {
@@ -237,10 +237,16 @@ test("projects canonical bilingual content recursively with stable document loca
   assert.equal(phrase?.definitionText, "to correct a false account");
   assert.equal(phrase?.chineseText, "澄清事实");
   assert.equal(phrase?.weight, SEARCH_DOCUMENT_WEIGHTS.phrase);
+  assert.equal(phrase?.semanticRole, "definition");
 
   assert.equal(documents.some((document) => document.location.ownerId === "example-root" && document.scope === "example"), true);
-  assert.equal(documents.some((document) => document.location.ownerId === "box-list-example" && document.scope === "example"), true);
-  assert.equal(documents.some((document) => document.location.ownerId === "box-table-example" && document.scope === "example"), true);
+  assert.equal(documents.some((document) =>
+    document.location.ownerId === "box-list-example" &&
+    document.scope === "resource" &&
+    document.semanticRole === "example" &&
+    document.resourceCategory === "other",
+  ), true);
+  assert.equal(documents.some((document) => document.location.ownerId === "box-table-example" && document.scope === "resource"), true);
   assert.equal(documents.some((document) => document.location.ownerId === "form-recorder-variant" && document.scope === "form"), true);
   assert.equal(documents.some((document) => document.location.ownerId === "form-sense" && document.scope === "sense"), true);
 	  const nested = documents.find((document) => document.location.ownerId === "nested-sense");
@@ -249,6 +255,61 @@ test("projects canonical bilingual content recursively with stable document loca
 	  assert.equal(nested?.location.part, "noun");
 	  assert.deepEqual(nested?.location.path, ["subentries", "0", "senses", "0"]);
   assert.equal(documents.some((document) => document.chineseText.includes("原始中文不得进入索引")), false);
+});
+
+test("attaches canonical grammar patterns as English lookup metadata without adding search documents", () => {
+  const entry = entryFixture();
+  entry.headwordPatterns = [text("record sth as sth")];
+  entry.senses[0]!.patterns = [text("record sth")];
+  const withoutPatterns = entryFixture();
+
+  const documents = projectCanonicalEntrySearchDocuments(entry);
+  const baseline = projectCanonicalEntrySearchDocuments(withoutPatterns);
+  const rootSense = documents.find((document) => document.location.ownerId === "sense-root");
+
+  assert.equal(documents.length, baseline.length);
+  assert.deepEqual(rootSense?.englishLookupTerms, [
+    { kind: "pattern", text: "record sth as sth" },
+    { kind: "pattern", text: "record sth" },
+  ]);
+  searchDocumentsSchema.parse(documents);
+  assert.throws(() => searchDocumentsSchema.parse([{
+    ...rootSense,
+    englishLookupTerms: [{ kind: "unknown", text: "record sth" }],
+  }]));
+});
+
+test("keeps definition qualifiers and true usage notes attached to their owning sense", () => {
+  const entry = entryFixture();
+  entry.senses[0]!.inlineUsage = [
+    { ...text("usually disapproving 通常含贬义"), origin: "dis-g" },
+    { ...text("not usually before a noun 通常不用于名词前"), origin: "use" },
+  ];
+
+  const documents = projectCanonicalEntrySearchDocuments(entry);
+  const qualifier = documents.find((document) => document.origin === "dis-g");
+  const guidance = documents.find((document) => document.origin === "use");
+
+  assert.equal(qualifier?.scope, "sense");
+  assert.equal(qualifier?.semanticRole, "qualifier");
+  assert.equal(guidance?.scope, "sense");
+  assert.equal(guidance?.semanticRole, "guidance");
+});
+
+test("projects bilingual sense guidewords as qualifiers of their owning result", () => {
+  const entry = entryFixture();
+  entry.senses[0]!.groupHeading = text("LIQUID/GAS 液体；气体");
+
+  const documents = projectCanonicalEntrySearchDocuments(entry);
+  const guideword = documents.find((document) =>
+    document.location.path.join("/") === "senses/0/groupHeading",
+  );
+
+  assert.equal(guideword?.scope, "sense");
+  assert.equal(guideword?.englishText, "LIQUID/GAS");
+  assert.equal(guideword?.chineseText, "液体；气体");
+  assert.equal(guideword?.semanticRole, "qualifier");
+  assert.equal(guideword?.location.ownerId, "sense-root");
 });
 
 test("collects authoritative headword forms without admitting constructions or derivatives", () => {
@@ -459,6 +520,7 @@ test("keeps identical text at distinct locations and omits content without Chine
 test("projects rich box segments without aggregate duplicates and preserves token language boundaries", () => {
   const entry = entryFixture();
   const box = entry.grammarUsageBoxes[0]!;
+  box.resourceCategory = "express-yourself";
   const paragraph = box.blocks[0]!;
   assert.equal(paragraph.kind, "paragraph");
   box.title = taggedText({ tag: "eng", text: "Object-like detail" }, { tag: "simp", text: "对象式细节。" });
@@ -482,10 +544,142 @@ test("projects rich box segments without aggregate duplicates and preserves toke
   assert.equal(boxDocuments.filter((document) => document.chineseText === "对象式细节。").length, 1);
   assert.equal(detail?.englishText, "Object-like detail");
   assert.equal(detail?.chineseText, "对象式细节。");
+  assert.equal(detail?.scope, "resource");
+  assert.equal(detail?.semanticRole, "context");
+  assert.equal(detail?.origin, "grammar-usage-box");
+  assert.equal(detail?.resourceCategory, "express-yourself");
   assert.equal(/[，。！？；：、】【、】【（）《》〈〉「」『』]/u.test(detail?.englishText ?? ""), false);
   assert.equal(boxDocuments.some((document) => document.location.path.includes("rows")), false);
-  assert.equal(documents.some((document) => document.location.ownerId === "box-list-example"), true);
-  assert.equal(documents.some((document) => document.location.ownerId === "box-table-example"), true);
+  assert.equal(documents.some((document) => document.location.ownerId === "box-list-example" && document.scope === "resource"), true);
+  assert.equal(documents.some((document) =>
+    document.location.ownerId === "box-list-example" &&
+    document.scope === "resource" &&
+    document.semanticRole === "example" &&
+    document.resourceCategory === "express-yourself",
+  ), true);
+  assert.equal(documents.some((document) => document.location.ownerId === "box-table-example" && document.scope === "resource"), true);
+});
+
+test("assigns stable semantic roles to resource evidence and usage guidance", () => {
+  const entry = entryFixture();
+  const box = entry.grammarUsageBoxes[0]!;
+  box.title = taggedText(
+    { tag: "eng", text: "Agreeing" },
+    { tag: "simp", text: "表示赞同" },
+  );
+  box.blocks = [{
+    kind: "list",
+    items: [{
+      segments: [{
+        kind: "text",
+        value: text("I couldn't agree more."),
+        term: text("I couldn't agree more"),
+        raw,
+      }],
+      raw,
+    }, {
+      segments: [{ kind: "text", value: text("English-only background."), raw }],
+      raw,
+    }],
+    raw,
+  }];
+
+  const documents = projectCanonicalEntrySearchDocuments(entry);
+  searchDocumentsSchema.parse(documents);
+  const direct = documents.find((document) => document.candidateText === "I couldn't agree more");
+  assert.equal(direct?.scope, "resource");
+  assert.equal(direct?.chineseText, "表示赞同");
+  assert.equal(direct?.semanticRole, "expression");
+  assert.equal(direct?.origin, "grammar-usage-box");
+  assert.equal(documents.some((document) => document.englishText === "English-only background."), false);
+
+  const title = documents.find((document) => document.location.path.at(-1) === "title");
+  assert.equal(title?.semanticRole, "heading");
+  assert.equal(title?.resourceCategory, "other");
+  const inline = documents.find((document) => document.location.path.includes("inlineUsage"));
+  assert.equal(inline?.scope, "sense");
+  assert.equal(inline?.semanticRole, "guidance");
+  assert.equal(documents.every((document) => document.semanticRole.length > 0), true);
+
+  const sense = documents.find((document) => document.scope === "sense")!;
+  assert.throws(() => searchDocumentsSchema.parse([{ ...sense, resourceCategory: "grammar" }]));
+  assert.throws(() => searchDocumentsSchema.parse([{ ...direct, resourceCategory: undefined }]));
+});
+
+test("treats an empty structured term as missing and falls back to the owning expression", () => {
+  const entry = entryFixture();
+  const derived = entry.derivedForms[0]!;
+  derived.senses![0]!.grammarUsageBoxes = [{
+    id: "box-empty-term",
+    title: text("Construction 构式"),
+    blocks: [{
+      kind: "list",
+      items: [{
+        segments: [{
+          kind: "text",
+          value: text("usually singular 通常用单数"),
+          term: text("   "),
+          raw,
+        }],
+        raw,
+      }],
+      raw,
+    }],
+    body: [],
+    raw,
+  }];
+
+  const match = projectCanonicalEntrySearchDocuments(entry).find((document) =>
+    document.location.ownerId === "box-empty-term" &&
+    document.semanticRole === "context",
+  );
+
+  assert.equal(match?.candidateText, "recorder");
+  assert.equal(match?.definitionText, "usually singular");
+  assert.equal(match?.scope, "resource");
+});
+
+test("keeps the owning phrase or form visible for contextual usage evidence", () => {
+  const entry = entryFixture();
+  const phrase = entry.idioms[0]!;
+  phrase.leadingUsage = [text("(used for emphasis) 用于强调")];
+  phrase.senses[0]!.inlineUsage = [text("(not for any reason) 表示绝不")];
+
+  const derived = entry.derivedForms[0]!;
+  derived.usage = [text("(usually singular) 通常用单数")];
+  derived.senses![0]!.usage = [text("(mainly British English) 主要用于英式英语")];
+  const sameHeadwordSubentry = entry.subentries[0]!;
+  sameHeadwordSubentry.headword = "record";
+  sameHeadwordSubentry.displayHeadword = "re·cord";
+  sameHeadwordSubentry.headwordUsage = [text("(technical) 技术用语")];
+
+  const documents = projectCanonicalEntrySearchDocuments(entry);
+  const contextual = documents.filter((document) =>
+    ["sense", "phrase", "form"].includes(document.scope) && document.semanticRole === "guidance",
+  );
+
+  assert.deepEqual(
+    contextual.map((document) => [
+      document.scope,
+      document.candidateText,
+      document.definitionText,
+      document.chineseText,
+    ]),
+    [
+      ["sense", undefined, undefined, "使用于口语"],
+      ["phrase", "set the record straight", "(used for emphasis)", "用于强调"],
+      ["phrase", "set the record straight", "(not for any reason)", "表示绝不"],
+      ["form", "recorder", "(usually singular)", "通常用单数"],
+      ["sense", "recorder", "(mainly British English)", "主要用于英式英语"],
+      ["sense", undefined, undefined, "技术用语"],
+    ],
+  );
+  const sameHeadwordUsage = documents.find((document) =>
+    document.scope === "sense" && document.semanticRole === "guidance" &&
+    document.location.path[0] === "subentries",
+  );
+  assert.equal(sameHeadwordUsage?.candidateText, undefined);
+  assert.equal(sameHeadwordUsage?.definitionText, undefined);
 });
 
 test("coalesces compatibility text with its structured segment under the same owner", () => {
@@ -498,7 +692,7 @@ test("coalesces compatibility text with its structured segment under the same ow
   entry.senses[0]!.usageSegments = [{ kind: "text", value: repeated, raw }];
 
   const matches = projectCanonicalEntrySearchDocuments(entry).filter((document) =>
-    document.scope === "usage" &&
+    document.scope === "sense" && document.semanticRole === "guidance" &&
     document.location.ownerId === "sense-root" &&
     document.chineseText === "谨慎使用这一形式。",
   );
@@ -577,7 +771,7 @@ test("preserves traditional and unlabelled bilingual tokens without weakening la
 
   const documents = projectCanonicalEntrySearchDocuments(entry);
   const sense = documents.find((document) => document.location.ownerId === "sense-root" && document.scope === "sense");
-  const usage = documents.find((document) => document.location.ownerId === "sense-root" && document.scope === "usage");
+  const usage = documents.find((document) => document.location.ownerId === "sense-root" && document.scope === "sense" && document.semanticRole === "guidance");
 
   assert.equal(sense?.englishText, "a lexical item");
   assert.equal(sense?.chineseText, "詞彙");

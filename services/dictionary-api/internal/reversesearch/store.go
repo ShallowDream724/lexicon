@@ -12,8 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"golang.org/x/text/unicode/norm"
-
+	"dictionary-api/internal/searchtext"
 	_ "modernc.org/sqlite"
 )
 
@@ -29,21 +28,28 @@ const (
 	bigramCoverageWeight       = 30
 	longestRunWeight           = 3
 	negationMismatchPenalty    = 45
+	maxEnglishLookupTerms      = 128
+	maxEnglishMatchesPerTerm   = 16
 )
 
 type candidate struct {
-	id                int64
-	document          SearchDocument
-	bm25              float64
-	score             float64
-	matchTier         int
-	exact             bool
-	coverage          float64
-	longest           int
-	negationMismatch  bool
-	candidatePoolTier int
-	resultPriority    int
-	corroboration     int
+	id                   int64
+	document             SearchDocument
+	bm25                 float64
+	score                float64
+	matchTier            int
+	exact                bool
+	coverage             float64
+	longest              int
+	negationMismatch     bool
+	candidatePoolTier    int
+	resultPriority       int
+	rolePriority         int
+	corroboration        int
+	headwordAnchor       bool
+	headwordAnchorRank   int
+	asciiSignificantHits int
+	asciiHits            int
 }
 
 // Open validates that the sidecar was built from the current primary dictionary.
@@ -83,7 +89,7 @@ func validateStore(db *sql.DB, expectedPrimarySHA256 string) error {
 			return fmt.Errorf("reverse-search metadata %q does not match", key)
 		}
 	}
-	for _, key := range []string{"source_version", "document_count", "segment_count", "form_count"} {
+	for _, key := range []string{"source_version", "document_count", "segment_count", "form_count", "headword_term_count", "english_term_count"} {
 		var value string
 		if err := db.QueryRow(`SELECT value FROM metadata WHERE key = ?`, key).Scan(&value); err != nil || strings.TrimSpace(value) == "" {
 			return fmt.Errorf("reverse-search metadata %q is missing or empty", key)
@@ -120,6 +126,30 @@ func validateStore(db *sql.DB, expectedPrimarySHA256 string) error {
 	var storedFormCount string
 	if err := db.QueryRow(`SELECT value FROM metadata WHERE key = 'form_count'`).Scan(&storedFormCount); err != nil || storedFormCount != fmt.Sprintf("%d", formCount) {
 		return errors.New("reverse-search headword-form count metadata is invalid")
+	}
+	var termTableSQL string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'entry_headword_terms'`).Scan(&termTableSQL); err != nil || !strings.Contains(strings.ToUpper(termTableSQL), "PRIMARY KEY(TERM, ENTRY_ID)") || !strings.Contains(strings.ToUpper(termTableSQL), "WITHOUT ROWID") {
+		return errors.New("reverse-search headword-term table is missing or invalid")
+	}
+	var termCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM entry_headword_terms`).Scan(&termCount); err != nil {
+		return errors.New("reverse-search headword-term table is unreadable")
+	}
+	var storedTermCount string
+	if err := db.QueryRow(`SELECT value FROM metadata WHERE key = 'headword_term_count'`).Scan(&storedTermCount); err != nil || storedTermCount != fmt.Sprintf("%d", termCount) {
+		return errors.New("reverse-search headword-term count metadata is invalid")
+	}
+	var englishTableSQL string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'english_terms'`).Scan(&englishTableSQL); err != nil || !strings.Contains(strings.ToUpper(englishTableSQL), "WITHOUT ROWID") || !strings.Contains(strings.ToUpper(englishTableSQL), "DOCUMENT_ID INTEGER NOT NULL") {
+		return errors.New("reverse-search English term table is missing or invalid")
+	}
+	var englishTermCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM english_terms`).Scan(&englishTermCount); err != nil {
+		return errors.New("reverse-search English term table is unreadable")
+	}
+	var storedEnglishTermCount string
+	if err := db.QueryRow(`SELECT value FROM metadata WHERE key = 'english_term_count'`).Scan(&storedEnglishTermCount); err != nil || storedEnglishTermCount != fmt.Sprintf("%d", englishTermCount) {
+		return errors.New("reverse-search English term count metadata is invalid")
 	}
 	return nil
 }
@@ -188,6 +218,111 @@ func (s *Store) HeadwordForms(ctx context.Context, entryIDs []string) (map[strin
 	return formsByEntry, nil
 }
 
+// LookupEnglishTerms resolves a bounded set of exact headwords, authoritative
+// forms, and stored phrases in one indexed query.
+func (s *Store) LookupEnglishTerms(ctx context.Context, terms []string) (map[string][]EnglishTermMatch, error) {
+	result := make(map[string][]EnglishTermMatch)
+	if len(terms) == 0 {
+		return result, nil
+	}
+	if s == nil || s.db == nil {
+		return result, errors.New("reverse-search store is unavailable")
+	}
+
+	normalized := make([]string, 0, min(len(terms), maxEnglishLookupTerms))
+	seen := make(map[string]struct{}, len(terms))
+	for _, value := range terms {
+		term := searchtext.NormalizeHeadwordTerm(value)
+		if term == "" || len(term) > maxEnglishTermB {
+			continue
+		}
+		if _, exists := seen[term]; exists {
+			continue
+		}
+		if len(normalized) == maxEnglishLookupTerms {
+			return result, fmt.Errorf("English term lookup exceeds %d unique terms", maxEnglishLookupTerms)
+		}
+		seen[term] = struct{}{}
+		normalized = append(normalized, term)
+	}
+	if len(normalized) == 0 {
+		return result, nil
+	}
+
+	values := make([]string, len(normalized))
+	arguments := make([]any, 0, len(normalized)*2+1)
+	for index, term := range normalized {
+		values[index] = "(?, ?)"
+		arguments = append(arguments, term, index)
+	}
+	arguments = append(arguments, maxEnglishMatchesPerTerm)
+	rows, err := s.db.QueryContext(ctx, `
+		WITH query_terms(term, ordinal) AS (VALUES `+strings.Join(values, ",")+`),
+		ranked AS (
+				SELECT q.term, q.ordinal, t.entry_id, t.kind, t.headword, t.display, t.document_id,
+					       d.headword AS document_headword, d.scope, d.english_text, d.candidate_text, d.definition_text,
+					       d.chinese_text, d.semantic_role, d.section, d.part, d.owner_id, d.path_json,
+				       ROW_NUMBER() OVER (
+					   PARTITION BY q.ordinal
+					   ORDER BY CASE t.kind WHEN 'headword' THEN 0 WHEN 'form' THEN 1 ELSE 2 END,
+						            length(CASE t.kind WHEN 'phrase' THEN d.candidate_text WHEN 'pattern' THEN t.display ELSE t.display END),
+						            CASE WHEN t.kind IN ('phrase','pattern') THEN d.headword WHEN t.kind = 'headword' THEN t.display ELSE t.headword END COLLATE NOCASE,
+					            t.entry_id, t.document_id
+				       ) AS match_rank
+				FROM query_terms q
+				JOIN english_terms t ON t.term = q.term
+				LEFT JOIN documents d ON d.id = t.document_id
+			)
+			SELECT term, entry_id, kind,
+				       CASE WHEN kind IN ('phrase','pattern') THEN document_headword WHEN kind = 'headword' THEN display ELSE headword END AS headword,
+				       CASE kind WHEN 'phrase' THEN candidate_text ELSE display END AS display,
+				       document_id, scope,
+				       CASE kind WHEN 'pattern' THEN display ELSE candidate_text END AS evidence_candidate,
+				       CASE WHEN definition_text <> '' THEN definition_text ELSE english_text END AS evidence_definition,
+				       chinese_text, semantic_role, section, part, owner_id, path_json
+		FROM ranked
+		WHERE match_rank <= ?
+		ORDER BY ordinal, match_rank`, arguments...)
+	if err != nil {
+		return nil, fmt.Errorf("query English terms: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var item EnglishTermMatch
+		var documentID int64
+		var scope, candidateText, definitionText, chineseText, semanticRole, section, part, ownerID, pathJSON sql.NullString
+		if err := rows.Scan(&item.Term, &item.EntryID, &item.Kind, &item.Headword, &item.Display,
+			&documentID, &scope, &candidateText, &definitionText, &chineseText, &semanticRole, &section, &part, &ownerID, &pathJSON); err != nil {
+			return nil, fmt.Errorf("scan English term: %w", err)
+		}
+		if item.Kind != EnglishTermHeadword && item.Kind != EnglishTermForm && item.Kind != EnglishTermPhrase && item.Kind != EnglishTermPattern {
+			return nil, errors.New("stored English term kind is invalid")
+		}
+		if item.Kind == EnglishTermPhrase || item.Kind == EnglishTermPattern {
+			if documentID == 0 || !scope.Valid || !candidateText.Valid || !definitionText.Valid || !chineseText.Valid || !semanticRole.Valid || !section.Valid || !part.Valid || !ownerID.Valid || !pathJSON.Valid {
+				return nil, errors.New("stored contextual English evidence is missing")
+			}
+			evidence := EnglishTermEvidence{
+				Scope:         Scope(scope.String),
+				CandidateText: candidateText.String, DefinitionText: definitionText.String,
+				ChineseText: chineseText.String, SemanticRole: SemanticRole(semanticRole.String),
+				Location: Location{Section: Section(section.String), Part: part.String, OwnerID: ownerID.String},
+			}
+			if err := json.Unmarshal([]byte(pathJSON.String), &evidence.Location.Path); err != nil {
+				return nil, fmt.Errorf("invalid stored English phrase path: %w", err)
+			}
+			item.Evidence = &evidence
+		} else if documentID != 0 {
+			return nil, errors.New("stored direct English term has document evidence")
+		}
+		result[item.Term] = append(result[item.Term], item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read English terms: %w", err)
+	}
+	return result, ctx.Err()
+}
+
 func (s *Store) Search(ctx context.Context, query string, options Options) ([]Group, error) {
 	options.Offset = 0
 	page, err := s.SearchPage(ctx, query, options)
@@ -223,10 +358,16 @@ func (s *Store) SearchPage(ctx context.Context, query string, options Options) (
 	normalizedQuery := normalizeChinese(query)
 	querySequences := cjkSequencesFromNormalized(normalizedQuery)
 	queryRunes := cjkRunesFromSequences(querySequences)
-	asciiTerms := asciiQueryTerms(query)
+	profile := searchtext.NewQueryProfile(query)
+	asciiTerms := profile.AllTerms()
 	searchTokens := queryTokensFromSequences(querySequences)
+	anchorCandidates, err := s.searchHeadwordAnchorCandidates(ctx, profile.AnchorTerms(), scopes, queryRunes, newCommonRunMatcher(queryRunes))
+	if err != nil {
+		return empty, err
+	}
 	if len(queryRunes) == 0 || len(searchTokens) == 0 {
-		return empty, nil
+		anchorCandidates = annotateASCIIEvidence(anchorCandidates, profile)
+		return paginateGroups(groupCandidates(queryRunes, anchorCandidates, groupLimit), offset, limit), nil
 	}
 	matcher := newCommonRunMatcher(queryRunes)
 	exactCandidates := []candidate{}
@@ -251,11 +392,12 @@ func (s *Store) SearchPage(ctx context.Context, query string, options Options) (
 		if err != nil {
 			return empty, err
 		}
-		preciseCandidates = filterCandidatesByASCII(mergeCandidates(preciseCandidates, exactCandidates), asciiTerms)
+		preciseCandidates = filterCandidatesByASCII(mergeCandidates(preciseCandidates, exactCandidates), profile)
 		preciseCandidates = filterCandidatesForQuery(queryRunes, preciseCandidates)
 		fallbackScopes = scopesWithoutCandidateTiers(scopes, preciseCandidates)
 		if len(fallbackScopes) == 0 {
-			return paginateGroups(groupCandidates(queryRunes, preciseCandidates, groupLimit), offset, limit), nil
+			candidates := annotateASCIIEvidence(mergeCandidates(preciseCandidates, anchorCandidates), profile)
+			return paginateGroups(groupCandidates(queryRunes, candidates, groupLimit), offset, limit), nil
 		}
 	}
 	candidates, err := s.searchCandidates(ctx, matchExpression(searchTokens), queryRunes, matcher, fallbackScopes, asciiTerms)
@@ -266,7 +408,9 @@ func (s *Store) SearchPage(ctx context.Context, query string, options Options) (
 	if len(searchTokens) == 1 {
 		candidates = mergeCandidates(candidates, exactCandidates)
 	}
-	candidates = filterCandidatesByASCII(candidates, asciiTerms)
+	candidates = mergeCandidates(candidates, anchorCandidates)
+	candidates = filterCandidatesByASCII(candidates, profile)
+	candidates = annotateASCIIEvidence(candidates, profile)
 	return paginateGroups(groupCandidates(queryRunes, candidates, groupLimit), offset, limit), nil
 }
 
@@ -299,8 +443,8 @@ func (s *Store) searchCandidates(
 	for _, partition := range partitions {
 		predicate, predicateArguments := candidatePredicate(partition, asciiTerms)
 		statement := fmt.Sprintf(`
-							SELECT d.id, d.entry_id, d.headword, d.scope, d.english_text, d.candidate_text, d.definition_text, d.chinese_text,
-						       d.section, d.part, d.owner_id, d.path_json, d.weight, bm25(documents_fts)
+								SELECT d.id, d.entry_id, d.headword, d.scope, d.english_text, d.candidate_text, d.definition_text, d.chinese_text,
+							       d.semantic_role, d.origin, d.resource_category, d.section, d.part, d.owner_id, d.path_json, d.weight, bm25(documents_fts)
 				FROM documents_fts
 				JOIN documents d ON d.id = documents_fts.rowid
 					WHERE documents_fts MATCH ? AND %s
@@ -336,8 +480,8 @@ func (s *Store) searchExactCandidates(
 	for _, partition := range partitions {
 		predicate, predicateArguments := candidatePredicate(partition, asciiTerms)
 		statement := fmt.Sprintf(`
-						SELECT d.id, d.entry_id, d.headword, d.scope, d.english_text, d.candidate_text, d.definition_text, d.chinese_text,
-					       d.section, d.part, d.owner_id, d.path_json, d.weight, 0.0
+							SELECT d.id, d.entry_id, d.headword, d.scope, d.english_text, d.candidate_text, d.definition_text, d.chinese_text,
+						       d.semantic_role, d.origin, d.resource_category, d.section, d.part, d.owner_id, d.path_json, d.weight, 0.0
 					FROM exact_segments x
 					JOIN documents d ON d.id = x.document_id
 					WHERE x.normalized = ? AND %s
@@ -358,6 +502,81 @@ func (s *Store) searchExactCandidates(
 		candidates = append(candidates, partitionCandidates...)
 	}
 	return candidates, nil
+}
+
+func (s *Store) searchHeadwordAnchorCandidates(
+	ctx context.Context,
+	terms []searchtext.AnchorTerm,
+	scopes []Scope,
+	queryRunes []rune,
+	matcher commonRunMatcher,
+) ([]candidate, error) {
+	if len(terms) == 0 {
+		return nil, nil
+	}
+	values := make([]string, len(terms))
+	arguments := make([]any, 0, len(terms)*2+len(scopes)*2+2)
+	for index, term := range terms {
+		values[index] = "(?, ?)"
+		arguments = append(arguments, term.Term, term.Ordinal)
+	}
+	anchorPredicate, anchorPredicateArguments := scopePredicateForAlias("scoped", scopes)
+	predicate, predicateArguments := scopePredicate(scopes)
+	statement := `
+		WITH query_terms(term, ordinal) AS (VALUES ` + strings.Join(values, ",") + `),
+		anchor_entries AS (
+			SELECT h.entry_id, MIN(q.ordinal) AS anchor_rank
+			FROM query_terms q
+			JOIN entry_headword_terms h ON h.term = q.term
+			JOIN documents scoped ON scoped.entry_id = h.entry_id
+			WHERE ` + anchorPredicate + `
+			GROUP BY h.entry_id
+			ORDER BY anchor_rank, h.entry_id
+			LIMIT ?
+		)
+		SELECT d.id, d.entry_id, d.headword, d.scope, d.english_text, d.candidate_text, d.definition_text, d.chinese_text,
+		       d.semantic_role, d.origin, d.resource_category, d.section, d.part, d.owner_id, d.path_json, d.weight, a.anchor_rank, 0.0
+		FROM anchor_entries a
+		JOIN documents d ON d.entry_id = a.entry_id
+		WHERE ` + predicate + `
+		ORDER BY a.anchor_rank, d.weight DESC, d.entry_id, d.id
+		LIMIT ?`
+	arguments = append(arguments, anchorPredicateArguments...)
+	arguments = append(arguments, defaultCandidates)
+	arguments = append(arguments, predicateArguments...)
+	arguments = append(arguments, defaultCandidates)
+	rows, err := s.db.QueryContext(ctx, statement, arguments...)
+	if err != nil {
+		return nil, fmt.Errorf("query headword anchors: %w", err)
+	}
+	defer rows.Close()
+	candidates := make([]candidate, 0, 32)
+	for rows.Next() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		var item candidate
+		var pathJSON string
+		if err := rows.Scan(&item.id, &item.document.EntryID, &item.document.Headword, &item.document.Scope, &item.document.EnglishText, &item.document.CandidateText, &item.document.DefinitionText, &item.document.ChineseText, &item.document.SemanticRole, &item.document.Origin, &item.document.ResourceCategory, &item.document.Location.Section, &item.document.Location.Part, &item.document.Location.OwnerID, &pathJSON, &item.document.Weight, &item.headwordAnchorRank, &item.bm25); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(pathJSON), &item.document.Location.Path); err != nil {
+			return nil, fmt.Errorf("invalid stored location path: %w", err)
+		}
+		item.score, item.matchTier, item.exact, item.coverage, item.longest, item.negationMismatch = scoreCandidate(queryRunes, matcher, item.document, item.bm25)
+		item.candidatePoolTier = candidatePoolTier(item.document.Scope)
+		item.resultPriority = scopeResultPriority(item.document.Scope)
+		item.rolePriority = item.document.SemanticRole.EvidencePriority()
+		if item.rolePriority < 0 {
+			return nil, errors.New("stored reverse-search semantic role is invalid")
+		}
+		item.headwordAnchor = true
+		candidates = append(candidates, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return candidates, ctx.Err()
 }
 
 func partitionScopesByCandidatePool(scopes []Scope) [][]Scope {
@@ -395,13 +614,17 @@ func scopesWithoutCandidateTiers(scopes []Scope, candidates []candidate) []Scope
 }
 
 func scopePredicate(scopes []Scope) (string, []any) {
+	return scopePredicateForAlias("d", scopes)
+}
+
+func scopePredicateForAlias(alias string, scopes []Scope) (string, []any) {
 	placeholders := make([]string, len(scopes))
 	arguments := make([]any, len(scopes))
 	for index, scope := range scopes {
 		placeholders[index] = "?"
 		arguments[index] = scope
 	}
-	return "d.scope IN (" + strings.Join(placeholders, ",") + ")", arguments
+	return alias + ".scope IN (" + strings.Join(placeholders, ",") + ")", arguments
 }
 
 func candidatePredicate(scopes []Scope, asciiTerms []string) (string, []any) {
@@ -428,7 +651,7 @@ func scanCandidates(
 		}
 		var c candidate
 		var pathJSON string
-		if err := rows.Scan(&c.id, &c.document.EntryID, &c.document.Headword, &c.document.Scope, &c.document.EnglishText, &c.document.CandidateText, &c.document.DefinitionText, &c.document.ChineseText, &c.document.Location.Section, &c.document.Location.Part, &c.document.Location.OwnerID, &pathJSON, &c.document.Weight, &c.bm25); err != nil {
+		if err := rows.Scan(&c.id, &c.document.EntryID, &c.document.Headword, &c.document.Scope, &c.document.EnglishText, &c.document.CandidateText, &c.document.DefinitionText, &c.document.ChineseText, &c.document.SemanticRole, &c.document.Origin, &c.document.ResourceCategory, &c.document.Location.Section, &c.document.Location.Part, &c.document.Location.OwnerID, &pathJSON, &c.document.Weight, &c.bm25); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(pathJSON), &c.document.Location.Path); err != nil {
@@ -437,6 +660,10 @@ func scanCandidates(
 		c.score, c.matchTier, c.exact, c.coverage, c.longest, c.negationMismatch = scoreCandidate(queryRunes, matcher, c.document, c.bm25)
 		c.candidatePoolTier = candidatePoolTier(c.document.Scope)
 		c.resultPriority = scopeResultPriority(c.document.Scope)
+		c.rolePriority = c.document.SemanticRole.EvidencePriority()
+		if c.rolePriority < 0 {
+			return nil, errors.New("stored reverse-search semantic role is invalid")
+		}
 		candidates = append(candidates, c)
 	}
 	if err := rows.Err(); err != nil {
@@ -452,39 +679,66 @@ func mergeCandidates(primary, additional []candidate) []candidate {
 	if len(additional) == 0 {
 		return primary
 	}
-	seen := make(map[int64]struct{}, len(primary)+len(additional))
-	for _, item := range primary {
-		seen[item.id] = struct{}{}
+	seen := make(map[int64]int, len(primary)+len(additional))
+	for index, item := range primary {
+		seen[item.id] = index
 	}
 	for _, item := range additional {
-		if _, exists := seen[item.id]; exists {
+		if index, exists := seen[item.id]; exists {
+			mergeCandidateSignals(&primary[index], item)
 			continue
 		}
-		seen[item.id] = struct{}{}
+		seen[item.id] = len(primary)
 		primary = append(primary, item)
 	}
 	return primary
 }
 
-func filterCandidatesByASCII(candidates []candidate, terms []string) []candidate {
+func mergeCandidateSignals(target *candidate, additional candidate) {
+	if additional.headwordAnchor && (!target.headwordAnchor || additional.headwordAnchorRank < target.headwordAnchorRank) {
+		target.headwordAnchor = true
+		target.headwordAnchorRank = additional.headwordAnchorRank
+	}
+	if additional.asciiSignificantHits > target.asciiSignificantHits {
+		target.asciiSignificantHits = additional.asciiSignificantHits
+	}
+	if additional.asciiHits > target.asciiHits {
+		target.asciiHits = additional.asciiHits
+	}
+}
+
+func annotateASCIIEvidence(candidates []candidate, profile searchtext.QueryProfile) []candidate {
+	for index := range candidates {
+		candidates[index].asciiSignificantHits, candidates[index].asciiHits = profile.EvidenceHits(
+			candidates[index].document.Headword,
+			candidates[index].document.EnglishText,
+			candidates[index].document.CandidateText,
+			candidates[index].document.DefinitionText,
+			candidates[index].document.ChineseText,
+		)
+	}
+	return candidates
+}
+
+func filterCandidatesByASCII(candidates []candidate, profile searchtext.QueryProfile) []candidate {
+	terms := profile.AllTerms()
 	if len(terms) == 0 {
 		return candidates
 	}
 	filtered := candidates[:0]
 	for _, item := range candidates {
-		searchable := strings.ToLower(norm.NFKC.String(strings.Join([]string{
+		if item.headwordAnchor {
+			filtered = append(filtered, item)
+			continue
+		}
+		_, hits := profile.EvidenceHits(
 			item.document.Headword,
 			item.document.EnglishText,
+			item.document.CandidateText,
+			item.document.DefinitionText,
 			item.document.ChineseText,
-		}, " ")))
-		matched := true
-		for _, term := range terms {
-			if !strings.Contains(searchable, term) {
-				matched = false
-				break
-			}
-		}
-		if matched {
+		)
+		if hits == len(terms) {
 			filtered = append(filtered, item)
 		}
 	}
@@ -497,6 +751,9 @@ func scoreCandidate(
 	document SearchDocument,
 	bm25 float64,
 ) (float64, int, bool, float64, int, bool) {
+	if len(queryRunes) == 0 {
+		return float64(document.Weight) - bm25, 0, false, 0, 0, false
+	}
 	sequences := cjkSequencesWithoutTraditionalConversion(document.ChineseText)
 	if coverageSequences(queryRunes, sequences) < 1 {
 		sequences = cjkSequences(document.ChineseText)
@@ -525,6 +782,8 @@ func scoreCandidate(
 	bigramCoverage := coverageSequences(queryRunes, sequences)
 	leadingCoverage := leadingQueryCoverage(queryRunes, sequences)
 	segmentExact, grammaticalExtension, segmentBoundary, compactness, positionQuality := segmentMatchQuality(queryRunes, sequences)
+	strongDistributedMatch := len(queryRunes) >= 4 && !negationMismatch &&
+		bigramCoverage >= .6 && longest >= minimumPartialRun(len(queryRunes))
 	totalRunes := 0
 	for _, sequence := range sequences {
 		totalRunes += len(sequence)
@@ -536,7 +795,7 @@ func scoreCandidate(
 		matchTier = 4
 	} else if grammaticalExtension {
 		matchTier = 3
-	} else if segmentBoundary || exact {
+	} else if segmentBoundary || exact || strongDistributedMatch {
 		matchTier = 2
 	}
 	score := float64(document.Weight) - bm25
@@ -559,7 +818,7 @@ func candidatePoolTier(scope Scope) int {
 	switch scope {
 	case ScopeSense, ScopePhrase, ScopeForm:
 		return 3
-	case ScopeUsage:
+	case ScopeResource:
 		return 2
 	case ScopeExample:
 		return 1
@@ -571,13 +830,13 @@ func candidatePoolTier(scope Scope) int {
 func scopeResultPriority(scope Scope) int {
 	switch scope {
 	case ScopeSense:
-		return 3
+		return 4
 	case ScopePhrase, ScopeForm:
+		return 3
+	case ScopeResource:
 		return 2
-	case ScopeUsage:
-		return 1
 	case ScopeExample:
-		return 0
+		return 1
 	default:
 		return -1
 	}
@@ -699,6 +958,7 @@ func groupCandidates(query []rune, candidates []candidate, limit int) []Group {
 			entryID:        item.document.EntryID,
 			matchTier:      item.matchTier,
 			resultPriority: item.resultPriority,
+			rolePriority:   item.rolePriority,
 		}
 		evidence := candidateEvidence{candidateQuality: quality, chineseText: item.document.ChineseText}
 		if _, exists := seenEvidence[evidence]; !exists && qualityCounts[quality] < maxMatches {
@@ -711,6 +971,7 @@ func groupCandidates(query []rune, candidates []candidate, limit int) []Group {
 			entryID:        candidates[index].document.EntryID,
 			matchTier:      candidates[index].matchTier,
 			resultPriority: candidates[index].resultPriority,
+			rolePriority:   candidates[index].rolePriority,
 		}]
 	}
 	sort.SliceStable(candidates, func(left, right int) bool {
@@ -736,23 +997,31 @@ func groupCandidates(query []rune, candidates []candidate, limit int) []Group {
 			index = len(groups)
 			byEntry[candidate.document.EntryID] = index
 			groups = append(groups, Group{
-				EntryID:   candidate.document.EntryID,
-				Headword:  candidate.document.Headword,
-				Relevance: candidateRelevance(candidate),
-				Matches:   make([]Match, 0, maxMatches),
+				EntryID:            candidate.document.EntryID,
+				Headword:           candidate.document.Headword,
+				Relevance:          candidateRelevance(candidate),
+				Matches:            make([]Match, 0, maxMatches),
+				HeadwordAnchor:     candidate.headwordAnchor,
+				HeadwordAnchorRank: candidate.headwordAnchorRank,
 			})
+		}
+		if candidate.headwordAnchor && (!groups[index].HeadwordAnchor || candidate.headwordAnchorRank < groups[index].HeadwordAnchorRank) {
+			groups[index].HeadwordAnchor = true
+			groups[index].HeadwordAnchorRank = candidate.headwordAnchorRank
 		}
 		if len(groups[index].Matches) == maxMatches {
 			continue
 		}
 		groups[index].Matches = append(groups[index].Matches, Match{
-			Scope:          candidate.document.Scope,
-			English:        candidate.document.EnglishText,
-			CandidateText:  candidate.document.CandidateText,
-			DefinitionText: candidate.document.DefinitionText,
-			Chinese:        candidate.document.ChineseText,
-			Location:       candidate.document.Location,
-			Relevance:      candidateRelevance(candidate),
+			Scope:            candidate.document.Scope,
+			English:          candidate.document.EnglishText,
+			CandidateText:    candidate.document.CandidateText,
+			DefinitionText:   candidate.document.DefinitionText,
+			Chinese:          candidate.document.ChineseText,
+			SemanticRole:     candidate.document.SemanticRole,
+			ResourceCategory: candidate.document.ResourceCategory,
+			Location:         candidate.document.Location,
+			Relevance:        candidateRelevance(candidate),
 		})
 	}
 	return groups
@@ -768,6 +1037,29 @@ func candidateRelevance(candidate candidate) Relevance {
 }
 
 func compareCandidateRelevance(left, right candidate) int {
+	if left.headwordAnchor != right.headwordAnchor {
+		if left.headwordAnchor {
+			return 1
+		}
+		return -1
+	}
+	if left.headwordAnchor && right.headwordAnchor {
+		if order := cmp.Compare(left.matchTier, right.matchTier); order != 0 {
+			return order
+		}
+		if order := cmp.Compare(left.asciiSignificantHits, right.asciiSignificantHits); order != 0 {
+			return order
+		}
+		if order := cmp.Compare(left.asciiHits, right.asciiHits); order != 0 {
+			return order
+		}
+		if order := cmp.Compare(left.score, right.score); order != 0 {
+			return order
+		}
+		if order := cmp.Compare(right.headwordAnchorRank, left.headwordAnchorRank); order != 0 {
+			return order
+		}
+	}
 	if order := cmp.Compare(left.matchTier, right.matchTier); order != 0 {
 		return order
 	}
@@ -777,6 +1069,9 @@ func compareCandidateRelevance(left, right candidate) int {
 	// Scope refines complete matches; partial fallbacks remain ordered by textual relevance.
 	if left.matchTier > 1 {
 		if order := cmp.Compare(left.resultPriority, right.resultPriority); order != 0 {
+			return order
+		}
+		if order := cmp.Compare(left.rolePriority, right.rolePriority); order != 0 {
 			return order
 		}
 		if order := cmp.Compare(left.corroboration, right.corroboration); order != 0 {
@@ -790,6 +1085,9 @@ func compareCandidateRelevance(left, right candidate) int {
 	if order := cmp.Compare(left.resultPriority, right.resultPriority); order != 0 {
 		return order
 	}
+	if order := cmp.Compare(left.rolePriority, right.rolePriority); order != 0 {
+		return order
+	}
 	return cmp.Compare(left.corroboration, right.corroboration)
 }
 
@@ -797,6 +1095,7 @@ type candidateQuality struct {
 	entryID        string
 	matchTier      int
 	resultPriority int
+	rolePriority   int
 }
 
 type candidateEvidence struct {
@@ -808,6 +1107,10 @@ func filterCandidatesForQuery(query []rune, candidates []candidate) []candidate 
 	// A one-character query is deliberately restricted to canonical definitions/forms.
 	filtered := candidates[:0]
 	for _, candidate := range candidates {
+		if candidate.headwordAnchor {
+			filtered = append(filtered, candidate)
+			continue
+		}
 		if len(query) == 1 && candidate.document.Scope == ScopeExample {
 			continue
 		}
@@ -817,7 +1120,7 @@ func filterCandidatesForQuery(query []rune, candidates []candidate) []candidate 
 	if len(query) >= 2 && len(query) < 4 {
 		filtered = candidates[:0]
 		for _, candidate := range candidates {
-			if candidate.longest >= 2 {
+			if candidate.headwordAnchor || candidate.longest >= 2 {
 				filtered = append(filtered, candidate)
 			}
 		}
@@ -827,7 +1130,7 @@ func filterCandidatesForQuery(query []rune, candidates []candidate) []candidate 
 		minimumRun := minimumPartialRun(len(query))
 		highCoverage := candidates[:0]
 		for _, candidate := range candidates {
-			if candidate.exact || (!candidate.negationMismatch && candidate.coverage >= .6 && candidate.longest >= minimumRun) {
+			if candidate.headwordAnchor || candidate.exact || (!candidate.negationMismatch && candidate.coverage >= .6 && candidate.longest >= minimumRun) {
 				highCoverage = append(highCoverage, candidate)
 			}
 		}
@@ -842,7 +1145,7 @@ func filterCandidatesForQuery(query []rune, candidates []candidate) []candidate 
 			}
 			filtered = candidates[:0]
 			for _, candidate := range candidates {
-				if longest >= minimumRun && !candidate.negationMismatch && candidate.longest == longest {
+				if candidate.headwordAnchor || (longest >= minimumRun && !candidate.negationMismatch && candidate.longest == longest) {
 					filtered = append(filtered, candidate)
 				}
 			}

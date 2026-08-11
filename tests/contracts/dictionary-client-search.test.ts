@@ -122,22 +122,44 @@ test("serializes one canonical scope for every Chinese page and omits it for Eng
   try {
     await dictionaryClient.searchPage("休息", {
       limit: 32,
-      scope: ["example", "usage", "sense", "phrase", "form"],
+      scope: ["resource", "example", "sense", "phrase", "form"],
     });
     await dictionaryClient.searchPage("休息", {
       limit: 32,
       offset: 32,
-      scope: ["form", "sense", "phrase", "usage", "example"],
+      scope: ["form", "sense", "phrase", "resource", "example"],
     });
     await dictionaryClient.search("rest", { scope: ["usage"] });
   } finally {
     globalThis.fetch = originalFetch;
   }
 
-  assert.equal(requests[0]?.searchParams.get("scope"), "sense,phrase,form,usage,example");
-  assert.equal(requests[1]?.searchParams.get("scope"), "sense,phrase,form,usage,example");
+  assert.equal(requests[0]?.searchParams.get("scope"), "sense,phrase,form,example,resource");
+  assert.equal(requests[0]?.searchParams.get("submitted"), "true");
+  assert.equal(requests[1]?.searchParams.get("scope"), "sense,phrase,form,example,resource");
   assert.equal(requests[1]?.searchParams.get("offset"), "32");
   assert.equal(requests[2]?.searchParams.has("scope"), false);
+});
+
+test("keeps type-ahead lightweight and serializes an explicit empty result scope", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: URL[] = [];
+  globalThis.fetch = async (input) => {
+    requests.push(new URL(String(input)));
+    return new Response(JSON.stringify({ items: [] }), { status: 200 });
+  };
+
+  try {
+    await dictionaryClient.search("put me through");
+    await dictionaryClient.searchPage("中文", { scope: [] });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(requests[0]?.searchParams.has("submitted"), false);
+  assert.equal(requests[1]?.searchParams.get("submitted"), "true");
+  assert.equal(requests[1]?.searchParams.has("scope"), true);
+  assert.equal(requests[1]?.searchParams.get("scope"), "");
 });
 
 test("uses hybrid mode only for eligible explicit Chinese searches and keeps it across pages", async () => {
@@ -169,6 +191,38 @@ test("uses hybrid mode only for eligible explicit Chinese searches and keeps it 
   assert.equal(requests[1]?.searchParams.get("mode"), "hybrid");
   assert.equal(requests[2]?.searchParams.get("mode"), "hybrid");
   assert.equal(requests[2]?.searchParams.get("offset"), "32");
+});
+
+test("parses additive English result groups and an explicit correction", () => {
+  const page = parseSearchPage({
+    items: [{ kind: "dictionary", id: "thought", headword: "thought" }],
+    groups: [{
+      text: "thought",
+      kind: "token",
+      items: [{
+        kind: "dictionary",
+        id: "thought",
+        headword: "thought",
+        matches: [{
+          scope: "form",
+          englishText: "thought",
+          chineseText: "想",
+          matchKind: "inflection",
+          relation: "think",
+          location: { section: "definitions", path: ["senses", "0"] },
+        }],
+      }],
+    }],
+    correction: {
+      input: "thnik",
+      suggestion: "think",
+      items: [{ kind: "dictionary", id: "think", headword: "think"}],
+    },
+  });
+
+  assert.equal(page.groups?.[0]?.kind, "token");
+  assert.equal(page.groups?.[0]?.items[0]?.kind, "dictionary");
+  assert.equal(page.correction?.suggestion, "think");
 });
 
 test("limits hybrid eligibility to at least two CJK characters within the query limit", () => {

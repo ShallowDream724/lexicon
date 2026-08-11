@@ -16,6 +16,7 @@ sys.path.insert(0, str(HERE))
 
 from quality_eval import (
     HTTPSearchClient,
+    apply_preference_overlays,
     evaluate_http,
     load_cases,
     validate_against_reverse,
@@ -63,12 +64,15 @@ class QualityEvaluationTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "reverse.db"
             db = sqlite3.connect(path)
-            db.execute("CREATE TABLE documents(entry_id TEXT, headword TEXT, scope TEXT, english_text TEXT, chinese_text TEXT, section TEXT, part TEXT, owner_id TEXT, path_json TEXT)")
-            db.execute("INSERT INTO documents VALUES ('a', 'alpha', 'sense', 'english', 'evidence', 'definitions', 'noun', 'owner', '[\"senses\",\"0\"]')")
+            db.execute("CREATE TABLE documents(entry_id TEXT, headword TEXT, scope TEXT, english_text TEXT, chinese_text TEXT, candidate_text TEXT, definition_text TEXT, section TEXT, part TEXT, owner_id TEXT, path_json TEXT)")
+            db.execute("INSERT INTO documents VALUES ('a', 'alpha', 'sense', 'english', 'evidence', '', '', 'definitions', 'noun', 'owner', '[\"senses\",\"0\"]')")
+            db.execute("INSERT INTO documents VALUES ('b', 'beta', 'phrase', '', '', 'fixed phrase', '', 'idioms', 'verb', 'phrase-owner', '[\"idioms\",\"0\"]')")
             db.commit(); db.close()
             good = case("anchored", [{**target("a", "alpha"), "evidence": {"scope": "sense", "contains": "evidence", "location": {"ownerId": "owner", "path": ["senses", "0"]}}}])
             validate_against_reverse(validate_cases([good]), path)
-            bad = case("missing", [target("b", "beta")])
+            phrase = case("candidate-text", [{"entryId": "b", "headword": "beta", "grade": 3, "evidence": {"scope": "phrase", "contains": "fixed phrase"}}], scopes=["phrase"])
+            validate_against_reverse(validate_cases([phrase]), path)
+            bad = case("missing", [target("c", "gamma")])
             with self.assertRaisesRegex(ValueError, "absent"):
                 validate_against_reverse(validate_cases([bad]), path)
             weak = case("weak", [target("a", "alpha"), {"entryId": "b", "headword": "beta", "grade": 1}])
@@ -78,12 +82,125 @@ class QualityEvaluationTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "outside requested scopes"):
                 validate_against_reverse(validate_cases([wrong_scope]), path)
 
+    def test_reverse_validation_reports_all_invalid_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "reverse.db"
+            db = sqlite3.connect(path)
+            db.execute("CREATE TABLE documents(entry_id TEXT, headword TEXT, scope TEXT, english_text TEXT, chinese_text TEXT, candidate_text TEXT, definition_text TEXT, section TEXT, part TEXT, owner_id TEXT, path_json TEXT)")
+            db.execute("INSERT INTO documents VALUES ('a', 'alpha', 'sense', 'english', 'evidence', '', '', 'definitions', 'noun', 'owner', '[\"senses\",\"0\"]')")
+            db.commit(); db.close()
+            wrong_scope = case("bad-scope", [{"entryId": "a", "headword": "alpha", "grade": 3, "evidence": {"scope": "usage"}}])
+            missing = case("bad-target", [target("b", "beta")])
+
+            with self.assertRaises(ValueError) as raised:
+                validate_against_reverse(validate_cases([wrong_scope, missing]), path)
+
+            message = str(raised.exception)
+            self.assertIn("bad-scope: target evidence scope is outside requested scopes", message)
+            self.assertIn("bad-target (b): labelled target is absent", message)
+
     def test_evidence_expectations_are_separate_and_anchored_to_relevance(self) -> None:
         valid = case("separate", [{"entryId": "a", "headword": "alpha", "grade": 3}], evidenceExpectations=[target("a", "alpha", 3)])
         self.assertEqual(validate_cases([valid]), [valid])
         unrelated = case("unrelated", [{"entryId": "a", "headword": "alpha", "grade": 3}], evidenceExpectations=[target("b", "beta", 3)])
         with self.assertRaisesRegex(ValueError, "relevant entry"):
             validate_cases([unrelated])
+
+    def test_preference_overlays_join_exact_reviewed_targets(self) -> None:
+        original = case(
+            "overlay",
+            [{"entryId": "a", "headword": "alpha", "grade": 3}],
+            evidenceExpectations=[target("a", "alpha", 3)],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "preferences.json"
+            path.write_text(json.dumps([{
+                "id": "overlay",
+                "preferred": [{**target("a", "alpha", 3), "preferredRank": 1}],
+            }]), encoding="utf-8")
+            merged = apply_preference_overlays(validate_cases([original]), [path])
+
+        self.assertNotIn("preferredRank", original["relevance"][0])
+        self.assertEqual(merged[0]["relevance"][0]["preferredRank"], 1)
+        self.assertEqual(merged[0]["relevance"][0]["evidence"]["contains"], "evidence")
+
+    def test_preferred_rank_tiers_are_contiguous_and_evidence_backed(self) -> None:
+        ranked = [
+            {**target("a", "alpha", 3), "preferredRank": 1},
+            {**target("b", "beta", 3), "preferredRank": 2},
+            {**target("c", "gamma", 2), "preferredRank": 3},
+        ]
+        self.assertEqual(validate_cases([case("preferred", ranked)]), [case("preferred", ranked)])
+
+        tied = [dict(item) for item in ranked]
+        tied[1]["preferredRank"] = 1
+        tied[2]["preferredRank"] = 2
+        self.assertEqual(validate_cases([case("tied-preference", tied)]), [case("tied-preference", tied)])
+
+        gap = [dict(item) for item in ranked[:2]]
+        gap[1]["preferredRank"] = 3
+        with self.assertRaisesRegex(ValueError, "tiers must form a contiguous prefix"):
+            validate_cases([case("preference-gap", gap)])
+
+        weak = [{**target("a", "alpha", 1), "preferredRank": 1}]
+        with self.assertRaisesRegex(ValueError, "grade 2 or 3"):
+            validate_cases([case("weak-preference", weak)])
+
+    def test_first_screen_metrics_require_exact_entry_evidence_order(self) -> None:
+        preferred = [
+            {**target("a", "alpha", 3), "preferredRank": 1},
+            {**target("b", "beta", 3), "preferredRank": 2},
+            {**target("c", "gamma", 2), "preferredRank": 3},
+        ]
+        preferred_case = case("first-screen", preferred)
+        preferred_case["query"] = "首屏排序"
+        SearchHandler.payload = {"semanticStatus": "applied", "items": [
+            {"id": entry_id, "headword": headword, "matches": [{"scope": "sense", "chineseText": "evidence"}]}
+            for entry_id, headword in (("a", "alpha"), ("b", "beta"), ("c", "gamma"))
+        ]}
+        server = ThreadingHTTPServer(("127.0.0.1", 0), SearchHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        self.addCleanup(lambda: (server.shutdown(), server.server_close(), thread.join(timeout=1)))
+        client = HTTPSearchClient(f"http://127.0.0.1:{server.server_port}")
+
+        correct = evaluate_http([preferred_case], client)
+        self.assertEqual(correct["summary"]["canonicalEntryAndEvidenceAt1"], 1.0)
+        self.assertEqual(correct["summary"]["preferredSetAt3"], 1.0)
+        self.assertEqual(correct["summary"]["preferredOrderAt3"], 1.0)
+        self.assertEqual(correct["summary"]["firstScreenPassAt3"], 1.0)
+        self.assertEqual(correct["summary"]["preferenceGates"]["canonicalEntryAt1"]["passed"], 1)
+        self.assertEqual(correct["summary"]["preferenceByWidth"]["3"]["cases"], 1)
+        self.assertGreater(correct["summary"]["preferenceGates"]["canonicalEntryAt1"]["wilson95Lower"], 0.0)
+
+        SearchHandler.payload["items"][0], SearchHandler.payload["items"][1] = SearchHandler.payload["items"][1], SearchHandler.payload["items"][0]
+        swapped = evaluate_http([preferred_case], client)
+        self.assertEqual(swapped["summary"]["preferredSetAt3"], 1.0)
+        self.assertEqual(swapped["summary"]["canonicalEntryAt1"], 0.0)
+        self.assertEqual(swapped["summary"]["preferredOrderAt3"], 0.0)
+        self.assertEqual(swapped["summary"]["firstScreenPassAt3"], 0.0)
+        self.assertLess(swapped["summary"]["preferredNdcgAt3"], 1.0)
+
+        tied = [dict(item) for item in preferred]
+        tied[1]["preferredRank"] = 1
+        tied[2]["preferredRank"] = 2
+        tied_case = case("tied-first-screen", tied)
+        tied_case["query"] = "并列首选"
+        tied_report = evaluate_http([tied_case], client)
+        self.assertEqual(tied_report["summary"]["canonicalEntryAt1"], 1.0)
+        self.assertEqual(tied_report["summary"]["preferredOrderAt3"], 1.0)
+        self.assertEqual(tied_report["summary"]["firstScreenPassAt3"], 1.0)
+
+        single_case = case("single-first-screen", [{**target("a", "alpha", 3), "preferredRank": 1}])
+        single_case["query"] = "唯一直接答案"
+        SearchHandler.payload = {"semanticStatus": "applied", "items": [
+            {"id": "a", "headword": "alpha", "matches": [{"scope": "sense", "chineseText": "evidence"}]},
+            {"id": "z", "headword": "zeta", "matches": [{"scope": "sense", "chineseText": "other"}]},
+        ]}
+        single_report = evaluate_http([single_case], client)
+        self.assertEqual(single_report["rows"][0]["metrics"]["preferredWidth"], 1)
+        self.assertEqual(single_report["summary"]["firstScreenPassAtAvailable"], 1.0)
+        self.assertIsNone(single_report["summary"]["firstScreenPassAt3"])
+        self.assertEqual(single_report["summary"]["preferenceByWidth"]["1"]["cases"], 1)
 
     def test_http_metrics_grade_forbidden_scope_and_latency(self) -> None:
         SearchHandler.payload = {"semanticStatus": "degraded", "items": [

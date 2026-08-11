@@ -6,6 +6,7 @@ import (
 	"sync"
 	"unicode"
 
+	"dictionary-api/internal/searchtext"
 	"github.com/longbridgeapp/opencc"
 	"golang.org/x/text/unicode/norm"
 )
@@ -133,6 +134,11 @@ func cjkRunesFromSequences(sequences [][]rune) []rune {
 }
 
 func hasNegation(values []rune) bool {
+	for index := 1; index < len(values); index++ {
+		if values[index-1] == '难' && (values[index] == '以' || values[index] == '于') {
+			return true
+		}
+	}
 	for _, value := range values {
 		switch value {
 		case '不', '没', '无', '未', '非', '莫', '别', '勿':
@@ -187,32 +193,7 @@ func exactMatchOnlyInsideBrackets(value string, query []rune) bool {
 }
 
 func asciiQueryTerms(value string) []string {
-	value = strings.ToLower(norm.NFKC.String(value))
-	terms := make([]string, 0, 2)
-	seen := make(map[string]struct{}, 2)
-	start := -1
-	flush := func(end int) {
-		if start < 0 {
-			return
-		}
-		term := value[start:end]
-		if _, exists := seen[term]; !exists {
-			seen[term] = struct{}{}
-			terms = append(terms, term)
-		}
-		start = -1
-	}
-	for index, char := range value {
-		if (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') {
-			if start < 0 {
-				start = index
-			}
-			continue
-		}
-		flush(index)
-	}
-	flush(len(value))
-	return terms
+	return searchtext.NewQueryProfile(value).AllTerms()
 }
 
 func isOpeningBracket(value rune) bool {

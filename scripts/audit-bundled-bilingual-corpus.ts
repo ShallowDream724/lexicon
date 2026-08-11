@@ -1077,6 +1077,7 @@ function main(): void {
   const sourceTagCounts = new Map<string, number>();
   const labelKindCounts = new Map<string, number>();
   const formKindCounts = new Map<string, number>();
+  const structureCounts = new Map<string, number>();
   const violationCodeCounts = new Map<string, number>();
   const violations: AuditViolation[] = [];
   let violationCount = 0;
@@ -1106,6 +1107,28 @@ function main(): void {
     if (violations.length < 100) {
       violations.push({ code, entryId, detail });
     }
+  };
+
+  const countStructure = (key: string, count = 1): void => {
+    if (count > 0) {
+      structureCounts.set(key, (structureCounts.get(key) ?? 0) + count);
+    }
+  };
+
+  const countSegments = (segments: CanonicalBoxSegment[]): void => {
+    countStructure("segment", segments.length);
+    segments.forEach((segment) => {
+      countStructure(`segment.${segment.kind}`);
+      if (segment.kind === "text" && segment.value.origin) {
+        countStructure(`segment.text.origin.${segment.value.origin}`);
+      } else if (segment.kind === "example") {
+        countStructure("example.segment");
+      } else if (segment.kind === "cross-references") {
+        countStructure("cross-reference.segment", segment.references.length);
+      } else if (segment.kind === "pronunciations") {
+        countStructure("pronunciation.segment", segment.items.length);
+      }
+    });
   };
 
   const compareTextMultisets = (
@@ -1158,6 +1181,8 @@ function main(): void {
 
   const visitLabel = (label: CanonicalLabel, entryId: string): void => {
     const kind = label.kind ?? "<missing>";
+    countStructure("label");
+    countStructure(`label.${kind}`);
     increment(labelKindCounts, kind);
     if (!allowedLabelKinds.has(kind)) {
       reportViolation("unexpected-label-kind", entryId, `${kind}: ${label.text}`);
@@ -1178,6 +1203,26 @@ function main(): void {
 
   const visitSense = (sense: CanonicalSense, entryId: string): void => {
     senses += 1;
+    countStructure("sense");
+    countStructure("sense.group-heading", sense.groupHeading ? 1 : 0);
+    countStructure("sense.pattern", sense.patterns?.length ?? 0);
+    countStructure("sense.variant", sense.variants?.length ?? 0);
+    countStructure("sense.inflected-form", sense.inflectedForms?.length ?? 0);
+    countStructure("sense.pronunciation", sense.pronunciations?.length ?? 0);
+    countStructure("sense.definition", sense.definition?.text.trim() ? 1 : 0);
+    countStructure("sense.translation", sense.translation?.text.trim() ? 1 : 0);
+    countStructure("sense.example", sense.examples.length);
+    countStructure("sense.inline-usage", sense.inlineUsage?.length ?? 0);
+    countStructure("sense.usage", sense.usage.length);
+    countStructure("sense.cross-reference", sense.crossReferences.length);
+    countStructure("sense.illustration", sense.illustrations.length);
+    countStructure("sense.resource", sense.grammarUsageBoxes.length);
+    countStructure("sense.subsense", sense.subsenses.length);
+    sense.illustrations.forEach((illustration) => countStructure(illustration.text?.trim()
+      ? "illustration.with-text"
+      : "illustration.opaque"));
+    countSegments(sense.definitionSegments ?? []);
+    countSegments(sense.usageSegments);
     sense.labels.forEach((label) => visitLabel(label, entryId));
     (sense.variants ?? []).forEach((form) => visitForm(form, entryId));
     (sense.inflectedForms ?? []).forEach((form) => visitForm(form, entryId));
@@ -1218,6 +1263,8 @@ function main(): void {
     text: string,
   ): void => {
     references += 1;
+    countStructure("cross-reference");
+    countStructure(`cross-reference.${kind ?? "<missing>"}`);
     if (!kind || !allowedCrossReferenceKinds.has(kind as typeof CANONICAL_CROSS_REFERENCE_KINDS[number])) {
       reportViolation("unexpected-cross-reference-kind", entryId, `${kind ?? "<missing>"}: ${text}`);
     }
@@ -1233,6 +1280,30 @@ function main(): void {
     }
     auditedBoxes.add(auditKey);
     boxes += 1;
+    countStructure("resource");
+    countStructure(`resource.${box.resourceCategory ?? "other"}`);
+    countStructure("resource.title", box.title?.text.trim() ? 1 : 0);
+    countStructure("resource.reference", box.references?.length ?? 0);
+    countStructure("resource.block", box.blocks.length);
+    box.blocks.forEach((block) => {
+      countStructure(`resource.block.${block.kind}`);
+      if (block.kind === "paragraph") {
+        countSegments(block.segments);
+      } else if (block.kind === "list") {
+        countStructure("resource.list-item", block.items.length);
+        block.items.forEach((item) => countSegments(item.segments));
+      } else if (block.kind === "table") {
+        countStructure("resource.table-row", block.rows.length);
+        block.rows.forEach((row) => {
+          countStructure("resource.table-cell", row.cells.length);
+          row.cells.forEach((cell) => countSegments(cell.segments));
+        });
+      } else if (block.kind === "pronunciations") {
+        countStructure("pronunciation.resource", block.items.length);
+      } else if (block.kind === "cross-references") {
+        countStructure("cross-reference.resource", block.references.length);
+      }
+    });
     const boxReferences = box.references ?? [];
     boxReferences.forEach((reference) => visitReference(reference.kind, entryId, reference.text));
     box.blocks.forEach((block) => {
@@ -1294,6 +1365,17 @@ function main(): void {
 
   const visitForm = (form: CanonicalForm, entryId: string): void => {
     forms += 1;
+    countStructure("form");
+    countStructure(`form.${form.kind}`);
+    countStructure("form.note", form.note?.text.trim() ? 1 : 0);
+    countStructure("form.introducer", form.introducer?.text.trim() ? 1 : 0);
+    countStructure("form.label", form.labels?.length ?? 0);
+    countStructure("form.variant", form.variants?.length ?? 0);
+    countStructure("form.usage", form.usage?.length ?? 0);
+    countStructure("form.inflected-form", form.inflectedForms?.length ?? 0);
+    countStructure("form.pronunciation", form.pronunciations?.length ?? 0);
+    countStructure("form.sense", form.senses?.length ?? 0);
+    form.presentation?.forEach((item) => countStructure(`form.presentation.${item.kind}`));
     increment(formKindCounts, form.kind);
     if (!allowedFormKinds.has(form.kind)) {
       reportViolation("unexpected-form-kind", entryId, form.kind);
@@ -1338,7 +1420,18 @@ function main(): void {
     (form.variants ?? []).forEach((variant) => visitForm(variant, entryId));
   };
 
-  const visitPhrase = (phrase: CanonicalPhrase, entryId: string): void => {
+  const visitPhrase = (
+    phrase: CanonicalPhrase,
+    entryId: string,
+    kind: "idiom" | "phrasal-verb",
+  ): void => {
+    countStructure("phrase");
+    countStructure(`phrase.${kind}`);
+    countStructure("phrase.label", phrase.labels.length);
+    countStructure("phrase.variant", phrase.variants.length);
+    countStructure("phrase.leading-usage", phrase.leadingUsage.length);
+    countStructure("phrase.sense", phrase.senses.length);
+    countStructure("phrase.trailing-cross-reference", phrase.trailingCrossReferences.length);
     phrase.labels.forEach((label) => visitLabel(label, entryId));
     phrase.variants.forEach((form) => visitForm(form, entryId));
     phrase.senses.forEach((sense) => visitSense(sense, entryId));
@@ -1349,6 +1442,25 @@ function main(): void {
 
   const visitEntry = (entry: CanonicalEntry): void => {
     canonicalEntries += 1;
+    countStructure("entry");
+    countStructure("entry.label", entry.labels.length);
+    countStructure("entry.pronunciation", entry.pronunciations.length);
+    countStructure("entry.part-of-speech", entry.partsOfSpeech.length);
+    countStructure("entry.headword-pattern", entry.headwordPatterns?.length ?? 0);
+    countStructure("entry.headword-usage", entry.headwordUsage?.length ?? 0);
+    countStructure("entry.sense", entry.senses.length);
+    countStructure("entry.subentry", entry.subentries.length);
+    countStructure("entry.idiom", entry.idioms.length);
+    countStructure("entry.phrasal-verb", entry.phrasalVerbs.length);
+    countStructure("entry.derived-form", entry.derivedForms.length);
+    countStructure("entry.inflected-form", entry.inflectedForms.length);
+    countStructure("entry.variant", entry.variants?.length ?? 0);
+    countStructure("entry.cross-reference", entry.crossReferences.length);
+    countStructure("entry.illustration", entry.illustrations.length);
+    countStructure("entry.resource", entry.grammarUsageBoxes.length);
+    entry.illustrations.forEach((illustration) => countStructure(illustration.text?.trim()
+      ? "illustration.with-text"
+      : "illustration.opaque"));
     entry.partsOfSpeech.forEach((part) => {
       if (part.text !== part.text.trim()) {
         reportViolation("part-of-speech-surrounding-whitespace", entry.id, JSON.stringify(part.text));
@@ -1379,8 +1491,8 @@ function main(): void {
     entry.derivedForms.forEach((form) => visitForm(form, entry.id));
     entry.inflectedForms.forEach((form) => visitForm(form, entry.id));
     (entry.variants ?? []).forEach((form) => visitForm(form, entry.id));
-    entry.idioms.forEach((phrase) => visitPhrase(phrase, entry.id));
-    entry.phrasalVerbs.forEach((phrase) => visitPhrase(phrase, entry.id));
+    entry.idioms.forEach((phrase) => visitPhrase(phrase, entry.id, "idiom"));
+    entry.phrasalVerbs.forEach((phrase) => visitPhrase(phrase, entry.id, "phrasal-verb"));
     entry.grammarUsageBoxes.forEach((box) => visitBox(box, entry.id));
     entry.crossReferences.forEach((reference) => visitReference(reference.kind, entry.id, reference.text));
     entry.subentries.forEach(visitEntry);
@@ -1529,6 +1641,7 @@ function main(): void {
     sourceTagCounts: sortedCounts(sourceTagCounts),
     labelKindCounts: sortedCounts(labelKindCounts),
     formKindCounts: sortedCounts(formKindCounts),
+    structureCounts: sortedCounts(structureCounts),
     violationCodeCounts: sortedCounts(violationCodeCounts),
     violationCount,
     violations,

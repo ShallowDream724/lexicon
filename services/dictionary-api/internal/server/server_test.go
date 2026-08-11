@@ -247,6 +247,17 @@ func TestSearchCorrectsBoundedOneEditTypos(t *testing.T) {
 	if got := searchIDs(t, limited); !reflect.DeepEqual(got, []string{"grateful"}) {
 		t.Fatalf("limited typo items = %v, want [grateful]", got)
 	}
+
+	submitted := get(t, svc, "/api/v1/search?q=grateul&submitted=true")
+	var submittedBody struct {
+		Correction *struct {
+			Input      string `json:"input"`
+			Suggestion string `json:"suggestion"`
+		} `json:"correction"`
+	}
+	if submitted.Code != http.StatusOK || json.Unmarshal(submitted.Body.Bytes(), &submittedBody) != nil || submittedBody.Correction == nil || submittedBody.Correction.Input != "grateul" || submittedBody.Correction.Suggestion != "grateful" {
+		t.Fatalf("submitted typo correction: %d %s", submitted.Code, submitted.Body.String())
+	}
 }
 
 func TestSearchKeepsExactAndPrefixPathsAndSkipsIneligibleTypoQueries(t *testing.T) {

@@ -3388,6 +3388,38 @@
   margin: 0;
 }
 
+.search-results-correction {
+  color: #596175;
+  font-size: calc(var(--search-result-primary-size) + var(--reading-font-delta));
+  line-height: 1.5;
+  margin: -.64rem 0 .64rem;
+}
+
+.search-results-correction button {
+  background: transparent;
+  border: 0;
+  color: #00225f;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  padding: 0 .08rem;
+  text-decoration: underline;
+  text-underline-offset: .08rem;
+}
+
+.search-results-english-groups {
+  display: grid;
+  gap: .64rem;
+}
+
+.search-results-english-group h2 {
+  color: #4a5260;
+  font-size: calc(var(--search-result-support-size) + var(--reading-font-delta));
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0 0 .16rem;
+}
+
 .confirm-dialog-layer {
   align-items: center;
   background: #10152166;
@@ -3460,6 +3492,7 @@
   flex-wrap: wrap;
   gap: .16rem .4rem;
   margin: -.64rem 0 .64rem;
+  min-height: .48rem;
 }
 
 .search-results-scope label {
@@ -3470,13 +3503,19 @@
   font-size: calc(var(--search-result-secondary-size) + var(--reading-font-delta));
   gap: .10667rem;
   line-height: 1.4;
+  min-height: .48rem;
 }
 
 .search-results-scope input {
   accent-color: #00225f;
+  flex: 0 0 .32rem;
   height: .32rem;
   margin: 0;
   width: .32rem;
+}
+
+.search-results[aria-busy="true"] .search-results-scope label {
+  cursor: progress;
 }
 
 .search-results-scope input:disabled + span {
@@ -3597,7 +3636,7 @@
   --search-result-scope-border: #c8b78e;
 }
 
-.search-result-scope[data-scope="usage"] {
+.search-result-scope[data-scope="resource"] {
   --search-result-scope-accent: #397262;
   --search-result-scope-border: #9dbcb2;
 }
@@ -3607,11 +3646,6 @@
   --search-result-scope-border: #caa8b0;
 }
 
-.search-result-scope[data-scope="form"] {
-  --search-result-scope-accent: #695d88;
-  --search-result-scope-border: #b5acc7;
-}
-
 .search-result-scope-label {
   color: var(--search-result-scope-accent);
   font-weight: 600;
@@ -3619,7 +3653,7 @@
 
 .search-result-scope-part {
   color: #697180;
-  margin-left: 1em;
+  margin-left: .6em;
 }
 
 .search-result-evidence-copy {

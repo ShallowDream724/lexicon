@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   DEFAULT_CHINESE_SEARCH_SCOPES,
   dictionarySearchRequestKey,
+  hasSelectedChineseSearchScope,
   parseChineseSearchScopes,
   serializeDictionarySearchScopes,
   toggleSearchScopeCategory,
@@ -11,27 +12,31 @@ import {
 
 test("normalizes the Chinese search scope URL contract in canonical order", () => {
   assert.deepEqual(
-    parseChineseSearchScopes("example,form,sense,usage,phrase,unknown,sense"),
-    ["sense", "phrase", "form", "usage", "example"],
+    parseChineseSearchScopes("example,form,sense,resource,phrase,unknown,sense"),
+    ["sense", "phrase", "form", "example", "resource"],
   );
   assert.deepEqual(parseChineseSearchScopes(null), DEFAULT_CHINESE_SEARCH_SCOPES);
   assert.equal(
-    serializeDictionarySearchScopes(["example", "sense", "form", "phrase"]),
-    "sense,phrase,form,example",
+    serializeDictionarySearchScopes(["example", "sense", "form", "resource", "phrase"]),
+    "sense,phrase,form,example,resource",
   );
+  assert.deepEqual(parseChineseSearchScopes(""), []);
+  assert.equal(hasSelectedChineseSearchScope([]), false);
+  assert.equal(hasSelectedChineseSearchScope(["sense"]), true);
 });
 
-test("scope toggles retain at least one category and invalidate an older request identity", () => {
+test("scope toggles allow an intentionally empty result range and invalidate an older request identity", () => {
   const terms = parseChineseSearchScopes("sense,phrase,form");
-  const withUsage = toggleSearchScopeCategory(terms, "usage");
-  const usageOnly = toggleSearchScopeCategory(withUsage, "terms");
+  const withExample = toggleSearchScopeCategory(terms, "example");
+  const exampleOnly = toggleSearchScopeCategory(withExample, "meaning");
+  const empty = toggleSearchScopeCategory(toggleSearchScopeCategory(exampleOnly, "phrase"), "example");
 
-  assert.deepEqual(withUsage, ["sense", "phrase", "form", "usage"]);
-  assert.deepEqual(usageOnly, ["usage"]);
-  assert.deepEqual(toggleSearchScopeCategory(usageOnly, "usage"), usageOnly);
+  assert.deepEqual(withExample, ["sense", "phrase", "form", "example"]);
+  assert.deepEqual(exampleOnly, ["phrase", "example"]);
+  assert.deepEqual(empty, []);
   assert.notEqual(
     dictionarySearchRequestKey("休息", terms),
-    dictionarySearchRequestKey("休息", withUsage),
+    dictionarySearchRequestKey("休息", withExample),
   );
   assert.notEqual(
     dictionarySearchRequestKey("休息", terms),

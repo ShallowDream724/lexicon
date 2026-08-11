@@ -66,6 +66,19 @@ func TestOpenRejectsMismatchedAndCorruptSidecars(t *testing.T) {
 		t.Fatal("accepted sidecar without a valid query template")
 	}
 
+	path = writeFixture(t)
+	db, err = sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE documents SET semantic_role = 'unsupported' WHERE rowid = 1`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	if _, err := Open(path, primarySHA, reverseSHA, projection, modelKey); err == nil {
+		t.Fatal("accepted sidecar with invalid document semantic role")
+	}
+
 	for _, value := range []string{
 		`{"model":"other-model"}`,
 		`[]`,
@@ -108,6 +121,9 @@ func TestStoreSearchScopeGroupingOrderAndPagination(t *testing.T) {
 	if len(page.Groups[0].Matches) != 4 {
 		t.Fatalf("evidence limit ignored: %#v", page.Groups[0].Matches)
 	}
+	if page.Groups[0].Matches[0].SemanticRole != SemanticRoleDefinition {
+		t.Fatalf("semantic role was not projected: %#v", page.Groups[0].Matches[0])
+	}
 	for run := 0; run < 5; run++ {
 		got, err := store.Search(context.Background(), []float32{1, 0}, Options{Offset: 1, Limit: 1, Scopes: senses})
 		if err != nil || len(got.Groups) != 1 || got.Groups[0].EntryID != "beta" || got.HasMore {
@@ -118,6 +134,81 @@ func TestStoreSearchScopeGroupingOrderAndPagination(t *testing.T) {
 	page, err = store.Search(context.Background(), []float32{1, 0}, Options{Limit: 10, Scopes: phrases})
 	if err != nil || len(page.Groups) != 1 || page.Groups[0].EntryID != "alpha" || page.Groups[0].Matches[0].Scope != ScopePhrase {
 		t.Fatalf("scope filter failed: %#v, %v", page, err)
+	}
+}
+
+func TestStoreRejectsCandidatesBelowMetadataMinimumScore(t *testing.T) {
+	path := writeFixture(t)
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE metadata SET value = '0.99' WHERE key = 'minimum_score'`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	store, err := Open(path, primarySHA, reverseSHA, projection, modelKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if store.MinimumScore() != .99 {
+		t.Fatalf("minimum score = %v", store.MinimumScore())
+	}
+	scopes, _ := NewScopeFilter(ScopeSense)
+	page, err := store.Search(context.Background(), []float32{0, -1}, Options{Limit: 8, Scopes: scopes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Groups) != 0 {
+		t.Fatalf("weak semantic candidates were returned: %#v", page.Groups)
+	}
+}
+
+func TestGroupAndPaginateKeepsDirectEvidenceInsideTheSameScoreBand(t *testing.T) {
+	candidates := make([]documentCandidate, 0, maxMatches+1)
+	for index := 0; index < maxMatches; index++ {
+		candidates = append(candidates, documentCandidate{
+			documentID: int64(index + 1), textID: index, entryID: "entry", headword: "entry",
+			scope: ScopeResource, semanticRole: SemanticRoleHeading, resourceCategory: "grammar", english: "heading",
+			chinese: "标题", dot: 14_500,
+		})
+	}
+	candidates = append(candidates, documentCandidate{
+		documentID: 99, textID: 99, entryID: "entry", headword: "entry",
+		scope: ScopeResource, semanticRole: SemanticRoleExpression, resourceCategory: "grammar", english: "usable phrase",
+		chinese: "可用表达", dot: 14_490,
+	})
+
+	page := groupAndPaginate(candidates, 0, 1)
+	if len(page.Groups) != 1 || len(page.Groups[0].Matches) != maxMatches {
+		t.Fatalf("unexpected grouped evidence: %#v", page)
+	}
+	if page.Groups[0].Matches[0].SemanticRole != SemanticRoleExpression {
+		t.Fatalf("same-band direct evidence was truncated behind display text: %#v", page.Groups[0].Matches)
+	}
+}
+
+func TestGroupAndPaginateSeparatesEntryRelevanceFromEvidenceUsability(t *testing.T) {
+	candidates := []documentCandidate{
+		{documentID: 1, textID: 1, entryID: "guidance-entry", headword: "guidance-entry", scope: ScopeResource, semanticRole: SemanticRoleGuidance, resourceCategory: "grammar", english: "rule", chinese: "规则", dot: 14_500},
+		{documentID: 2, textID: 2, entryID: "direct-entry", headword: "direct-entry", scope: ScopeResource, semanticRole: SemanticRoleExpression, resourceCategory: "grammar", english: "pattern", chinese: "表达", dot: 14_490},
+		{documentID: 3, textID: 3, entryID: "mixed", headword: "mixed", scope: ScopeResource, semanticRole: SemanticRoleGuidance, resourceCategory: "grammar", english: "note", chinese: "说明", dot: 14_500},
+		{documentID: 4, textID: 4, entryID: "mixed", headword: "mixed", scope: ScopeResource, semanticRole: SemanticRoleExpression, resourceCategory: "grammar", english: "usable", chinese: "可用表达", dot: 14_490},
+	}
+
+	page := groupAndPaginate(candidates, 0, 10)
+	if len(page.Groups) != 3 || page.Groups[0].EntryID != "guidance-entry" {
+		t.Fatalf("answer kind overrode semantic entry relevance: %#v", page.Groups)
+	}
+	var mixed Group
+	for _, group := range page.Groups {
+		if group.EntryID == "mixed" {
+			mixed = group
+		}
+	}
+	if len(mixed.Matches) != 2 || mixed.Matches[0].SemanticRole != SemanticRoleExpression {
+		t.Fatalf("answerable expression did not lead same-band entry evidence: %#v", mixed)
 	}
 }
 
@@ -386,6 +477,13 @@ func TestPersistentVectorCacheNamespaceExpiryCapacityAndFailureDegrade(t *testin
 	}
 	defer cache.Close()
 	cache.Put(context.Background(), "one", []float32{1, 0})
+	if vector, ok := cache.GetQuantized(context.Background(), "one"); !ok || len(vector) != 2 || vector[0] != 127 || vector[1] != 0 {
+		t.Fatalf("persistent cache did not preserve scan quantization: %#v, %v", vector, ok)
+	}
+	var bytes int
+	if err := cache.db.QueryRow(`SELECT length(vector) FROM query_vectors`).Scan(&bytes); err != nil || bytes != 2 {
+		t.Fatalf("persistent cache payload size = %d, %v", bytes, err)
+	}
 	now = now.Add(time.Minute)
 	cache.Put(context.Background(), "two", []float32{0, 1})
 	now = now.Add(time.Minute)
@@ -515,9 +613,9 @@ func writeFixture(t *testing.T) string {
 	t.Cleanup(func() { _ = db.Close() })
 	statements := []string{
 		`CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
-		`CREATE TABLE texts (id INTEGER PRIMARY KEY, chinese_text TEXT NOT NULL UNIQUE, scope_mask INTEGER NOT NULL)`,
+		`CREATE TABLE texts (id INTEGER PRIMARY KEY, normalized_chinese_text TEXT NOT NULL UNIQUE, scope_mask INTEGER NOT NULL)`,
 		`CREATE TABLE vector_blocks (block_index INTEGER PRIMARY KEY, first_vector_id INTEGER NOT NULL, vector_count INTEGER NOT NULL, data BLOB NOT NULL)`,
-		`CREATE TABLE documents (text_id INTEGER NOT NULL, entry_id TEXT NOT NULL, headword TEXT NOT NULL, scope TEXT NOT NULL, english_text TEXT NOT NULL, chinese_text TEXT NOT NULL, candidate_text TEXT NOT NULL, definition_text TEXT NOT NULL, section TEXT NOT NULL, part TEXT NOT NULL, owner_id TEXT NOT NULL, path_json TEXT NOT NULL, weight INTEGER NOT NULL)`,
+		`CREATE TABLE documents (text_id INTEGER NOT NULL, entry_id TEXT NOT NULL, headword TEXT NOT NULL, scope TEXT NOT NULL, semantic_role TEXT NOT NULL, resource_category TEXT NOT NULL, english_text TEXT NOT NULL, chinese_text TEXT NOT NULL, candidate_text TEXT NOT NULL, definition_text TEXT NOT NULL, section TEXT NOT NULL, part TEXT NOT NULL, owner_id TEXT NOT NULL, path_json TEXT NOT NULL, weight INTEGER NOT NULL)`,
 		`CREATE INDEX documents_text_id ON documents(text_id)`,
 	}
 	for _, statement := range statements {
@@ -527,7 +625,7 @@ func writeFixture(t *testing.T) string {
 	}
 	metadata := map[string]string{
 		"schema_version": SchemaVersion, "primary_sha256": primarySHA, "reverse_search_sha256": reverseSHA, "projection_version": projection,
-		"model_key": modelKey, "query_template": queryTemplate, "query_extra_json": "{}", "dimensions": "2", "normalization": "l2", "quantization": "symmetric-int8-127", "vector_count": "4", "block_size": "4",
+		"model_key": modelKey, "query_template": queryTemplate, "query_extra_json": "{}", "minimum_score": "-1", "dimensions": "2", "normalization": "l2", "quantization": "symmetric-int8-127", "vector_count": "4", "block_size": "4",
 	}
 	for key, value := range metadata {
 		if _, err := db.Exec(`INSERT INTO metadata(key, value) VALUES (?, ?)`, key, value); err != nil {
@@ -539,7 +637,7 @@ func writeFixture(t *testing.T) string {
 		text     string
 	}{{0, 1, "alpha sense"}, {1, 2, "alpha phrase"}, {2, 1, "beta sense"}, {3, 16, "gamma example"}}
 	for _, text := range texts {
-		if _, err := db.Exec(`INSERT INTO texts(id, chinese_text, scope_mask) VALUES (?, ?, ?)`, text.id, text.text, text.mask); err != nil {
+		if _, err := db.Exec(`INSERT INTO texts(id, normalized_chinese_text, scope_mask) VALUES (?, ?, ?)`, text.id, text.text, text.mask); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -547,17 +645,19 @@ func writeFixture(t *testing.T) string {
 		t.Fatal(err)
 	}
 	documents := []struct {
-		textID          int
-		entry, headword string
-		scope           Scope
-		weight          int
+		textID           int
+		entry, headword  string
+		scope            Scope
+		semanticRole     SemanticRole
+		resourceCategory ResourceCategory
+		weight           int
 	}{
-		{0, "alpha", "alpha", ScopeSense, 10}, {0, "alpha", "alpha", ScopeSense, 9}, {0, "alpha", "alpha", ScopeSense, 8}, {0, "alpha", "alpha", ScopeSense, 7},
-		{1, "alpha", "alpha", ScopePhrase, 8}, {2, "beta", "beta", ScopeSense, 6}, {3, "gamma", "gamma", ScopeExample, 5},
+		{0, "alpha", "alpha", ScopeSense, SemanticRoleDefinition, "", 10}, {0, "alpha", "alpha", ScopeSense, SemanticRoleDefinition, "", 9}, {0, "alpha", "alpha", ScopeSense, SemanticRoleDefinition, "", 8}, {0, "alpha", "alpha", ScopeSense, SemanticRoleDefinition, "", 7},
+		{1, "alpha", "alpha", ScopePhrase, SemanticRoleDefinition, "", 8}, {2, "beta", "beta", ScopeSense, SemanticRoleDefinition, "", 6}, {3, "gamma", "gamma", ScopeExample, SemanticRoleContext, "", 5},
 	}
 	for index, document := range documents {
 		pathJSON, _ := json.Marshal([]string{"part", string(rune('a' + index))})
-		if _, err := db.Exec(`INSERT INTO documents(text_id, entry_id, headword, scope, english_text, chinese_text, candidate_text, definition_text, section, part, owner_id, path_json, weight) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, document.textID, document.entry, document.headword, document.scope, "english", "chinese", "candidate", "definition", "definitions", "part", "owner", string(pathJSON), document.weight); err != nil {
+		if _, err := db.Exec(`INSERT INTO documents(text_id, entry_id, headword, scope, semantic_role, resource_category, english_text, chinese_text, candidate_text, definition_text, section, part, owner_id, path_json, weight) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, document.textID, document.entry, document.headword, document.scope, document.semanticRole, document.resourceCategory, "english", "chinese", "candidate", "definition", "definitions", "part", "owner", string(pathJSON), document.weight); err != nil {
 			t.Fatal(err)
 		}
 	}

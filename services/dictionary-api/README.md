@@ -150,7 +150,9 @@ message, and request id; the same request id is returned in `X-Request-ID`.
 `capabilities.headwordAudio` for optional runtime resources.
 
 Chinese `scope` accepts a non-empty comma-separated subset of
-`sense,phrase,form,usage,example`; omission defaults to `sense,phrase,form`. Scope is applied
+`sense,phrase,form,example,resource`; omission defaults to `sense,phrase,form`. The UI filters
+map to definitions (`sense,form`), phrases (`phrase`), examples (`example`), and supplementary
+resources (`resource`). Scope is applied
 inside both exact and FTS SQL before the bounded candidate limit. Unknown, repeated query
 parameters, empty values, and whitespace-bearing lists return `400 invalid_scope`; English
 search rejects the parameter.
@@ -161,6 +163,10 @@ It embeds the normalized query once, retrieves dense candidates from the bundled
 matrix, then protects exact Chinese evidence and combines lexical and semantic ranks before
 pagination. One-character Chinese and English requests remain lexical. Provider errors,
 timeouts, and invalid responses return the complete lexical page.
+
+English queries remain lexical and never call the embedding provider. The service prioritizes
+complete matches, then splits unmatched input into terms; it applies indexed inflection
+normalization and bounded one-edit correction only where those fallbacks are applicable.
 
 ## Storage
 
@@ -205,21 +211,28 @@ lookup tries the bounded all-token expression first and runs bounded OR retrieva
 a semantic tier with no usable complete-token result. Go refinement respects Chinese segment
 boundaries and mixed ASCII constraints, then applies final ranking separately from candidate
 retrieval. Complete matches rank match quality, protected candidate pool, semantic scope
-(sense, then phrase or form, usage, and example), distinct corroborating Chinese evidence,
+(sense and form, then phrase, example, and resource), distinct corroborating Chinese evidence,
 and bounded score. Partial matches rank textual relevance before semantic scope; query-leading
 coverage improves suffix and noise cases. Duplicate identical Chinese evidence does not
 increase corroboration. The API returns at most 512 entry groups with eight evidence records
 per entry. Query length is capped at 200 characters in the HTTP handler and the store. The
-sidecar metadata validates schema, projection, normalizer, document, segment, and headword-form
-counts, and the primary database fingerprint before use.
+sidecar metadata validates schema, projection, normalizer, document, segment, headword-form,
+and normalized headword-term counts, and the primary database fingerprint before use.
 
-Schema 5 stores `documents`, `exact_segments`, a normalized `entry_headword_forms` relation,
-and the contentless FTS index without an unused entry-order secondary index. Projection 1.4
+Schema 9 stores `documents`, `exact_segments`, normalized `entry_headword_forms` and
+`entry_headword_terms` relations, and the contentless FTS index. Scope predicates run before
+every candidate limit, and exact ASCII headword tokens can anchor a mixed-language query
+without turning a substring into a word match. Projection 2.2
 indexes structured rich-text segments once, preserves distinct semantic owners, separates
 bilingual token streams, and resolves authoritative irregular plus bounded regular headword
-forms. One batch query enriches a result window; the browser does not infer morphology. A
+forms. One batch query enriches a result window; the browser does not infer morphology. The
+projection contains 84,821 sense, 12,423 phrase, 5 form, 92,016 example, and 8,075 resource
+documents; etymology is excluded from Chinese and semantic search. A
 shared OpenCC converter normalizes traditional queries and indexed Chinese while the request
 path derives all query views from one normalized value.
+The released sidecar contains 197,340 documents, 361,278 exact segments, 16,861 headword
+forms, 55,975 normalized headword terms, and 117,214 English terms in 102,408,192 bytes
+(SHA-256 `9677b91a2d2f4fc6dc825a989ea2e157a77f2e19646aeb1b3a60a8e2dcd39630`).
 
 When the reverse-search sidecar is not configured, Chinese search returns
 `503 reverse_search_unavailable`. English search, entries, enhancements, and configured media
@@ -233,13 +246,15 @@ workers, and bounds evidence projection to 4,096 text candidates. Separate bound
 cache query vectors and complete pages; identical concurrent queries share one embedding
 request. Four provider requests may run concurrently and no more than 64 unique embedding
 flights are admitted; excess requests return through the lexical fallback path. The released
-178,382-vector matrix occupies about 174 MiB in memory.
+181,883-vector matrix occupies about 177.6 MiB in memory; scores below 0.590489181 are excluded.
+Schema 5 / projection 2.2 contains 197,340 documents in a 259,973,120-byte sidecar
+(SHA-256 `f76c97820fc44485696a19a2829bb6be4f0d298b9fc3524dabef5b26b2915033`).
 
 An optional SQLite cache retains query vectors across restarts. Its primary key is an
 HMAC-SHA-256 over the normalized query and complete embedding contract; query plaintext is
 never persisted. The cache is best-effort, uses WAL, expires rows by TTL, and evicts the
 least recently accessed rows above its fixed capacity. The reference 10,000-entry,
-1,024-dimension configuration occupies roughly 42-50 MiB. A path and private key of at least
+1,024-dimension configuration occupies roughly 12-16 MiB. A path and private key of at least
 32 bytes are both required; incomplete or invalid cache settings disable only persistence.
 
 Semantic retrieval remains disabled unless the sidecar and all provider settings are present.

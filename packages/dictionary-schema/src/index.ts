@@ -56,8 +56,14 @@ export interface CanonicalPartOfSpeech {
 export interface CanonicalText {
   text: string;
   tokens: SourceToken[];
+  /** Minimal source provenance for inline text whose rendering role depends on its owner. */
+  origin?: CanonicalTextOrigin;
   raw: JsonValue;
 }
+
+export const CANONICAL_TEXT_ORIGINS = ["use", "dis-g"] as const;
+
+export type CanonicalTextOrigin = (typeof CANONICAL_TEXT_ORIGINS)[number];
 
 export interface CanonicalAudioReference {
   key: string;
@@ -199,6 +205,8 @@ export interface CanonicalIllustration {
 export interface CanonicalBoxTextSegment {
   kind: "text";
   value: CanonicalText;
+  /** A source-marked term or pattern introduced and explained by this segment. */
+  term?: CanonicalText;
   raw: JsonValue;
 }
 
@@ -294,9 +302,32 @@ export type CanonicalBoxBlock =
       raw: JsonObject;
     };
 
+export const CANONICAL_RESOURCE_CATEGORIES = [
+  "grammar",
+  "express-yourself",
+  "vocabulary-building",
+  "synonyms",
+  "which-word",
+  "language-bank",
+  "collocations",
+  "homophones",
+  "british-american",
+  "more-about",
+  "wordfinder",
+  "help",
+  "origin",
+  "note",
+  "other",
+] as const;
+
+export type CanonicalResourceCategory = (typeof CANONICAL_RESOURCE_CATEGORIES)[number];
+
 export interface CanonicalGrammarUsageBox {
   id?: string;
+  /** Source label retained for presentation where a normalized category is insufficient. */
   type?: string;
+  /** Normalized card category shared by all adapters and projections. */
+  resourceCategory?: CanonicalResourceCategory;
   title?: CanonicalText;
   references?: CanonicalCrossReference[];
   blocks: CanonicalBoxBlock[];
@@ -343,6 +374,7 @@ const sourceTokenSchema = z.object({
 const canonicalTextSchema = z.object({
   text: z.string(),
   tokens: z.array(sourceTokenSchema),
+  origin: z.enum(CANONICAL_TEXT_ORIGINS).optional(),
   raw: jsonValueSchema,
 });
 
@@ -398,6 +430,7 @@ const canonicalBoxSegmentSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("text"),
     value: canonicalTextSchema,
+    term: canonicalTextSchema.optional(),
     raw: jsonValueSchema,
   }),
   z.object({
@@ -484,6 +517,7 @@ const canonicalBoxBlockSchema = z.discriminatedUnion("kind", [
 const canonicalGrammarUsageBoxSchema = z.object({
   id: z.string().optional(),
   type: z.string().optional(),
+  resourceCategory: z.enum(CANONICAL_RESOURCE_CATEGORIES).optional(),
   title: canonicalTextSchema.optional(),
   references: z.array(canonicalCrossReferenceSchema).default([]),
   blocks: z.array(canonicalBoxBlockSchema).default([]),

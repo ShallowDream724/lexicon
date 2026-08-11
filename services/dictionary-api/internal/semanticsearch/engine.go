@@ -48,13 +48,13 @@ type cachedPage struct {
 
 type cachedVector struct {
 	query  string
-	vector []float32
+	vector []int8
 }
 
 type embeddingFlight struct {
-	done   chan struct{}
-	vector []float32
-	err    error
+	done      chan struct{}
+	quantized []int8
+	err       error
 }
 
 func NewEngine(store *Store, embedder Embedder, cacheCapacity int) (*Engine, error) {
@@ -123,7 +123,7 @@ func (e *Engine) Search(ctx context.Context, query string, options Options) (Pag
 	if err != nil {
 		return empty, err
 	}
-	page, err := e.store.Search(ctx, vector, options)
+	page, err := e.store.searchQuantized(ctx, vector, options)
 	if err != nil {
 		return empty, err
 	}
@@ -135,7 +135,7 @@ func normalizeQuery(query string) string {
 	return strings.ToLower(strings.Join(strings.Fields(norm.NFKC.String(query)), " "))
 }
 
-func (e *Engine) embedding(ctx context.Context, query string) ([]float32, error) {
+func (e *Engine) embedding(ctx context.Context, query string) ([]int8, error) {
 	e.mu.Lock()
 	if e.closed {
 		e.mu.Unlock()
@@ -143,7 +143,7 @@ func (e *Engine) embedding(ctx context.Context, query string) ([]float32, error)
 	}
 	if element := e.vectors[query]; element != nil {
 		e.vectorLRU.MoveToFront(element)
-		vector := cloneVector(element.Value.(cachedVector).vector)
+		vector := cloneQuantizedVector(element.Value.(cachedVector).vector)
 		e.mu.Unlock()
 		return vector, nil
 	}
@@ -161,7 +161,7 @@ func (e *Engine) embedding(ctx context.Context, query string) ([]float32, error)
 	e.mu.Unlock()
 	select {
 	case <-flight.done:
-		return cloneVector(flight.vector), flight.err
+		return cloneQuantizedVector(flight.quantized), flight.err
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
@@ -169,18 +169,36 @@ func (e *Engine) embedding(ctx context.Context, query string) ([]float32, error)
 
 func (e *Engine) resolveEmbedding(ctx context.Context, query string, flight *embeddingFlight) {
 	defer e.flightWG.Done()
-	var vector []float32
+	var quantized []int8
 	var err error
-	if e.persistentVectorCache != nil {
+	if cache, ok := e.persistentVectorCache.(PersistentQuantizedVectorCache); ok {
+		quantized, _ = cache.GetQuantized(ctx, query)
+		if len(quantized) != e.store.Dimensions() {
+			quantized = nil
+		}
+	} else if e.persistentVectorCache != nil {
+		var vector []float32
 		vector, _ = e.persistentVectorCache.Get(ctx, query)
+		if vector != nil {
+			quantized, _ = normalizeAndQuantize(vector, e.store.Dimensions())
+		}
 	}
-	if vector == nil {
+	if quantized == nil && err == nil {
 		select {
 		case e.embeddingSlots <- struct{}{}:
-			vector, err = e.embedder.Embed(ctx, query, e.store.QueryTemplate(), e.store.QueryExtraJSON())
+			vector, embedErr := e.embedder.Embed(ctx, query, e.store.QueryTemplate(), e.store.QueryExtraJSON())
 			<-e.embeddingSlots
-			if err == nil && e.persistentVectorCache != nil {
-				e.persistentVectorCache.Put(ctx, query, vector)
+			if embedErr == nil {
+				quantized, err = normalizeAndQuantize(vector, e.store.Dimensions())
+			} else {
+				err = embedErr
+			}
+			if err == nil {
+				if cache, ok := e.persistentVectorCache.(PersistentQuantizedVectorCache); ok {
+					cache.PutQuantized(ctx, query, quantized)
+				} else if e.persistentVectorCache != nil {
+					e.persistentVectorCache.Put(ctx, query, vector)
+				}
 			}
 		case <-ctx.Done():
 			err = ctx.Err()
@@ -188,9 +206,9 @@ func (e *Engine) resolveEmbedding(ctx context.Context, query string, flight *emb
 	}
 
 	e.mu.Lock()
-	flight.vector, flight.err = cloneVector(vector), err
+	flight.quantized, flight.err = cloneQuantizedVector(quantized), err
 	if err == nil && !e.closed {
-		e.putVectorLocked(query, vector)
+		e.putVectorLocked(query, quantized)
 	}
 	delete(e.flights, query)
 	close(flight.done)
@@ -244,16 +262,16 @@ func (e *Engine) putPage(key string, page Page) {
 	}
 }
 
-func (e *Engine) putVectorLocked(query string, vector []float32) {
+func (e *Engine) putVectorLocked(query string, vector []int8) {
 	if e.vectorCapacity == 0 {
 		return
 	}
 	if element := e.vectors[query]; element != nil {
-		element.Value = cachedVector{query: query, vector: cloneVector(vector)}
+		element.Value = cachedVector{query: query, vector: cloneQuantizedVector(vector)}
 		e.vectorLRU.MoveToFront(element)
 		return
 	}
-	e.vectors[query] = e.vectorLRU.PushFront(cachedVector{query: query, vector: cloneVector(vector)})
+	e.vectors[query] = e.vectorLRU.PushFront(cachedVector{query: query, vector: cloneQuantizedVector(vector)})
 	if e.vectorLRU.Len() > e.vectorCapacity {
 		oldest := e.vectorLRU.Back()
 		delete(e.vectors, oldest.Value.(cachedVector).query)
@@ -262,6 +280,8 @@ func (e *Engine) putVectorLocked(query string, vector []float32) {
 }
 
 func cloneVector(vector []float32) []float32 { return append([]float32(nil), vector...) }
+
+func cloneQuantizedVector(vector []int8) []int8 { return append([]int8(nil), vector...) }
 
 func clonePage(page Page) Page {
 	copyPage := page

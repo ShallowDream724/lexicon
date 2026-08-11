@@ -1,0 +1,5248 @@
+[
+  {
+    "id": "fresh100-a-01",
+    "query": "原谅",
+    "split": "holdout",
+    "category": "direct-common",
+    "intent": "寻找表示不再因他人的过错而生气的常用动词。",
+    "difficulty": "easy",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25f47fc.-6473",
+        "headword": "forgive",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2673449.-2945",
+        "headword": "pardon",
+        "grade": 2
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25defc8.6255",
+        "headword": "excuse",
+        "grade": 2
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25f47fc.-6473",
+        "headword": "forgive",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "原谅；宽恕",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e25f47fc.-640d",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2673449.-2945",
+        "headword": "pardon",
+        "grade": 2,
+        "evidence": {
+          "scope": "sense",
+          "contains": "原谅（表示礼貌时常用的词语）",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e2673449.-2872",
+            "path": [
+              "subentries",
+              "2",
+              "senses",
+              "1"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25defc8.6255",
+        "headword": "excuse",
+        "grade": 2,
+        "evidence": {
+          "scope": "sense",
+          "contains": "原谅；宽恕",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e25defc8.6343",
+            "path": [
+              "subentries",
+              "1",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-02",
+    "query": "害怕",
+    "split": "holdout",
+    "category": "direct-common",
+    "intent": "寻找表示觉得自己可能受伤或受苦时的常用形容词。",
+    "difficulty": "easy",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e256e182.-34b9",
+        "headword": "afraid",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26a77d4.27fc",
+        "headword": "scared",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25f47fc.432",
+        "headword": "frightened",
+        "grade": 2
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e256e182.-34b9",
+        "headword": "afraid",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "害怕，畏惧（可能受伤害、受苦）",
+          "location": {
+            "section": "definitions",
+            "part": "adj.",
+            "ownerId": "u596c17338875400e.30be04e6.154e256e182.-34a0",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26a77d4.27fc",
+        "headword": "scared",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "害怕；恐惧；畏惧；担心",
+          "location": {
+            "section": "definitions",
+            "part": "adj.",
+            "ownerId": "u596c17338875400e.30be04e6.154e26a77d4.2811",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25f47fc.432",
+        "headword": "frightened",
+        "grade": 2,
+        "evidence": {
+          "scope": "sense",
+          "contains": "惊吓的；受惊的；害怕的",
+          "location": {
+            "section": "definitions",
+            "part": "adj.",
+            "ownerId": "u596c17338875400e.30be04e6.154e25f47fc.447",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-03",
+    "query": "建议",
+    "split": "holdout",
+    "category": "direct-common",
+    "intent": "寻找日常交流中既可作意见也可作提出想法的高频表达。",
+    "difficulty": "medium",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e256e182.-4dad",
+        "headword": "advice",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26d58b3.4b88",
+        "headword": "suggest",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2693bb0.69b6",
+        "headword": "recommend",
+        "grade": 2
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2693bb0.6b2d",
+        "headword": "recommendation",
+        "grade": 2
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e256e182.-4dad",
+        "headword": "advice",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "劝告；忠告；建议；意见",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e256e182.-4d8e",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26d58b3.4b88",
+        "headword": "suggest",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "建议；提议",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e26d58b3.4be7",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2693bb0.69b6",
+        "headword": "recommend",
+        "grade": 2,
+        "evidence": {
+          "scope": "sense",
+          "contains": "劝告；建议",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e2693bb0.6a49",
+            "path": [
+              "senses",
+              "1"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2693bb0.6b2d",
+        "headword": "recommendation",
+        "grade": 2,
+        "evidence": {
+          "scope": "sense",
+          "contains": "正式建议；提议",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e2693bb0.6b3e",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-04",
+    "query": "害羞",
+    "split": "holdout",
+    "category": "direct-common",
+    "intent": "寻找形容见到陌生人时不自在、不敢主动说话的常用形容词。",
+    "difficulty": "easy",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26b669d.-2ac0",
+        "headword": "shy",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25812cf.4acb",
+        "headword": "bashful",
+        "grade": 2
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26b669d.-2ac0",
+        "headword": "shy",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "羞怯的；腼腆的；怕生的",
+          "location": {
+            "section": "definitions",
+            "part": "adj.",
+            "ownerId": "u596c17338875400e.30be04e6.154e26b669d.-2a94",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25812cf.4acb",
+        "headword": "bashful",
+        "grade": 2,
+        "evidence": {
+          "scope": "sense",
+          "contains": "羞怯的；忸怩的",
+          "location": {
+            "section": "definitions",
+            "part": "adj.",
+            "ownerId": "u596c17338875400e.30be04e6.154e25812cf.4ade",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-05",
+    "query": "健康",
+    "split": "holdout",
+    "category": "direct-common",
+    "intent": "寻找描述身体或精神状况良好时常用的名词和形容词。",
+    "difficulty": "medium",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e260dd19.-4aae",
+        "headword": "health",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e260dd19.-474e",
+        "headword": "healthy",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e270598b.-cc",
+        "headword": "well",
+        "grade": 2
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e260dd19.-4aae",
+        "headword": "health",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "人的身体（或精神）状况；健康",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e260dd19.-4a96",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e260dd19.-474e",
+        "headword": "healthy",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "健康的；健壮的",
+          "location": {
+            "section": "definitions",
+            "part": "adj.",
+            "ownerId": "u596c17338875400e.30be04e6.154e260dd19.-4734",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e270598b.-cc",
+        "headword": "well",
+        "grade": 2,
+        "evidence": {
+          "scope": "sense",
+          "contains": "健康；身体好",
+          "location": {
+            "section": "definitions",
+            "part": "adj.",
+            "ownerId": "u596c17338875400e.30be04e6.154e270598b.14a",
+            "path": [
+              "subentries",
+              "1",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-06",
+    "query": "邻居",
+    "split": "holdout",
+    "category": "direct-common",
+    "intent": "寻找表示住在隔壁或附近的人的常用名词。",
+    "difficulty": "easy",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2661149.-6c34",
+        "headword": "neighbour",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2661149.-6c34",
+        "headword": "neighbour",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "邻居；邻人",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e2661149.-6c0d",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-07",
+    "query": "修理",
+    "split": "holdout",
+    "category": "direct-common",
+    "intent": "寻找把损坏的东西修好的常用动词。",
+    "difficulty": "easy",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e269a90f.21c3",
+        "headword": "repair",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25ece5c.-188a",
+        "headword": "fix",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e264fe33.-4a97",
+        "headword": "mend",
+        "grade": 2
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e269a90f.21c3",
+        "headword": "repair",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "修理；修补；修缮",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e269a90f.221c",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25ece5c.-188a",
+        "headword": "fix",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "修理；校准；校正",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e25ece5c.-179c",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e264fe33.-4a97",
+        "headword": "mend",
+        "grade": 2,
+        "evidence": {
+          "scope": "sense",
+          "contains": "修理；修补",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e264fe33.-4a49",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-08",
+    "query": "迟到",
+    "split": "holdout",
+    "category": "direct-common",
+    "intent": "寻找表示到达时间晚于约定时间的常用形容词。",
+    "difficulty": "easy",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e262eabe.294d",
+        "headword": "late",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26dcd86.4233",
+        "headword": "tardy",
+        "grade": 2
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e262eabe.294d",
+        "headword": "late",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "迟到；迟发生；迟做",
+          "location": {
+            "section": "definitions",
+            "part": "adj.",
+            "ownerId": "u596c17338875400e.30be04e6.154e262eabe.29b6",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26dcd86.4233",
+        "headword": "tardy",
+        "grade": 2,
+        "evidence": {
+          "scope": "sense",
+          "contains": "行动缓慢的；拖拉的；迟缓的；迟到的",
+          "location": {
+            "section": "definitions",
+            "part": "adj.",
+            "ownerId": "u596c17338875400e.30be04e6.154e26dcd86.424f",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-09",
+    "query": "争论",
+    "split": "holdout",
+    "category": "direct-common",
+    "intent": "寻找表示因意见不同而争辩这一动作及其事件的常用词。",
+    "difficulty": "medium",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2578323.5dd",
+        "headword": "argue",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2578323.713",
+        "headword": "argument",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2693bb0.-70ec",
+        "headword": "quarrel",
+        "grade": 2
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25cf965.-45a4",
+        "headword": "dispute",
+        "grade": 2
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2578323.5dd",
+        "headword": "argue",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "争论；争吵；争辩",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e2578323.62b",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2578323.713",
+        "headword": "argument",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "争论；争吵；争辩；辩论",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e2578323.72e",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2693bb0.-70ec",
+        "headword": "quarrel",
+        "grade": 2,
+        "evidence": {
+          "scope": "sense",
+          "contains": "口角；争吵；拌嘴",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e2693bb0.-70c4",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25cf965.-45a4",
+        "headword": "dispute",
+        "grade": 2,
+        "evidence": {
+          "scope": "sense",
+          "contains": "争论；辩论；争端；纠纷",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e25cf965.-458a",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-10",
+    "query": "习惯",
+    "split": "holdout",
+    "category": "direct-common",
+    "intent": "寻找表示经常做而几乎不假思索的事情的常用名词。",
+    "difficulty": "easy",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2605c5e.134d",
+        "headword": "habit",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26a03a4.6238",
+        "headword": "routine",
+        "grade": 2
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25c0719.-544b",
+        "headword": "custom",
+        "grade": 2
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2605c5e.134d",
+        "headword": "habit",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "习惯",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e2605c5e.1368",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26a03a4.6238",
+        "headword": "routine",
+        "grade": 2,
+        "evidence": {
+          "scope": "sense",
+          "contains": "常规；正常顺序",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e26a03a4.625d",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25c0719.-544b",
+        "headword": "custom",
+        "grade": 2,
+        "evidence": {
+          "scope": "sense",
+          "contains": "（个人的）习惯，习性，惯常行为",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e25c0719.-53ea",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "1"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-11",
+    "query": "附近",
+    "split": "holdout",
+    "category": "direct-common",
+    "intent": "寻找表示距离很近的地点关系的常用介词。",
+    "difficulty": "easy",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2658338.7a12",
+        "headword": "near",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25687c8.1d8d",
+        "headword": "about",
+        "grade": 2
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2658338.7a12",
+        "headword": "near",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "在…附近；靠近",
+          "location": {
+            "section": "definitions",
+            "part": "prep.",
+            "ownerId": "u596c17338875400e.30be04e6.154e2658338.7b70",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25687c8.1d8d",
+        "headword": "about",
+        "grade": 2,
+        "evidence": {
+          "scope": "sense",
+          "contains": "在…附近；在…地方",
+          "location": {
+            "section": "definitions",
+            "part": "prep.",
+            "ownerId": "u596c17338875400e.30be04e6.154e25687c8.1eb4",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "5"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-12",
+    "query": "提醒",
+    "split": "holdout",
+    "category": "direct-common",
+    "intent": "寻找帮助别人记起重要事情的常用动词。",
+    "difficulty": "easy",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e269a90f.60e",
+        "headword": "remind",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e269a90f.60e",
+        "headword": "remind",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "提醒；使想起",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e269a90f.65e",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-13",
+    "query": "决定",
+    "split": "holdout",
+    "category": "direct-common",
+    "intent": "寻找作出选择这一高频概念对应的名词和动词。",
+    "difficulty": "medium",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25c0719.3068",
+        "headword": "decision",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25c0719.2bf2",
+        "headword": "decide",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25a3139.5f95",
+        "headword": "choice",
+        "grade": 2
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25a3139.6518",
+        "headword": "choose",
+        "grade": 2
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25c0719.3068",
+        "headword": "decision",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "（作出的）决定，抉择",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e25c0719.3080",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25c0719.2bf2",
+        "headword": "decide",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "对…作出抉择；决定；选定",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e25c0719.2c4c",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25a3139.5f95",
+        "headword": "choice",
+        "grade": 2,
+        "evidence": {
+          "scope": "sense",
+          "contains": "选择；挑选；抉择",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e25a3139.5fb9",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25a3139.6518",
+        "headword": "choose",
+        "grade": 2,
+        "evidence": {
+          "scope": "sense",
+          "contains": "选择；挑选；选取",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e25a3139.6575",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-14",
+    "query": "努力",
+    "split": "holdout",
+    "category": "direct-common",
+    "intent": "寻找表示为完成一件困难的事付出心力的常用名词和动词。",
+    "difficulty": "medium",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25d6e00.2224",
+        "headword": "effort",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26ec04f.63d3",
+        "headword": "try",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26d58b3.-18c9",
+        "headword": "strive",
+        "grade": 2
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2578323.7c8c",
+        "headword": "attempt",
+        "grade": 2
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25d6e00.2224",
+        "headword": "effort",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "气力；努力；费力的事",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e25d6e00.223e",
+            "path": [
+              "senses",
+              "1"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26ec04f.63d3",
+        "headword": "try",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "试图；想要；设法；努力",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e26ec04f.642c",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26d58b3.-18c9",
+        "headword": "strive",
+        "grade": 2,
+        "evidence": {
+          "scope": "sense",
+          "contains": "努力；奋斗；力争；力求",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e26d58b3.-184c",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2578323.7c8c",
+        "headword": "attempt",
+        "grade": 2,
+        "evidence": {
+          "scope": "sense",
+          "contains": "努力；尝试；试图",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e2578323.7d70",
+            "path": [
+              "subentries",
+              "1",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-15",
+    "query": "借钱",
+    "split": "holdout",
+    "category": "direct-common",
+    "intent": "寻找钱款借入和借出两种日常方向的常用动词。",
+    "difficulty": "medium",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2591adf.-27d2",
+        "headword": "borrow",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e264021e.-7965",
+        "headword": "lend",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2591adf.-27d2",
+        "headword": "borrow",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "借入（款项）；（向…）借贷",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e2591adf.-2725",
+            "path": [
+              "senses",
+              "1"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e264021e.-7965",
+        "headword": "lend",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "借给；借出",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e264021e.-790c",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-16",
+    "query": "朋友说终于通过考试了，简短夸一句怎么回应",
+    "split": "holdout",
+    "category": "short-colloquial",
+    "intent": "对朋友取得成果表达高兴和赞许的简短回应。",
+    "difficulty": "medium",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2661149.-3c48",
+        "headword": "nice",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2661149.-3c48",
+        "headword": "nice",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "太好了；好极了",
+          "location": {
+            "section": "idioms",
+            "part": "adj.",
+            "ownerId": "u596c17338875400e.30be04e6.154e2661149.-3af3",
+            "path": [
+              "idioms",
+              "3",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-17",
+    "query": "迎接外地朋友回家时怎么说",
+    "split": "holdout",
+    "category": "short-colloquial",
+    "intent": "朋友回到家时使用简短欢迎语。",
+    "difficulty": "medium",
+    "scopes": [
+      "example"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e270598b.-470",
+        "headword": "welcome",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e270598b.-470",
+        "headword": "welcome",
+        "grade": 3,
+        "evidence": {
+          "scope": "example",
+          "contains": "欢迎归来！",
+          "location": {
+            "section": "definitions",
+            "part": "exclamation",
+            "ownerId": "u596c17338875400e.30be04e6.154e270598b.-2c0",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0",
+              "examples",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-18",
+    "query": "别人打断我时，怎么请他先听我说完",
+    "split": "holdout",
+    "category": "short-colloquial",
+    "intent": "被打断时要求对方先完整听完自己的话。",
+    "difficulty": "medium",
+    "scopes": [
+      "example"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e266a2c7.144a",
+        "headword": "out",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e266a2c7.144a",
+        "headword": "out",
+        "grade": 3,
+        "evidence": {
+          "scope": "example",
+          "contains": "你听我说完再讲话。",
+          "location": {
+            "section": "definitions",
+            "ownerId": "u596c17338875400e.30be04e6.154e266a2c7.1655",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "29",
+              "examples",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-19",
+    "query": "提醒同事说话别冒犯别人怎么表达",
+    "split": "holdout",
+    "category": "short-colloquial",
+    "intent": "提醒对方谨慎措辞，以免冒犯或激怒别人。",
+    "difficulty": "medium",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e270598b.-4d10",
+        "headword": "watch",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e270598b.-4d10",
+        "headword": "watch",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "watch your ˈmouth/ˈtongue",
+          "location": {
+            "section": "idioms",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e270598b.-4bee",
+            "path": [
+              "subentries",
+              "0",
+              "idioms",
+              "4",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-20",
+    "query": "怎么了",
+    "split": "holdout",
+    "category": "short-colloquial",
+    "intent": "询问对方是否遇到问题或发生什么事的日常问句。",
+    "difficulty": "medium",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form",
+      "example"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26479f3.67b4",
+        "headword": "matter",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26479f3.67b4",
+        "headword": "matter",
+        "grade": 3,
+        "evidence": {
+          "scope": "example",
+          "contains": "怎么了？出了什么事儿吗？",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e26479f3.68e4",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0",
+              "examples",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-21",
+    "query": "跟同事下班道别说回头见怎么表达",
+    "split": "holdout",
+    "category": "short-colloquial",
+    "intent": "离开时用自然口语向同事道别并表示之后再见。",
+    "difficulty": "medium",
+    "scopes": [
+      "phrase",
+      "example"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26aecc9.-4a9f",
+        "headword": "see",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26aecc9.-4a9f",
+        "headword": "see",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "ˈsee you (aˈround/ˈlater/ˈsoon)",
+          "location": {
+            "section": "idioms",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e26aecc9.-46e4",
+            "path": [
+              "subentries",
+              "0",
+              "idioms",
+              "6",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-22",
+    "query": "干得好",
+    "split": "holdout",
+    "category": "short-colloquial",
+    "intent": "称赞对方把事情做得好的简短口语。",
+    "difficulty": "medium",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2615987.2353",
+        "headword": "idea",
+        "grade": 2
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2624e4c.2dbc",
+        "headword": "job",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2661149.-3c48",
+        "headword": "nice",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e270598b.-351e",
+        "headword": "way",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25e60d3.-d5e",
+        "headword": "fair play",
+        "grade": 2
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25fc6f2.4b91",
+        "headword": "good",
+        "grade": 2
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26aecc9.399c",
+        "headword": "shabash",
+        "grade": 2
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26b669d.-494b",
+        "headword": "show",
+        "grade": 2
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2615987.2353",
+        "headword": "idea",
+        "grade": 2,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "干得好；做得对",
+          "location": {
+            "section": "idioms",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e2615987.2537",
+            "path": [
+              "idioms",
+              "4",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2624e4c.2dbc",
+        "headword": "job",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "做得好；干得漂亮",
+          "location": {
+            "section": "idioms",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e2624e4c.3043",
+            "path": [
+              "idioms",
+              "3",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2661149.-3c48",
+        "headword": "nice",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "干得好",
+          "location": {
+            "section": "idioms",
+            "part": "adj.",
+            "ownerId": "u596c17338875400e.30be04e6.154e2661149.-3ae4",
+            "path": [
+              "idioms",
+              "4",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e270598b.-351e",
+        "headword": "way",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "干得好",
+          "location": {
+            "section": "idioms",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e270598b.-2ec5",
+            "path": [
+              "subentries",
+              "0",
+              "idioms",
+              "63",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25e60d3.-d5e",
+        "headword": "fair play",
+        "grade": 2,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "（表示赞许）做得对",
+          "location": {
+            "section": "idioms",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e25e60d3.-d3c",
+            "path": [
+              "idioms",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25fc6f2.4b91",
+        "headword": "good",
+        "grade": 2,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "（称赞某人）真行，真棒",
+          "location": {
+            "section": "idioms",
+            "part": "adj.",
+            "ownerId": "u596c17338875400e.30be04e6.154e25fc6f2.4f1b",
+            "path": [
+              "subentries",
+              "0",
+              "idioms",
+              "6",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26aecc9.399c",
+        "headword": "shabash",
+        "grade": 2,
+        "evidence": {
+          "scope": "sense",
+          "contains": "真棒；干得好",
+          "location": {
+            "section": "definitions",
+            "part": "exclamation",
+            "ownerId": "u596c17338875400e.30be04e6.154e26aecc9.39ac",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26b669d.-494b",
+        "headword": "show",
+        "grade": 2,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "（喝彩）好，真棒",
+          "location": {
+            "section": "idioms",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e26b669d.-4475",
+            "path": [
+              "subentries",
+              "1",
+              "idioms",
+              "2",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-23",
+    "query": "如果让我说了算，我会把会议改到下周，怎么说",
+    "split": "holdout",
+    "category": "short-colloquial",
+    "intent": "表达在自己拥有决定权的假设下会采取的做法。",
+    "difficulty": "hard",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form",
+      "example"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e270598b.-351e",
+        "headword": "way",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e270598b.-351e",
+        "headword": "way",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "if I had my way",
+          "location": {
+            "section": "idioms",
+            "part": "noun",
+            "ownerId": "ue0180273dd1654bb.6d0ccfef.1684c48a962.-7ec9",
+            "path": [
+              "subentries",
+              "0",
+              "idioms",
+              "32",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-24",
+    "query": "真可惜",
+    "split": "holdout",
+    "category": "short-colloquial",
+    "intent": "对令人遗憾的事表示同情或惋惜的简短感叹。",
+    "difficulty": "easy",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26aecc9.4c9a",
+        "headword": "shame",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26aecc9.4c9a",
+        "headword": "shame",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "（表示同情或喜爱）真可惜，太遗憾了，好极了，真棒",
+          "location": {
+            "section": "definitions",
+            "part": "exclamation",
+            "ownerId": "u596c17338875400e.30be04e6.154e26aecc9.4e33",
+            "path": [
+              "subentries",
+              "2",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-a-25",
+    "query": "不可能吧",
+    "split": "holdout",
+    "category": "short-colloquial",
+    "intent": "对刚听到的消息表示难以置信的简短反应。",
+    "difficulty": "medium",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form",
+      "example"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2661149.-5418",
+        "headword": "never",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2661149.-5418",
+        "headword": "never",
+        "grade": 3,
+        "evidence": {
+          "scope": "example",
+          "contains": "“我得到那份工作了。”“不可能吧！”",
+          "location": {
+            "section": "definitions",
+            "part": "exclamation",
+            "ownerId": "u596c17338875400e.30be04e6.154e2661149.-5373",
+            "path": [
+              "subentries",
+              "1",
+              "senses",
+              "0",
+              "examples",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-b-01",
+    "query": "临阵又退缩了",
+    "split": "holdout",
+    "category": "behavior",
+    "scopes": [
+      "phrase"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25a3139.3fc1",
+        "headword": "chicken",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25a3139.3fc1",
+        "headword": "chicken",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "ˌchicken ˈout (of sth/of doing sth)",
+          "location": {
+            "section": "phrasal-verbs",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e25a3139.4088",
+            "path": [
+              "subentries",
+              "1",
+              "phrasalVerbs",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "因害怕在最后关头放弃行动",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-b-02",
+    "query": "他抢在我前面把最后一张票买了",
+    "split": "holdout",
+    "category": "conversation",
+    "scopes": [
+      "phrase"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25812cf.7d57",
+        "headword": "beat",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25812cf.7d57",
+        "headword": "beat",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "ˌbeat sb ˈto it",
+          "location": {
+            "section": "phrasal-verbs",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e2589849.-7f27",
+            "path": [
+              "subentries",
+              "0",
+              "phrasalVerbs",
+              "9",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "在别人之前完成同一件事并抢得先机",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-b-03",
+    "query": "开会时老走神",
+    "split": "holdout",
+    "category": "attention",
+    "scopes": [
+      "phrase"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e270e95b.41e4",
+        "headword": "zone",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e270e95b.41e4",
+        "headword": "zone",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "ˌzone ˈout",
+          "location": {
+            "section": "phrasal-verbs",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e270e95b.42ef",
+            "path": [
+              "subentries",
+              "1",
+              "phrasalVerbs",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "在活动中停止专注",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-b-04",
+    "query": "别给大家泼冷水",
+    "split": "holdout",
+    "category": "social",
+    "scopes": [
+      "phrase"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25ab582.320e",
+        "headword": "cold",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25ab582.320e",
+        "headword": "cold",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "pour/throw cold ˈwater on sth",
+          "location": {
+            "section": "idioms",
+            "part": "adj.",
+            "ownerId": "u596c17338875400e.30be04e6.154e25ab582.33af",
+            "path": [
+              "subentries",
+              "0",
+              "idioms",
+              "6",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "对别人的计划或热情表示反对并扫兴",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-b-05",
+    "query": "那句提醒一直留在我脑子里忘不掉",
+    "split": "holdout",
+    "category": "decision",
+    "scopes": [
+      "phrase"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26cdacd.6e72",
+        "headword": "stick",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26cdacd.6e72",
+        "headword": "stick",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "stick in your ˈhead/ˈmind",
+          "location": {
+            "section": "idioms",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e26cdacd.6ff0",
+            "path": [
+              "subentries",
+              "0",
+              "idioms",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "某句话被长久记住且难以忘掉",
+    "difficulty": "hard"
+  },
+  {
+    "id": "fresh100-b-06",
+    "query": "不小心说漏嘴",
+    "split": "holdout",
+    "category": "conversation",
+    "scopes": [
+      "phrase"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26cdacd.-6826",
+        "headword": "spill",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26cdacd.-6826",
+        "headword": "spill",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "spill the ˈbeans",
+          "location": {
+            "section": "idioms",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e26cdacd.-6765",
+            "path": [
+              "subentries",
+              "0",
+              "idioms",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "无意中泄露本应保密的消息",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-b-07",
+    "query": "今天早点收工",
+    "split": "holdout",
+    "category": "work",
+    "scopes": [
+      "phrase"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e262eabe.-38c8",
+        "headword": "knock",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e262eabe.-38c8",
+        "headword": "knock",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "ˌknock ˈoff | ˌknock ˈoff sth",
+          "location": {
+            "section": "phrasal-verbs",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e262eabe.-362e",
+            "path": [
+              "subentries",
+              "0",
+              "phrasalVerbs",
+              "10",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "停止当天的工作并下班",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-b-08",
+    "query": "故意拖着不答复",
+    "split": "holdout",
+    "category": "behavior",
+    "scopes": [
+      "sense"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26cdacd.1143",
+        "headword": "stall",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26cdacd.1143",
+        "headword": "stall",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "故意拖延（以赢得时间）",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e26cdacd.124e",
+            "path": [
+              "subentries",
+              "1",
+              "senses",
+              "1"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "有意不回应以争取更多时间",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-b-09",
+    "query": "我一直很敬重这位老师",
+    "split": "holdout",
+    "category": "decision",
+    "scopes": [
+      "phrase"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26e4589.-cc1",
+        "headword": "think",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26e4589.-cc1",
+        "headword": "think",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "think the world, highly, a lot, poorly, little, etc. of sb/sth",
+          "location": {
+            "section": "idioms",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e26e4589.-951",
+            "path": [
+              "subentries",
+              "0",
+              "idioms",
+              "15",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "表达对某人有很高的评价",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-b-10",
+    "query": "被夹在中间为难",
+    "split": "holdout",
+    "category": "situation",
+    "scopes": [
+      "phrase"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26a03a4.1aee",
+        "headword": "rock",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26a03a4.1aee",
+        "headword": "rock",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "(caught/stuck) between a ˌrock and a ˈhard place",
+          "location": {
+            "section": "idioms",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e26a03a4.1bfa",
+            "path": [
+              "subentries",
+              "0",
+              "idioms",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "不得不在两个同样棘手的选择中取舍",
+    "difficulty": "hard"
+  },
+  {
+    "id": "fresh100-b-11",
+    "query": "他越来越得寸进尺",
+    "split": "holdout",
+    "category": "social",
+    "scopes": [
+      "phrase"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e261d834.-56bb",
+        "headword": "inch",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e261d834.-56bb",
+        "headword": "inch",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "give sb an ˈinch (and they’ll take a ˈmile/ˈyard)",
+          "location": {
+            "section": "idioms",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e261d834.-5651",
+            "path": [
+              "subentries",
+              "0",
+              "idioms",
+              "1",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "得到一点让步后就索取更多",
+    "difficulty": "hard"
+  },
+  {
+    "id": "fresh100-b-12",
+    "query": "她种什么花草都长得特别好",
+    "split": "holdout",
+    "category": "emotion",
+    "scopes": [
+      "sense"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2605c5e.-572a",
+        "headword": "green fingers",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2605c5e.-5304",
+        "headword": "green thumb",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2605c5e.-572a",
+        "headword": "green fingers",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "园艺技能；种植技能",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e2605c5e.-5713",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2605c5e.-5304",
+        "headword": "green thumb",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "园艺技能；种植技能",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e2605c5e.-52ed",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "形容一个人很擅长种植花草",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-b-13",
+    "query": "这下总算放心了",
+    "split": "holdout",
+    "category": "emotion",
+    "scopes": [
+      "sense"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e269a90f.-af1",
+        "headword": "relieved",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e269a90f.-af1",
+        "headword": "relieved",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "感到宽慰的；放心的；显得开心的",
+          "location": {
+            "section": "definitions",
+            "part": "adj.",
+            "ownerId": "u596c17338875400e.30be04e6.154e269a90f.-adf",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "担忧消除后的宽慰感",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-b-14",
+    "query": "两个都不懂的人还在互相指导",
+    "split": "holdout",
+    "category": "behavior",
+    "scopes": [
+      "phrase"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2589849.5952",
+        "headword": "blind",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2589849.5952",
+        "headword": "blind",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "the blind leading the ˈblind",
+          "location": {
+            "section": "idioms",
+            "part": "adj.",
+            "ownerId": "u596c17338875400e.30be04e6.154e2589849.5a0f",
+            "path": [
+              "subentries",
+              "0",
+              "idioms",
+              "1",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "缺乏经验的人给同样缺乏经验的人出主意",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-b-15",
+    "query": "这事弄巧成拙了",
+    "split": "holdout",
+    "category": "outcome",
+    "scopes": [
+      "sense"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26aecc9.-2f75",
+        "headword": "self-defeating",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26aecc9.-2f75",
+        "headword": "self-defeating",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "事与愿违的；适得其反的；弄巧成拙的",
+          "location": {
+            "section": "definitions",
+            "part": "adj.",
+            "ownerId": "u596c17338875400e.30be04e6.154e26aecc9.-2f67",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "本想帮忙却造成相反效果",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-b-16",
+    "query": "别人怎么批评他都不往心里去",
+    "split": "holdout",
+    "category": "personality",
+    "scopes": [
+      "phrase"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26e4589.-19ae",
+        "headword": "thick",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26e4589.-19ae",
+        "headword": "thick",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "a ˌthick ˈskin",
+          "location": {
+            "section": "idioms",
+            "part": "adj.",
+            "ownerId": "u596c17338875400e.30be04e6.154e26e4589.-185c",
+            "path": [
+              "subentries",
+              "0",
+              "idioms",
+              "5",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "能够承受批评或冒犯性言论而不难过",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-b-17",
+    "query": "等得没耐心了",
+    "split": "holdout",
+    "category": "emotion",
+    "scopes": [
+      "sense",
+      "example"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2615987.68d1",
+        "headword": "impatient",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2673449.1af0",
+        "headword": "patience",
+        "grade": 2
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2615987.68d1",
+        "headword": "impatient",
+        "grade": 3,
+        "evidence": {
+          "scope": "example",
+          "contains": "我等了二十分钟，有点不耐烦了。",
+          "location": {
+            "section": "definitions",
+            "part": "adj.",
+            "ownerId": "u596c17338875400e.30be04e6.154e2615987.68eb",
+            "path": [
+              "senses",
+              "0",
+              "examples",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2673449.1af0",
+        "headword": "patience",
+        "grade": 2,
+        "evidence": {
+          "scope": "example",
+          "contains": "我的耐心已消耗殆尽。",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e2673449.1b21",
+            "path": [
+              "senses",
+              "0",
+              "examples",
+              "3"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "因等待过久而逐渐失去耐心的状态",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-b-18",
+    "query": "这些损失都是一次操作失误造成的",
+    "split": "holdout",
+    "category": "behavior",
+    "scopes": [
+      "phrase"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25ece5c.3835",
+        "headword": "flow",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25ece5c.3835",
+        "headword": "flow",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "ˈflow from sth",
+          "location": {
+            "section": "phrasal-verbs",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e25ece5c.3a21",
+            "path": [
+              "subentries",
+              "1",
+              "phrasalVerbs",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "说明某个结果源于一个明确原因",
+    "difficulty": "hard"
+  },
+  {
+    "id": "fresh100-b-19",
+    "query": "一下就合得来",
+    "split": "holdout",
+    "category": "relationship",
+    "scopes": [
+      "phrase"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e260dd19.4091",
+        "headword": "hit",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e260dd19.4091",
+        "headword": "hit",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "hit it ˈoff (with sb)",
+          "location": {
+            "section": "idioms",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e260dd19.42fe",
+            "path": [
+              "subentries",
+              "0",
+              "idioms",
+              "7",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "初次接触就和对方投缘",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-b-20",
+    "query": "演讲收尾时说“最后，我想感谢大家”怎么表达",
+    "split": "holdout",
+    "category": "decision",
+    "scopes": [
+      "example"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25b2738.-29a5",
+        "headword": "conclusion",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25b2738.-29a5",
+        "headword": "conclusion",
+        "grade": 3,
+        "evidence": {
+          "scope": "example",
+          "contains": "最后，我想感谢…",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e25b2738.-2933",
+            "path": [
+              "senses",
+              "1",
+              "examples",
+              "3"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "用正式过渡语引出演讲末尾的致谢",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-b-21",
+    "query": "我只是随口说说",
+    "split": "holdout",
+    "category": "conversation",
+    "scopes": [
+      "phrase"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26e4589.1b92",
+        "headword": "throw",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26e4589.1b92",
+        "headword": "throw",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "ˌthrow sth↔ˈout",
+          "location": {
+            "section": "phrasal-verbs",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e26e4589.1e86",
+            "path": [
+              "subentries",
+              "0",
+              "phrasalVerbs",
+              "11",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "未经仔细思考便说出一个想法",
+    "difficulty": "hard"
+  },
+  {
+    "id": "fresh100-b-22",
+    "query": "别再没完没了抱怨",
+    "split": "holdout",
+    "category": "conversation",
+    "scopes": [
+      "phrase"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25fc6f2.2326",
+        "headword": "go",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25fc6f2.2326",
+        "headword": "go",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "ˌgo ˈon (about sb/sth)",
+          "location": {
+            "section": "phrasal-verbs",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e25fc6f2.2d73",
+            "path": [
+              "subentries",
+              "0",
+              "phrasalVerbs",
+              "52",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "持续用令人厌烦的方式抱怨同一件事",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-b-23",
+    "query": "他就是自找麻烦",
+    "split": "holdout",
+    "category": "behavior",
+    "scopes": [
+      "phrase"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2578323.3dd2",
+        "headword": "ask",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2578323.3dd2",
+        "headword": "ask",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "be ˈasking for trouble| be ˈasking for it",
+          "location": {
+            "section": "idioms",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e2578323.4011",
+            "path": [
+              "subentries",
+              "0",
+              "idioms",
+              "1",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "明知有风险仍以容易惹祸的方式行事",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-b-24",
+    "query": "玩笑先放一边，说正经的吧",
+    "split": "holdout",
+    "category": "conversation",
+    "scopes": [
+      "phrase"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2624e4c.3f77",
+        "headword": "joke",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2624e4c.3f77",
+        "headword": "joke",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "ˌjoking aˈpart| ˌjoking aˈside",
+          "location": {
+            "section": "idioms",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e2624e4c.412c",
+            "path": [
+              "subentries",
+              "1",
+              "idioms",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "结束玩笑并开始认真谈正事",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-b-25",
+    "query": "让他们和好",
+    "split": "holdout",
+    "category": "relationship",
+    "scopes": [
+      "phrase"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2591adf.4a12",
+        "headword": "bring",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2591adf.4a12",
+        "headword": "bring",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "ˌbring A and B toˈgether",
+          "location": {
+            "section": "phrasal-verbs",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e2591adf.4d51",
+            "path": [
+              "phrasalVerbs",
+              "27",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "帮助发生争执的双方恢复和睦",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-c-01",
+    "query": "风一吹门就合上了要垫个什么",
+    "split": "holdout",
+    "category": "daily-life",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25cf965.2544",
+        "headword": "doorstop",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25cf965.2544",
+        "headword": "doorstop",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "制门器",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e25cf965.2555",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "识别防止门被风关上的家居配件",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-c-02",
+    "query": "红酒软木塞卡住时用什么拧出来",
+    "split": "holdout",
+    "category": "daily-life",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25b928c.-64be",
+        "headword": "corkscrew",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25b928c.-64be",
+        "headword": "corkscrew",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "螺旋开瓶起子",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e25b928c.-649c",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "按功能描述寻找拔出软木塞的开瓶工具",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-c-03",
+    "query": "洗完青菜沥水那个满是小孔的盆",
+    "split": "holdout",
+    "category": "daily-life",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25ab582.319a",
+        "headword": "colander",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25ab582.319a",
+        "headword": "colander",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "滤锅",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e25ab582.31b1",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "按外形和沥水用途寻找厨房器具",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-c-04",
+    "query": "扫地后把垃圾撮起来的小铲板",
+    "split": "holdout",
+    "category": "daily-life",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25d6e00.-342c",
+        "headword": "dustpan",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25d6e00.-342c",
+        "headword": "dustpan",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "簸箕",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e25d6e00.-341b",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "按清扫动作寻找承接灰尘和杂物的工具",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-c-05",
+    "query": "罐头打不开时厨房那把带齿工具",
+    "split": "holdout",
+    "category": "daily-life",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2599a71.3208",
+        "headword": "can opener",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26e4589.598e",
+        "headword": "tin opener",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2599a71.3208",
+        "headword": "can opener",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "开罐器",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e2599a71.321d",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26e4589.598e",
+        "headword": "tin opener",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "开罐器；罐头刀；罐头起子",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e26e4589.59a4",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "按使用场景寻找开启食品罐头的器具",
+    "difficulty": "easy"
+  },
+  {
+    "id": "fresh100-c-06",
+    "query": "质子数相同中子数不同的原子",
+    "split": "holdout",
+    "category": "natural-science",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2624e4c.-11c6",
+        "headword": "isotope",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2624e4c.-11c6",
+        "headword": "isotope",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "同位素",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e2624e4c.-11a7",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "根据原子结构差异回忆化学术语",
+    "difficulty": "hard"
+  },
+  {
+    "id": "fresh100-c-07",
+    "query": "加快反应自身却不变的物质",
+    "split": "holdout",
+    "category": "natural-science",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25a3139.-6c19",
+        "headword": "catalyst",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25a3139.-6c19",
+        "headword": "catalyst",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "催化剂",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e25a3139.-6c03",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "描述化学反应中的功能性物质",
+    "difficulty": "hard"
+  },
+  {
+    "id": "fresh100-c-08",
+    "query": "地震时地面震动最强的中心点叫什么",
+    "split": "holdout",
+    "category": "natural-science",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25defc8.-2039",
+        "headword": "epicentre",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25defc8.-2039",
+        "headword": "epicentre",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "（地震的）震中",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e25defc8.-201d",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "根据地震在地表影响最强的位置寻找术语",
+    "difficulty": "hard"
+  },
+  {
+    "id": "fresh100-c-09",
+    "query": "盐水隔着薄膜时水慢慢过去的现象",
+    "split": "holdout",
+    "category": "natural-science",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e266a2c7.a67",
+        "headword": "osmosis",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e266a2c7.a67",
+        "headword": "osmosis",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "渗透",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e266a2c7.a82",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "按半透膜两侧液体变化描述生物化学过程",
+    "difficulty": "hard"
+  },
+  {
+    "id": "fresh100-c-10",
+    "query": "海边夜里会自己发光的生物现象",
+    "split": "holdout",
+    "category": "natural-science",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2589849.170b",
+        "headword": "bioluminescence",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2589849.170b",
+        "headword": "bioluminescence",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "生物发光",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e2589849.171f",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "根据自然界自行发光的现象寻找术语",
+    "difficulty": "hard"
+  },
+  {
+    "id": "fresh100-c-11",
+    "query": "高速旋转把液体和固体分开的机器",
+    "split": "holdout",
+    "category": "natural-science",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25a3139.-321a",
+        "headword": "centrifuge",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25a3139.-321a",
+        "headword": "centrifuge",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "离心机",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e25a3139.-3207",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "按实验室分离用途寻找设备名称",
+    "difficulty": "hard"
+  },
+  {
+    "id": "fresh100-c-12",
+    "query": "割伤后帮血液结成块的细小成分",
+    "split": "holdout",
+    "category": "medicine",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e267bba0.5188",
+        "headword": "platelet",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e267bba0.5188",
+        "headword": "platelet",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "血小板",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e267bba0.5199",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "根据伤口凝血作用寻找血液成分名称",
+    "difficulty": "hard"
+  },
+  {
+    "id": "fresh100-c-13",
+    "query": "心跳不规律时放进体内的电子装置",
+    "split": "holdout",
+    "category": "medicine",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e266a2c7.7dc5",
+        "headword": "pacemaker",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e266a2c7.7dc5",
+        "headword": "pacemaker",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "起搏器",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e266a2c7.7dd6",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "按植入式心律辅助装置描述寻找医学名词",
+    "difficulty": "hard"
+  },
+  {
+    "id": "fresh100-c-14",
+    "query": "手术时让人感觉不到疼痛的药",
+    "split": "holdout",
+    "category": "medicine",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e256e182.7096",
+        "headword": "anaesthetic",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e256e182.7096",
+        "headword": "anaesthetic",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "麻醉药",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e256e182.70bd",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "根据手术镇痛用途寻找药物类别",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-c-15",
+    "query": "伤口周围用来杀菌防感染的液体",
+    "split": "holdout",
+    "category": "medicine",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2578323.-4976",
+        "headword": "antiseptic",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2578323.-4976",
+        "headword": "antiseptic",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "抗菌剂",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e2578323.-4959",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "按伤口预防感染的用途寻找消毒制剂",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-c-16",
+    "query": "皮肤长期又红又痒还脱屑的毛病",
+    "split": "holdout",
+    "category": "medicine",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25d6e00.9f4",
+        "headword": "eczema",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25d6e00.9f4",
+        "headword": "eczema",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "湿疹",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e25d6e00.a0b",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "根据持续皮肤症状寻找疾病名称",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-c-17",
+    "query": "生意刚好赚回成本不亏不赚的状态",
+    "split": "holdout",
+    "category": "business",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2591adf.2990",
+        "headword": "break-even",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2591adf.2990",
+        "headword": "break-even",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "收支相抵",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e2591adf.29a2",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "描述企业收入恰好覆盖成本的经营状态",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-c-18",
+    "query": "一家企业把某种商品市场全占了叫啥",
+    "split": "holdout",
+    "category": "business",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2658338.-5c56",
+        "headword": "monopoly",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2658338.-5c56",
+        "headword": "monopoly",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "垄断",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e2658338.-5c38",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "按市场完全由一家企业控制的情境寻找术语",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-c-19",
+    "query": "公司把一部分利润按持股分给股东叫什么",
+    "split": "holdout",
+    "category": "business",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25cf965.-175a",
+        "headword": "dividend",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25cf965.-175a",
+        "headword": "dividend",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "股息；股利",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e25cf965.-1743",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "根据公司向股东分配利润的场景寻找商业术语",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-c-20",
+    "query": "开店交费后能用总部品牌经营的模式",
+    "split": "holdout",
+    "category": "business",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25f47fc.-2e78",
+        "headword": "franchise",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25f47fc.-2e78",
+        "headword": "franchise",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "特许经销权",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e25f47fc.-2e57",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "根据授权使用品牌经营的安排寻找商业术语",
+    "difficulty": "hard"
+  },
+  {
+    "id": "fresh100-c-21",
+    "query": "下载文件后用来核对内容没变的数值",
+    "split": "holdout",
+    "category": "technology",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25a3139.2834",
+        "headword": "checksum",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25a3139.2834",
+        "headword": "checksum",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "检查和",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e25a3139.2844",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "根据文件完整性校验场景寻找技术术语",
+    "difficulty": "hard"
+  },
+  {
+    "id": "fresh100-c-22",
+    "query": "防止外人偷看公司网络资料的防护层",
+    "split": "holdout",
+    "category": "technology",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25ece5c.-3868",
+        "headword": "firewall",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25ece5c.-3868",
+        "headword": "firewall",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "防火墙",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e25ece5c.-3856",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "按网络未授权访问防护需求寻找系统组件",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-c-23",
+    "query": "解决问题时按固定规则执行的一串步骤",
+    "split": "holdout",
+    "category": "technology",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e256e182.1632",
+        "headword": "algorithm",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e256e182.1632",
+        "headword": "algorithm",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "算法",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e256e182.164c",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "描述遵循规则解决问题的计算方法",
+    "difficulty": "medium"
+  },
+  {
+    "id": "fresh100-c-24",
+    "query": "把自己不愿承认的想法归到别人身上叫什么",
+    "split": "holdout",
+    "category": "abstract-concept",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e268c809.-25e0",
+        "headword": "projection",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e268c809.-25e0",
+        "headword": "projection",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "投射（不自觉地把自己的思想等加诸他人）",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e268c809.-256d",
+            "path": [
+              "senses",
+              "5"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "根据把自己的思想或反应想象成属于他人的心理过程寻找概念",
+    "difficulty": "hard"
+  },
+  {
+    "id": "fresh100-c-25",
+    "query": "两个现象一起变动但未必互为因果的关系",
+    "split": "holdout",
+    "category": "abstract-concept",
+    "scopes": [
+      "sense",
+      "phrase",
+      "form"
+    ],
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25b928c.-5323",
+        "headword": "correlation",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25b928c.-5323",
+        "headword": "correlation",
+        "grade": 3,
+        "evidence": {
+          "scope": "sense",
+          "contains": "相互关系",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e25b928c.-5300",
+            "path": [
+              "senses",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [],
+    "intent": "区分共同变化关系与因果关系的统计概念",
+    "difficulty": "hard"
+  },
+  {
+    "id": "fresh100-d-01",
+    "query": "afraid 能放在名词前吗，后面接 of 还是 about？",
+    "split": "holdout",
+    "category": "usage-meta",
+    "scopes": [
+      "usage"
+    ],
+    "intent": "确认 afraid 的句法位置及其与 of/about 的搭配限制。",
+    "difficulty": "hard",
+    "sourceKind": "grammar-usage structured segment",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e256e182.-34b9",
+        "headword": "afraid",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e256e182.-34b9",
+        "headword": "afraid",
+        "grade": 3,
+        "evidence": {
+          "scope": "usage",
+          "contains": "afraid 不用于名词前，只能与介词 of 而非 about 连用。",
+          "location": {
+            "section": "grammar-usage",
+            "part": "adj.",
+            "ownerId": "u596c17338875400e.30be04e6.154e256e182.-33ef",
+            "path": [
+              "senses",
+              "0",
+              "grammarUsageBoxes",
+              "0",
+              "blocks",
+              "5",
+              "segments",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-d-02",
+    "query": "help 后面到底带不带 to？",
+    "split": "holdout",
+    "category": "usage-meta",
+    "scopes": [
+      "usage"
+    ],
+    "intent": "确认 help 接不定式时 to 的省略条件。",
+    "difficulty": "medium",
+    "sourceKind": "definitions usage segment",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e260dd19.-18cc",
+        "headword": "help",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e260dd19.-18cc",
+        "headword": "help",
+        "grade": 3,
+        "evidence": {
+          "scope": "usage",
+          "contains": "带 to 的不定式动词结构常省略 to",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e260dd19.-1878",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0",
+              "usageSegments",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-d-03",
+    "query": "正式邮件里写 plz 可以吗？",
+    "split": "holdout",
+    "category": "usage-meta",
+    "scopes": [
+      "usage"
+    ],
+    "intent": "判断 plz 是否适合正式书面沟通。",
+    "difficulty": "easy",
+    "sourceKind": "definitions usage segment",
+    "relevance": [
+      {
+        "entryId": "u4bd66fe39eed907e.-606459e9.166869e3a10.-196d",
+        "headword": "plz",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u4bd66fe39eed907e.-606459e9.166869e3a10.-196d",
+        "headword": "plz",
+        "grade": 3,
+        "evidence": {
+          "scope": "usage",
+          "contains": "不可用于正式或规范书面语",
+          "location": {
+            "section": "definitions",
+            "part": "adv.",
+            "ownerId": "u4bd66fe39eed907e.-606459e9.166869e3a10.-195c",
+            "path": [
+              "senses",
+              "0",
+              "usageSegments",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-d-04",
+    "query": "between you and I 对不对？",
+    "split": "holdout",
+    "category": "usage-meta",
+    "scopes": [
+      "usage"
+    ],
+    "intent": "核对介词 between 后的人称代词格。",
+    "difficulty": "medium",
+    "sourceKind": "definitions usage",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2615987.1551",
+        "headword": "I",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2615987.1551",
+        "headword": "I",
+        "grade": 3,
+        "evidence": {
+          "scope": "usage",
+          "contains": "介词 between 后应该用宾语代词 me",
+          "location": {
+            "section": "definitions",
+            "part": "pron.",
+            "ownerId": "u596c17338875400e.30be04e6.154e2615987.159a",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0",
+              "usage",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-d-05",
+    "query": "第一次正式见面说 How do you do 合适吗，别人怎么回？",
+    "split": "holdout",
+    "category": "usage-meta",
+    "scopes": [
+      "usage"
+    ],
+    "intent": "确认正式初次见面问候语及其固定回应。",
+    "difficulty": "medium",
+    "sourceKind": "grammar-usage structured segment",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e260dd19.-1a52",
+        "headword": "hello",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e260dd19.-1a52",
+        "headword": "hello",
+        "grade": 3,
+        "evidence": {
+          "scope": "usage",
+          "contains": "对此正确的回答是 How do you do",
+          "location": {
+            "section": "grammar-usage",
+            "ownerId": "u596c17338875400e.30be04e6.154e260dd19.-1a0d",
+            "path": [
+              "senses",
+              "0",
+              "grammarUsageBoxes",
+              "0",
+              "blocks",
+              "1",
+              "items",
+              "6",
+              "segments",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-d-06",
+    "query": "正式邮件里能一直用 get 吗？",
+    "split": "holdout",
+    "category": "usage-meta",
+    "scopes": [
+      "usage"
+    ],
+    "intent": "判断 get 在正式书面语中的文体适切性。",
+    "difficulty": "medium",
+    "sourceKind": "definitions usage segment",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25fc6f2.-3623",
+        "headword": "get",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25fc6f2.-3623",
+        "headword": "get",
+        "grade": 3,
+        "evidence": {
+          "scope": "usage",
+          "contains": "尽量避免在正式文体中使用该词",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e25fc6f2.-3202",
+            "path": [
+              "senses",
+              "26",
+              "usageSegments",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-d-07",
+    "query": "说真正有精神疾病的人 mad 会不会冒犯？",
+    "split": "holdout",
+    "category": "usage-meta",
+    "scopes": [
+      "usage"
+    ],
+    "intent": "判断 mad 描述精神疾病时的冒犯性与替代表达。",
+    "difficulty": "hard",
+    "sourceKind": "grammar-usage structured segment",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26479f3.-46de",
+        "headword": "mad",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26479f3.-46de",
+        "headword": "mad",
+        "grade": 3,
+        "evidence": {
+          "scope": "usage",
+          "contains": "用于真正的精神病患者意含冒犯",
+          "location": {
+            "section": "grammar-usage",
+            "part": "adj.",
+            "ownerId": "u596c17338875400e.30be04e6.154e26479f3.-469a",
+            "path": [
+              "senses",
+              "0",
+              "grammarUsageBoxes",
+              "0",
+              "blocks",
+              "3",
+              "items",
+              "0",
+              "segments",
+              "2"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-d-08",
+    "query": "I'm liking this song 这样说对吗？",
+    "split": "holdout",
+    "category": "usage-meta",
+    "scopes": [
+      "usage"
+    ],
+    "intent": "确认 like 用进行时的通常规则与口语例外。",
+    "difficulty": "medium",
+    "sourceKind": "definitions usage",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e264021e.-2aa4",
+        "headword": "like",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e264021e.-2aa4",
+        "headword": "like",
+        "grade": 3,
+        "evidence": {
+          "scope": "usage",
+          "contains": "like 通常不用进行时",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e264021e.-298a",
+            "path": [
+              "subentries",
+              "1",
+              "senses",
+              "0",
+              "usage",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-d-09",
+    "query": "正式书面语里，if 和 whether 哪个更合适？",
+    "split": "holdout",
+    "category": "usage-meta",
+    "scopes": [
+      "usage"
+    ],
+    "intent": "比较 if 与 whether 在书面语中的正式度。",
+    "difficulty": "medium",
+    "sourceKind": "grammar-usage structured segment",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2615987.34a1",
+        "headword": "if",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2615987.34a1",
+        "headword": "if",
+        "grade": 3,
+        "evidence": {
+          "scope": "usage",
+          "contains": "whether 较正式，更适用于书面语",
+          "location": {
+            "section": "grammar-usage",
+            "part": "conj.",
+            "ownerId": "u596c17338875400e.30be04e6.154e2615987.3539",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "2",
+              "grammarUsageBoxes",
+              "0",
+              "blocks",
+              "1",
+              "items",
+              "0",
+              "segments",
+              "4"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-d-10",
+    "query": "on no account 是不是就是绝对不能的意思？",
+    "split": "holdout",
+    "category": "usage-meta",
+    "scopes": [
+      "phrase",
+      "usage"
+    ],
+    "intent": "确认 on no account 的强否定意义及强调功能。",
+    "difficulty": "hard",
+    "sourceKind": "phrase-owned usage and idiom phrase",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25687c8.4dfb",
+        "headword": "account",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25687c8.4dfb",
+        "headword": "account",
+        "grade": 3,
+        "evidence": {
+          "scope": "phrase",
+          "contains": "on no account",
+          "location": {
+            "section": "idioms",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e25687c8.4f78",
+            "path": [
+              "subentries",
+              "0",
+              "idioms",
+              "7",
+              "senses",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25687c8.4dfb",
+        "headword": "account",
+        "grade": 3,
+        "evidence": {
+          "scope": "usage",
+          "contains": "用于强调",
+          "location": {
+            "section": "idioms",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e25687c8.4f7e",
+            "path": [
+              "subentries",
+              "0",
+              "idioms",
+              "7",
+              "senses",
+              "0",
+              "inlineUsage",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-d-11",
+    "query": "我想客气地请别人替我保密，怎么说？",
+    "split": "holdout",
+    "category": "expression-recall",
+    "scopes": [
+      "example"
+    ],
+    "intent": "寻找请求对方保密的礼貌完整表达。",
+    "difficulty": "medium",
+    "sourceKind": "definitions example",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2615987.34a1",
+        "headword": "if",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2615987.34a1",
+        "headword": "if",
+        "grade": 3,
+        "evidence": {
+          "scope": "example",
+          "contains": "你如果能对此保密，我将不胜感激。",
+          "location": {
+            "section": "definitions",
+            "part": "conj.",
+            "ownerId": "u596c17338875400e.30be04e6.154e2615987.3558",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "3",
+              "examples",
+              "1"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-d-12",
+    "query": "我晚点再给你打电话怎么说？",
+    "split": "holdout",
+    "category": "expression-recall",
+    "scopes": [
+      "example"
+    ],
+    "intent": "表达稍后回电的日常承诺。",
+    "difficulty": "easy",
+    "sourceKind": "definitions example",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26a03a4.-10dc",
+        "headword": "ring",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26a03a4.-10dc",
+        "headword": "ring",
+        "grade": 3,
+        "evidence": {
+          "scope": "example",
+          "contains": "我稍后再给你打电话",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e26a03a4.-1065",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0",
+              "examples",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-d-13",
+    "query": "招待客人时问“想喝点什么”怎么说？",
+    "split": "holdout",
+    "category": "expression-recall",
+    "scopes": [
+      "example"
+    ],
+    "intent": "在招待场景中询问对方想喝什么。",
+    "difficulty": "easy",
+    "sourceKind": "definitions example",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25d6e00.-7f98",
+        "headword": "drink",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25d6e00.-7f98",
+        "headword": "drink",
+        "grade": 3,
+        "evidence": {
+          "scope": "example",
+          "contains": "你想喝点什么？",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e25d6e00.-7e47",
+            "path": [
+              "subentries",
+              "1",
+              "senses",
+              "0",
+              "examples",
+              "1"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-d-14",
+    "query": "朋友磨蹭，我想说“快点，要迟到了”怎么说？",
+    "split": "holdout",
+    "category": "expression-recall",
+    "scopes": [
+      "example"
+    ],
+    "intent": "在赶时间的场景中催促同伴加快动作。",
+    "difficulty": "easy",
+    "sourceKind": "phrasal-verb example",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2615987.-991",
+        "headword": "hurry",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2615987.-991",
+        "headword": "hurry",
+        "grade": 3,
+        "evidence": {
+          "scope": "example",
+          "contains": "快点！我们要迟到了。",
+          "location": {
+            "section": "phrasal-verbs",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e2615987.-884",
+            "path": [
+              "subentries",
+              "0",
+              "phrasalVerbs",
+              "1",
+              "senses",
+              "0",
+              "examples",
+              "1"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-d-15",
+    "query": "我忘带钱包了怎么说？",
+    "split": "holdout",
+    "category": "expression-recall",
+    "scopes": [
+      "example"
+    ],
+    "intent": "表达出门时忘记带随身物品。",
+    "difficulty": "easy",
+    "sourceKind": "definitions example",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25f47fc.-6700",
+        "headword": "forget",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25f47fc.-6700",
+        "headword": "forget",
+        "grade": 3,
+        "evidence": {
+          "scope": "example",
+          "contains": "我忘了带钱包。",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e25f47fc.-660a",
+            "path": [
+              "senses",
+              "0",
+              "examples",
+              "3"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-d-16",
+    "query": "我给你打了电话但是没打通怎么说？",
+    "split": "holdout",
+    "category": "expression-recall",
+    "scopes": [
+      "example"
+    ],
+    "intent": "说明曾尝试打电话但未接通。",
+    "difficulty": "easy",
+    "sourceKind": "definitions example",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26e4589.1979",
+        "headword": "through",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26e4589.1979",
+        "headword": "through",
+        "grade": 3,
+        "evidence": {
+          "scope": "example",
+          "contains": "我给你打电话了，可是怎么也打不通。",
+          "location": {
+            "section": "definitions",
+            "part": "adv.",
+            "ownerId": "u596c17338875400e.30be04e6.154e26e4589.1a80",
+            "path": [
+              "subentries",
+              "1",
+              "senses",
+              "4",
+              "examples",
+              "1"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26a03a4.-10dc",
+        "headword": "ring",
+        "grade": 0,
+        "evidence": {
+          "scope": "example",
+          "contains": "我稍后再给你打电话",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e26a03a4.-1065",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0",
+              "examples",
+              "0"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "fresh100-d-17",
+    "query": "想礼貌地请别人把窗户打开，怎么说？",
+    "split": "holdout",
+    "category": "expression-recall",
+    "scopes": [
+      "example"
+    ],
+    "intent": "用正式而礼貌的方式请求对方打开窗户。",
+    "difficulty": "easy",
+    "sourceKind": "definitions example",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26ec04f.4a9f",
+        "headword": "trouble",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e26ec04f.4a9f",
+        "headword": "trouble",
+        "grade": 3,
+        "evidence": {
+          "scope": "example",
+          "contains": "劳驾，请您把窗户打开好吗？",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e26ec04f.4d25",
+            "path": [
+              "subentries",
+              "1",
+              "senses",
+              "1",
+              "examples",
+              "2"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-d-18",
+    "query": "结账时问能不能刷卡怎么说？",
+    "split": "holdout",
+    "category": "expression-recall",
+    "scopes": [
+      "example"
+    ],
+    "intent": "在结账场景中询问是否可以使用信用卡付款。",
+    "difficulty": "easy",
+    "sourceKind": "grammar-usage example and idiom example",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2599a71.-1ba4",
+        "headword": "by",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2599a71.-1ba4",
+        "headword": "by",
+        "grade": 3,
+        "evidence": {
+          "scope": "example",
+          "contains": "我能用信用卡付款吗？",
+          "location": {
+            "section": "definitions",
+            "part": "prep.",
+            "ownerId": "u596c17338875400e.30be04e6.154e2599a71.-1b5b",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0",
+              "examples",
+              "1"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-d-19",
+    "query": "因为路上堵车迟到了，怎么解释？",
+    "split": "holdout",
+    "category": "expression-recall",
+    "scopes": [
+      "example"
+    ],
+    "intent": "说明迟到原因是道路受阻。",
+    "difficulty": "medium",
+    "sourceKind": "definitions example",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e260dd19.5d9d",
+        "headword": "hold-up",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e260dd19.5d9d",
+        "headword": "hold-up",
+        "grade": 3,
+        "evidence": {
+          "scope": "example",
+          "contains": "抱歉，我来晚了。公路上堵车了。",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e260dd19.5dbf",
+            "path": [
+              "senses",
+              "0",
+              "examples",
+              "2"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-d-20",
+    "query": "有人老想插手，我想直接说“这不关你的事”怎么说？",
+    "split": "holdout",
+    "category": "expression-recall",
+    "scopes": [
+      "example"
+    ],
+    "intent": "在他人插手私事时给出直接的边界表达。",
+    "difficulty": "medium",
+    "sourceKind": "phrasal-verb example",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2599a71.-2731",
+        "headword": "butt",
+        "grade": 3
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2661149.13f9",
+        "headword": "nothing",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2599a71.-2731",
+        "headword": "butt",
+        "grade": 3,
+        "evidence": {
+          "scope": "example",
+          "contains": "不关你的事。",
+          "location": {
+            "section": "phrasal-verbs",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e2599a71.-26ab",
+            "path": [
+              "subentries",
+              "0",
+              "phrasalVerbs",
+              "1",
+              "senses",
+              "0",
+              "examples",
+              "0"
+            ]
+          }
+        }
+      },
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e2661149.13f9",
+        "headword": "nothing",
+        "grade": 3,
+        "evidence": {
+          "scope": "example",
+          "contains": "出去！这根本就不关你的事。",
+          "location": {
+            "section": "idioms",
+            "part": "pron.",
+            "ownerId": "u596c17338875400e.30be04e6.154e2661149.1456",
+            "path": [
+              "idioms",
+              "1",
+              "senses",
+              "0",
+              "examples",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-d-21",
+    "query": "形容省钱省料该用 economic 还是 economical？",
+    "split": "holdout",
+    "category": "confusable-contrast",
+    "scopes": [
+      "usage"
+    ],
+    "intent": "区分 economic 与 economical，并选择表示节省、不浪费的形容词。",
+    "difficulty": "medium",
+    "sourceKind": "definitions example with noisy-action contrast",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25d6e00.38b",
+        "headword": "economic",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e25d6e00.38b",
+        "headword": "economic",
+        "grade": 3,
+        "evidence": {
+          "scope": "usage",
+          "contains": "economical 意为经济实惠的、节俭的、节约的",
+          "location": {
+            "section": "grammar-usage",
+            "part": "adj.",
+            "ownerId": "u596c17338875400e.30be04e6.154e25d6e00.3f2",
+            "path": [
+              "senses",
+              "0",
+              "grammarUsageBoxes",
+              "1",
+              "blocks",
+              "3",
+              "items",
+              "0",
+              "segments",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-d-22",
+    "query": "说“这项政策产生了影响”，affect 和 effect 哪个能作名词？",
+    "split": "holdout",
+    "category": "confusable-contrast",
+    "scopes": [
+      "usage"
+    ],
+    "intent": "区分 affect 与 effect 的常见词性并选择表示结果或影响的名词。",
+    "difficulty": "medium",
+    "sourceKind": "definitions example with grammatical-direction contrast",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e256e182.-40ef",
+        "headword": "affect",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e256e182.-40ef",
+        "headword": "affect",
+        "grade": 3,
+        "evidence": {
+          "scope": "usage",
+          "contains": "effect 名词 = 作用；影响",
+          "location": {
+            "section": "grammar-usage",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e256e182.-4087",
+            "path": [
+              "senses",
+              "0",
+              "grammarUsageBoxes",
+              "0",
+              "blocks",
+              "1",
+              "items",
+              "1",
+              "segments",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-d-23",
+    "query": "我把书放在桌上怎么说？",
+    "split": "holdout",
+    "category": "confusable-contrast",
+    "scopes": [
+      "example"
+    ],
+    "intent": "表达主动把书放到桌上，区分及物 lay 与描述书本状态的 lie。",
+    "difficulty": "hard",
+    "sourceKind": "phrasal-verb example with transitivity contrast",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e262eabe.4486",
+        "headword": "lay",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e262eabe.4486",
+        "headword": "lay",
+        "grade": 3,
+        "evidence": {
+          "scope": "example",
+          "contains": "她把书放在桌上。",
+          "location": {
+            "section": "phrasal-verbs",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e262eabe.469a",
+            "path": [
+              "subentries",
+              "0",
+              "phrasalVerbs",
+              "3",
+              "senses",
+              "0",
+              "examples",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e264021e.-4a03",
+        "headword": "lie",
+        "grade": 0,
+        "evidence": {
+          "scope": "example",
+          "contains": "那本书摊开放在书桌上。",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e264021e.-4948",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "1",
+              "examples",
+              "1"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "fresh100-d-24",
+    "query": "想说一条建议，能写 an advice 吗？",
+    "split": "holdout",
+    "category": "confusable-contrast",
+    "scopes": [
+      "usage"
+    ],
+    "intent": "确认 advice 的不可数用法以及“一条建议”的正确表达。",
+    "difficulty": "medium",
+    "sourceKind": "definitions example with person-and-speech-act contrast",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e256e182.-4dad",
+        "headword": "advice",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e256e182.-4dad",
+        "headword": "advice",
+        "grade": 3,
+        "evidence": {
+          "scope": "usage",
+          "contains": "advice 是不可数名词",
+          "location": {
+            "section": "definitions",
+            "part": "noun",
+            "ownerId": "u596c17338875400e.30be04e6.154e256e182.-4d8e",
+            "path": [
+              "senses",
+              "0",
+              "usageSegments",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  },
+  {
+    "id": "fresh100-d-25",
+    "query": "listen music 少了 to 对吗？",
+    "split": "holdout",
+    "category": "confusable-contrast",
+    "scopes": [
+      "usage"
+    ],
+    "intent": "确认 listen 接宾语时必须使用介词 to。",
+    "difficulty": "medium",
+    "sourceKind": "definitions example with stance contrast",
+    "relevance": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e264021e.4c8",
+        "headword": "listen",
+        "grade": 3
+      }
+    ],
+    "evidenceExpectations": [
+      {
+        "entryId": "u596c17338875400e.30be04e6.154e264021e.4c8",
+        "headword": "listen",
+        "grade": 3,
+        "evidence": {
+          "scope": "usage",
+          "contains": "不能说 listen sth（不带介词 to）",
+          "location": {
+            "section": "definitions",
+            "part": "verb",
+            "ownerId": "u596c17338875400e.30be04e6.154e264021e.518",
+            "path": [
+              "subentries",
+              "0",
+              "senses",
+              "0",
+              "usageSegments",
+              "0"
+            ]
+          }
+        }
+      }
+    ],
+    "forbidden": []
+  }
+]

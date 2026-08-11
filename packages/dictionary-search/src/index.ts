@@ -8,6 +8,7 @@ import type {
   CanonicalForm,
   CanonicalGrammarUsageBox,
   CanonicalPhrase,
+  CanonicalResourceCategory,
   CanonicalSense,
   CanonicalText,
 } from "../../dictionary-schema/src/index";
@@ -26,14 +27,16 @@ export {
   SEARCH_DOCUMENT_MAX_HEADWORD_FORMS,
 } from "./headword-forms";
 
-export const SEARCH_DOCUMENT_SCHEMA_VERSION = "1.4" as const;
+export const SEARCH_DOCUMENT_SCHEMA_VERSION = "2.2" as const;
+
+export const SEARCH_DOCUMENT_ENGLISH_LOOKUP_KINDS = ["pattern"] as const;
 
 export const SEARCH_DOCUMENT_SCOPES = [
   "sense",
   "phrase",
   "form",
-  "usage",
   "example",
+  "resource",
 ] as const;
 
 export const SEARCH_DOCUMENT_SECTIONS = [
@@ -47,13 +50,34 @@ export const SEARCH_DOCUMENT_SECTIONS = [
 export const SEARCH_DOCUMENT_WEIGHTS = {
   sense: 160,
   phrase: 160,
-  usage: 60,
   form: 60,
   example: 30,
+  resource: 60,
 } as const;
+
+export const SEARCH_DOCUMENT_SEMANTIC_ROLES = [
+  "definition",
+  "qualifier",
+  "guidance",
+  "expression",
+  "example",
+  "heading",
+  "context",
+] as const;
+
+export const SEARCH_DOCUMENT_ORIGINS = ["use", "dis-g", "grammar-usage-box"] as const;
 
 export type SearchDocumentScope = (typeof SEARCH_DOCUMENT_SCOPES)[number];
 export type SearchDocumentSection = (typeof SEARCH_DOCUMENT_SECTIONS)[number];
+export type SearchDocumentSemanticRole = (typeof SEARCH_DOCUMENT_SEMANTIC_ROLES)[number];
+export type SearchDocumentOrigin = (typeof SEARCH_DOCUMENT_ORIGINS)[number];
+export type SearchDocumentEnglishLookupKind =
+  (typeof SEARCH_DOCUMENT_ENGLISH_LOOKUP_KINDS)[number];
+
+export interface SearchDocumentEnglishLookupTerm {
+  kind: SearchDocumentEnglishLookupKind;
+  text: string;
+}
 
 export interface SearchDocumentLocation {
   section: SearchDocumentSection;
@@ -68,10 +92,14 @@ export interface SearchDocument {
   scope: SearchDocumentScope;
   headword: string;
   headwordForms?: string[];
+  englishLookupTerms?: SearchDocumentEnglishLookupTerm[];
   englishText: string;
   candidateText?: string;
   definitionText?: string;
   chineseText: string;
+  semanticRole: SearchDocumentSemanticRole;
+  origin?: SearchDocumentOrigin;
+  resourceCategory?: CanonicalResourceCategory;
   location: SearchDocumentLocation;
   weight: number;
 }
@@ -91,6 +119,11 @@ const headwordFormSchema = z.string()
     `Expected at most ${SEARCH_DOCUMENT_MAX_HEADWORD_FORM_BYTES} UTF-8 bytes after normalization`,
   );
 
+const englishLookupTermSchema = z.object({
+  kind: z.enum(SEARCH_DOCUMENT_ENGLISH_LOOKUP_KINDS),
+  text: z.string().trim().min(1).max(1024),
+});
+
 export const searchDocumentLocationSchema = z.object({
   section: z.enum(SEARCH_DOCUMENT_SECTIONS),
   part: z.string().optional(),
@@ -104,12 +137,39 @@ export const searchDocumentSchema = z.object({
   scope: z.enum(SEARCH_DOCUMENT_SCOPES),
   headword: z.string(),
   headwordForms: z.array(headwordFormSchema).max(SEARCH_DOCUMENT_MAX_HEADWORD_FORMS).optional(),
+  englishLookupTerms: z.array(englishLookupTermSchema).max(64).optional(),
   englishText: z.string(),
   candidateText: z.string().optional(),
   definitionText: z.string().optional(),
   chineseText: z.string().min(1).refine(hasCjkText, "Expected Chinese text"),
+  semanticRole: z.enum(SEARCH_DOCUMENT_SEMANTIC_ROLES),
+  origin: z.enum(SEARCH_DOCUMENT_ORIGINS).optional(),
+  resourceCategory: z.enum([
+    "grammar",
+    "express-yourself",
+    "vocabulary-building",
+    "synonyms",
+    "which-word",
+    "language-bank",
+    "collocations",
+    "homophones",
+    "british-american",
+    "more-about",
+    "wordfinder",
+    "help",
+    "origin",
+    "note",
+    "other",
+  ]).optional(),
   location: searchDocumentLocationSchema,
   weight: z.number().finite(),
+}).superRefine((document, context) => {
+  if ((document.scope === "resource") !== (document.resourceCategory !== undefined)) {
+    context.addIssue({
+      code: "custom",
+      message: "Resource documents require resourceCategory; other scopes must omit it",
+    });
+  }
 });
 
 export const searchDocumentsSchema = z.array(searchDocumentSchema);
@@ -139,6 +199,10 @@ interface BilingualProjection {
 
 function sourceText(value: BilingualSource): string {
   return typeof value === "string" ? value : value.text;
+}
+
+function hasSourceText(value: BilingualSource | undefined): value is BilingualSource {
+  return value !== undefined && sourceText(value).trim().length > 0;
 }
 
 function normalizeText(value: string): string {
@@ -265,6 +329,10 @@ interface DocumentCandidate {
   candidateText?: string;
   definitionText?: string;
   chineseText: string;
+  semanticRole: SearchDocumentSemanticRole;
+  origin?: SearchDocumentOrigin;
+  resourceCategory?: CanonicalResourceCategory;
+  englishLookupTerms?: SearchDocumentEnglishLookupTerm[];
   part?: string;
   ownerId?: string;
 }
@@ -305,10 +373,16 @@ function addDocument(context: ProjectionContext, candidate: DocumentCandidate): 
     scope: candidate.scope,
     headword: context.headword,
     ...(context.headwordForms.length > 0 ? { headwordForms: context.headwordForms } : {}),
+    ...(candidate.englishLookupTerms?.length
+      ? { englishLookupTerms: candidate.englishLookupTerms.map((term) => ({ ...term })) }
+      : {}),
     englishText: candidate.englishText,
     ...(candidate.candidateText ? { candidateText: candidate.candidateText } : {}),
     ...(candidate.definitionText ? { definitionText: candidate.definitionText } : {}),
     chineseText: candidate.chineseText,
+    semanticRole: candidate.semanticRole,
+    ...(candidate.origin ? { origin: candidate.origin } : {}),
+    ...(candidate.resourceCategory ? { resourceCategory: candidate.resourceCategory } : {}),
     location: candidateLocation(candidate),
     weight: SEARCH_DOCUMENT_WEIGHTS[candidate.scope] + context.entryWeight,
   };
@@ -340,7 +414,20 @@ function documentSignature(document: SearchDocument): string {
     document.candidateText ?? "",
     document.definitionText ?? "",
     document.chineseText,
+    document.englishLookupTerms ?? [],
   ]);
+}
+
+function patternLookupTerms(patterns: readonly CanonicalText[]): SearchDocumentEnglishLookupTerm[] {
+  const terms: SearchDocumentEnglishLookupTerm[] = [];
+  const seen = new Set<string>();
+  for (const pattern of patterns) {
+    const value = normalizeText(pattern.text);
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    terms.push({ kind: "pattern", text: value });
+  }
+  return terms;
 }
 
 function addBilingualDocument(
@@ -365,8 +452,8 @@ function addBilingualDocument(
   const english = projectCanonicalText(englishText);
   const explicitChinese = chineseSource ? projectCanonicalText(chineseSource) : undefined;
   const chineseText = explicitChinese?.chineseText || (chineseSource ? sourceText(chineseSource) : english.chineseText);
-  const projectedCandidate = candidateText ? projectCanonicalText(candidateText).englishText : "";
-  const projectedDefinition = definitionText ? projectCanonicalText(definitionText).englishText : "";
+  const projectedCandidate = hasSourceText(candidateText) ? projectCanonicalText(candidateText).englishText : "";
+  const projectedDefinition = hasSourceText(definitionText) ? projectCanonicalText(definitionText).englishText : "";
   addDocument(context, {
     ...metadata,
     englishText: english.englishText,
@@ -376,12 +463,49 @@ function addBilingualDocument(
   });
 }
 
+function addBilingualSemanticDocument(
+  context: ProjectionContext,
+  candidate: Omit<DocumentCandidate, "englishText" | "candidateText" | "definitionText" | "chineseText"> & {
+    englishText: BilingualSource;
+    chineseText?: BilingualSource;
+    candidateText?: BilingualSource;
+    definitionText?: BilingualSource;
+    subjectText?: BilingualSource;
+  },
+): void {
+  const { subjectText, ...document } = candidate;
+  if (
+    hasSourceText(subjectText) &&
+    !hasSourceText(document.candidateText) &&
+    document.semanticRole !== "heading"
+  ) {
+    addBilingualDocument(context, {
+      ...document,
+      candidateText: subjectText,
+      definitionText: document.definitionText ?? document.englishText,
+    });
+    return;
+  }
+  addBilingualDocument(context, document);
+}
+
+interface SegmentProjectionOptions {
+  collection?: string;
+  scope: Exclude<SearchDocumentScope, "example">;
+  semanticRole: SearchDocumentSemanticRole;
+  origin?: SearchDocumentOrigin;
+  resourceCategory?: CanonicalResourceCategory;
+  fallbackChineseText?: CanonicalText;
+  subjectText?: BilingualSource;
+}
+
 function projectExample(
   context: ProjectionContext,
   example: CanonicalExample,
   section: SearchDocumentSection,
   path: string[],
   part?: string,
+  resourceCategory?: CanonicalResourceCategory,
 ): void {
   indexLocation(context, example, {
     section,
@@ -390,13 +514,15 @@ function projectExample(
     ownerId: example.id,
   });
   addBilingualDocument(context, {
-    scope: "example",
+    scope: resourceCategory ? "resource" : "example",
     section,
     path,
     part,
     ownerId: example.id,
     englishText: example.text,
     chineseText: example.translation,
+    semanticRole: "example",
+    ...(resourceCategory ? { origin: "grammar-usage-box" as const, resourceCategory } : {}),
   });
 }
 
@@ -405,33 +531,51 @@ function projectSegments(
   segments: CanonicalBoxSegment[],
   section: SearchDocumentSection,
   path: string[],
-  part?: string,
-  ownerId?: string,
-  collection = "segments",
+  part: string | undefined,
+  ownerId: string | undefined,
+  options: SegmentProjectionOptions,
 ): void {
   for (const [index, segment] of segments.entries()) {
-    const segmentPath = stablePath(path, collection, index);
+    const segmentPath = stablePath(path, options.collection ?? "segments", index);
     if (segment.kind === "text") {
       indexLocation(context, segment, { section, path: segmentPath, part, ownerId });
-      addBilingualDocument(context, {
-        scope: "usage",
+      const hasOwnChinese = hasCjkText(segment.value.text);
+      const hasDirectTerm = hasSourceText(segment.term);
+      addBilingualSemanticDocument(context, {
+        scope: options.scope,
         section,
         path: segmentPath,
         part,
         ownerId,
         englishText: segment.value,
+        ...(hasDirectTerm ? { candidateText: segment.term } : {}),
+        ...(!hasDirectTerm && hasSourceText(options.subjectText) ? { subjectText: options.subjectText } : {}),
+        ...(!hasOwnChinese && hasDirectTerm && options.fallbackChineseText
+          ? { chineseText: options.fallbackChineseText }
+          : {}),
+        semanticRole: hasDirectTerm && options.scope === "resource" ? "expression" : segment.value.origin === "dis-g" ? "qualifier" : segment.value.origin === "use" ? "guidance" : options.semanticRole,
+        ...(segment.value.origin ? { origin: segment.value.origin } : options.origin ? { origin: options.origin } : {}),
+        ...(options.resourceCategory ? { resourceCategory: options.resourceCategory } : {}),
       });
     } else if (segment.kind === "example") {
-      projectExample(context, segment.value, section, segmentPath, part);
+      projectExample(context, segment.value, section, segmentPath, part, options.resourceCategory);
     } else if (segment.kind === "term") {
       indexLocation(context, segment, { section, path: segmentPath, part, ownerId });
-      addBilingualDocument(context, {
-        scope: "usage",
+      const termText = joinCanonicalText(segment.headword, segment.partOfSpeech);
+      addBilingualSemanticDocument(context, {
+        scope: options.scope,
         section,
         path: segmentPath,
         part,
         ownerId,
-        englishText: joinCanonicalText(segment.headword, segment.partOfSpeech),
+        englishText: termText,
+        candidateText: segment.headword,
+        ...(!hasCjkText(termText.text) && options.fallbackChineseText
+          ? { chineseText: options.fallbackChineseText }
+          : {}),
+        semanticRole: options.scope === "resource" ? "expression" : options.semanticRole,
+        ...(options.origin ? { origin: options.origin } : {}),
+        ...(options.resourceCategory ? { resourceCategory: options.resourceCategory } : {}),
       });
     }
   }
@@ -442,8 +586,10 @@ function projectGrammarUsageBox(
   box: CanonicalGrammarUsageBox,
   path: string[],
   part?: string,
+  subjectText?: BilingualSource,
 ): void {
   const boxOwnerId = box.id;
+  const resourceCategory = box.resourceCategory ?? "other";
   indexLocation(context, box, {
     section: "grammar-usage",
     path,
@@ -468,24 +614,37 @@ function projectGrammarUsageBox(
   const priorProjection = context.activeBoxProjection;
   context.activeBoxProjection = projection;
   if (box.title) {
-    addBilingualDocument(context, {
-      scope: "usage",
+    addBilingualSemanticDocument(context, {
+      scope: "resource",
       section: "grammar-usage",
       path: [...path, "title"],
       part,
       ownerId: boxOwnerId,
       englishText: box.title,
+      semanticRole: "heading",
+      origin: "grammar-usage-box",
+      resourceCategory,
     });
   }
 
+  let fallbackChineseText = box.title && hasCjkText(box.title.text) ? box.title : undefined;
   for (const [blockIndex, block] of box.blocks.entries()) {
+    if (block.kind === "heading" && hasCjkText(block.value.text)) {
+      fallbackChineseText = block.value;
+    }
     projectGrammarUsageBlock(
       context,
       block,
       stablePath(path, "blocks", blockIndex),
       boxOwnerId,
       part,
+      fallbackChineseText,
+      subjectText,
+      resourceCategory,
     );
+    if (block.kind === "paragraph" && hasCjkText(block.value.text)) {
+      fallbackChineseText = block.value;
+    }
   }
   context.activeBoxProjection = priorProjection;
 }
@@ -496,21 +655,49 @@ function projectGrammarUsageBlock(
   path: string[],
   ownerId?: string,
   part?: string,
+  fallbackChineseText?: CanonicalText,
+  subjectText?: BilingualSource,
+  resourceCategory: CanonicalResourceCategory = "other",
 ): void {
-  if (block.kind === "heading" || block.kind === "unknown") {
+  if (block.kind === "heading") {
     indexLocation(context, block, {
       section: "grammar-usage",
       path: [...path, "value"],
       part,
       ownerId,
     });
-    addBilingualDocument(context, {
-      scope: "usage",
+    addBilingualSemanticDocument(context, {
+      scope: "resource",
       section: "grammar-usage",
       path: [...path, "value"],
       part,
       ownerId,
       englishText: block.value,
+      semanticRole: "heading",
+      origin: "grammar-usage-box",
+      resourceCategory,
+    });
+    return;
+  }
+
+  if (block.kind === "unknown") {
+    indexLocation(context, block, {
+      section: "grammar-usage",
+      path: [...path, "value"],
+      part,
+      ownerId,
+    });
+    addBilingualSemanticDocument(context, {
+      scope: "resource",
+      section: "grammar-usage",
+      path: [...path, "value"],
+      part,
+      ownerId,
+      englishText: block.value,
+      semanticRole: "context",
+      origin: "grammar-usage-box",
+      resourceCategory,
+      ...(subjectText ? { subjectText } : {}),
     });
     return;
   }
@@ -523,16 +710,27 @@ function projectGrammarUsageBlock(
       ownerId,
     });
     if (block.segments.length === 0) {
-      addBilingualDocument(context, {
-        scope: "usage",
+      addBilingualSemanticDocument(context, {
+        scope: "resource",
         section: "grammar-usage",
         path: [...path, "value"],
         part,
         ownerId,
         englishText: block.value,
+        semanticRole: "context",
+        origin: "grammar-usage-box",
+        resourceCategory,
+        ...(subjectText ? { subjectText } : {}),
       });
     }
-    projectSegments(context, block.segments, "grammar-usage", path, part, ownerId);
+    projectSegments(context, block.segments, "grammar-usage", path, part, ownerId, {
+      scope: "resource",
+      semanticRole: "context",
+      origin: "grammar-usage-box",
+      resourceCategory,
+      fallbackChineseText,
+      subjectText,
+    });
     return;
   }
 
@@ -545,6 +743,14 @@ function projectGrammarUsageBlock(
         stablePath(path, "items", itemIndex),
         part,
         ownerId,
+        {
+          scope: "resource",
+          semanticRole: "context",
+          origin: "grammar-usage-box",
+          resourceCategory,
+          fallbackChineseText,
+          subjectText,
+        },
       );
     }
     return;
@@ -556,16 +762,27 @@ function projectGrammarUsageBlock(
       for (const [cellIndex, cell] of row.cells.entries()) {
         const cellPath = stablePath(rowPath, "cells", cellIndex);
         if (cell.segments.length === 0) {
-          addBilingualDocument(context, {
-            scope: "usage",
+          addBilingualSemanticDocument(context, {
+            scope: "resource",
             section: "grammar-usage",
             path: [...cellPath, "value"],
             part,
             ownerId,
             englishText: cell.value,
+            semanticRole: "context",
+            origin: "grammar-usage-box",
+            resourceCategory,
+            ...(subjectText ? { subjectText } : {}),
           });
         }
-        projectSegments(context, cell.segments, "grammar-usage", cellPath, part, ownerId);
+        projectSegments(context, cell.segments, "grammar-usage", cellPath, part, ownerId, {
+          scope: "resource",
+          semanticRole: "context",
+          origin: "grammar-usage-box",
+          resourceCategory,
+          fallbackChineseText,
+          subjectText,
+        });
       }
     }
   }
@@ -578,7 +795,9 @@ function projectSense(
   path: string[],
   phraseHeading?: CanonicalText,
   phraseOwnerId?: string,
-	  inheritedPart?: string,
+  inheritedPart?: string,
+  usageSubject?: BilingualSource,
+  inheritedPatterns: readonly CanonicalText[] = [],
 ): void {
   const part = sense.partOfSpeech ?? inheritedPart;
   const senseOwnerId = phraseOwnerId ?? sense.id;
@@ -588,6 +807,24 @@ function projectSense(
     part,
     ownerId: senseOwnerId,
   });
+  if (sense.groupHeading) {
+    const headingPath = [...path, "groupHeading"];
+    indexLocation(context, sense.groupHeading, {
+      section,
+      path: headingPath,
+      part,
+      ownerId: senseOwnerId,
+    });
+    addBilingualDocument(context, {
+      scope: phraseHeading ? "phrase" : "sense",
+      section,
+      path: headingPath,
+      part,
+      ownerId: senseOwnerId,
+      englishText: sense.groupHeading,
+      semanticRole: "qualifier",
+    });
+  }
   addBilingualDocument(context, {
     scope: phraseHeading ? "phrase" : "sense",
     section,
@@ -597,53 +834,75 @@ function projectSense(
     englishText: joinCanonicalText(phraseHeading, sense.definition),
     ...(phraseHeading ? { candidateText: phraseHeading, definitionText: sense.definition } : {}),
     chineseText: sense.translation,
+    semanticRole: "definition",
+    englishLookupTerms: patternLookupTerms([
+      ...inheritedPatterns,
+      ...(sense.patterns ?? []),
+    ]),
   });
 
   for (const [index, usage] of (sense.inlineUsage ?? []).entries()) {
     const usagePath = stablePath(path, "inlineUsage", index);
     indexLocation(context, usage, { section, path: usagePath, part, ownerId: sense.id });
-    addBilingualDocument(context, {
-      scope: "usage",
+    addBilingualSemanticDocument(context, {
+      scope: phraseHeading ? "phrase" : "sense",
       section,
       path: usagePath,
       part,
       ownerId: sense.id,
       englishText: usage,
+      ...(usageSubject ? { subjectText: usageSubject } : {}),
+      semanticRole: usage.origin === "dis-g" ? "qualifier" : "guidance",
+      ...(usage.origin ? { origin: usage.origin } : {}),
     });
   }
   for (const [index, usage] of sense.usage.entries()) {
     const usagePath = stablePath(path, "usage", index);
     indexLocation(context, usage, { section, path: usagePath, part, ownerId: sense.id });
-    addBilingualDocument(context, {
-      scope: "usage",
+    addBilingualSemanticDocument(context, {
+      scope: phraseHeading ? "phrase" : "sense",
       section,
       path: usagePath,
       part,
       ownerId: sense.id,
       englishText: usage,
+      ...(usageSubject ? { subjectText: usageSubject } : {}),
+      semanticRole: usage.origin === "dis-g" ? "qualifier" : "guidance",
+      ...(usage.origin ? { origin: usage.origin } : {}),
     });
   }
-  projectSegments(context, sense.definitionSegments ?? [], section, path, part, sense.id, "definitionSegments");
-  projectSegments(context, sense.usageSegments ?? [], section, path, part, sense.id, "usageSegments");
+  projectSegments(context, sense.definitionSegments ?? [], section, path, part, sense.id, {
+    collection: "definitionSegments",
+    scope: phraseHeading ? "phrase" : "sense",
+    semanticRole: "definition",
+    subjectText: usageSubject,
+  });
+  projectSegments(context, sense.usageSegments ?? [], section, path, part, sense.id, {
+    collection: "usageSegments",
+    scope: phraseHeading ? "phrase" : "sense",
+    semanticRole: "guidance",
+    subjectText: usageSubject,
+  });
 
   for (const [index, example] of sense.examples.entries()) {
     projectExample(context, example, section, stablePath(path, "examples", index), part);
   }
   for (const [index, box] of sense.grammarUsageBoxes.entries()) {
-    projectGrammarUsageBox(context, box, stablePath(path, "grammarUsageBoxes", index), part);
+    projectGrammarUsageBox(context, box, stablePath(path, "grammarUsageBoxes", index), part, usageSubject);
   }
   projectForms(context, sense.variants ?? [], section, [...path, "variants"], part);
   projectForms(context, sense.inflectedForms ?? [], section, [...path, "inflectedForms"], part);
   for (const [index, subsense] of sense.subsenses.entries()) {
-	    projectSense(
-	      context,
-	      subsense,
-	      section,
-	      stablePath(path, "subsenses", index),
-	      phraseHeading,
-	      phraseOwnerId,
-	      part,
-	    );
+    projectSense(
+      context,
+      subsense,
+      section,
+      stablePath(path, "subsenses", index),
+      phraseHeading,
+      phraseOwnerId,
+      part,
+      usageSubject,
+    );
   }
 }
 
@@ -652,7 +911,7 @@ function projectPhrase(
   phrase: CanonicalPhrase,
   section: Extract<SearchDocumentSection, "idioms" | "phrasal-verbs">,
   path: string[],
-	  inheritedPart?: string,
+  inheritedPart?: string,
 ): void {
   indexLocation(context, phrase, {
     section,
@@ -668,12 +927,16 @@ function projectPhrase(
       part: inheritedPart,
       ownerId: phrase.id,
     });
-    addBilingualDocument(context, {
-      scope: "usage",
+    addBilingualSemanticDocument(context, {
+      scope: "phrase",
       section,
       path: usagePath,
+      part: inheritedPart,
       ownerId: phrase.id,
       englishText: usage,
+      subjectText: phrase.display,
+      semanticRole: usage.origin === "dis-g" ? "qualifier" : "guidance",
+      ...(usage.origin ? { origin: usage.origin } : {}),
     });
   }
   projectForms(context, phrase.variants, section, [...path, "variants"]);
@@ -685,7 +948,8 @@ function projectPhrase(
       stablePath(path, "senses", index),
       phrase.display,
       phrase.id,
-	      inheritedPart,
+      inheritedPart,
+      phrase.display,
     );
   }
 }
@@ -713,6 +977,7 @@ function projectForms(
       part,
       ownerId: form.id,
       englishText: joinText(form.text, textValue(form.note)),
+      semanticRole: "definition",
     });
     for (const [usageIndex, usage] of (form.usage ?? []).entries()) {
       const usagePath = stablePath(formPath, "usage", usageIndex);
@@ -722,27 +987,38 @@ function projectForms(
         part,
         ownerId: form.id,
       });
-      addBilingualDocument(context, {
-        scope: "usage",
+      addBilingualSemanticDocument(context, {
+        scope: "form",
         section,
         path: usagePath,
         part,
         ownerId: form.id,
         englishText: usage,
+        subjectText: form.text,
+        semanticRole: usage.origin === "dis-g" ? "qualifier" : "guidance",
+        ...(usage.origin ? { origin: usage.origin } : {}),
       });
     }
     projectForms(context, form.variants ?? [], section, [...formPath, "variants"], part);
     projectForms(context, form.inflectedForms ?? [], section, [...formPath, "inflectedForms"], part);
     for (const [senseIndex, sense] of (form.senses ?? []).entries()) {
-	      projectSense(context, sense, section, stablePath(formPath, "senses", senseIndex), undefined, undefined, part);
+      projectSense(
+        context,
+        sense,
+        section,
+        stablePath(formPath, "senses", senseIndex),
+        undefined,
+        undefined,
+        part,
+        form.text,
+      );
     }
   }
 }
 
-
 function entryPart(entry: CanonicalEntry, inheritedPart?: string): string | undefined {
-	  const parts = entry.partsOfSpeech.map((part) => part.text.trim()).filter(Boolean);
-	  return parts.length === 1 ? parts[0] : inheritedPart;
+  const parts = entry.partsOfSpeech.map((part) => part.text.trim()).filter(Boolean);
+  return parts.length === 1 ? parts[0] : inheritedPart;
 }
 
 const cefrSearchWeights: Readonly<Record<string, number>> = {
@@ -768,13 +1044,22 @@ function entrySearchWeight(entry: CanonicalEntry): number {
   return levelWeight + frequencyWeight;
 }
 
+function nestedEntryUsageSubject(context: ProjectionContext, entry: CanonicalEntry): string | undefined {
+  const subject = entry.displayHeadword || entry.headword;
+  return normalizeHeadwordForm(entry.headword).toLocaleLowerCase() ===
+    normalizeHeadwordForm(context.headword).toLocaleLowerCase()
+    ? undefined
+    : subject;
+}
+
 function projectEntry(
-	context: ProjectionContext,
-	entry: CanonicalEntry,
-	path: string[],
-	inheritedPart?: string,
+  context: ProjectionContext,
+  entry: CanonicalEntry,
+  path: string[],
+  inheritedPart?: string,
+  usageSubject?: BilingualSource,
 ): void {
-	  const part = entryPart(entry, inheritedPart);
+  const part = entryPart(entry, inheritedPart);
   for (const [index, usage] of (entry.headwordUsage ?? []).entries()) {
     const usagePath = stablePath(path, "headwordUsage", index);
     indexLocation(context, usage, {
@@ -782,31 +1067,50 @@ function projectEntry(
       path: usagePath,
       part,
     });
-    addBilingualDocument(context, {
-      scope: "usage",
+    addBilingualSemanticDocument(context, {
+      scope: "sense",
       section: "definitions",
       path: usagePath,
-	      part,
+      part,
       englishText: usage,
+      ...(usageSubject ? { subjectText: usageSubject } : {}),
+      semanticRole: usage.origin === "dis-g" ? "qualifier" : "guidance",
+      ...(usage.origin ? { origin: usage.origin } : {}),
     });
   }
   for (const [index, sense] of entry.senses.entries()) {
-	    projectSense(context, sense, "definitions", stablePath(path, "senses", index), undefined, undefined, part);
+    projectSense(
+      context,
+      sense,
+      "definitions",
+      stablePath(path, "senses", index),
+      undefined,
+      undefined,
+      part,
+      usageSubject,
+      entry.headwordPatterns ?? [],
+    );
   }
   for (const [index, phrase] of entry.idioms.entries()) {
-	    projectPhrase(context, phrase, "idioms", stablePath(path, "idioms", index), part);
+    projectPhrase(context, phrase, "idioms", stablePath(path, "idioms", index), part);
   }
   for (const [index, phrase] of entry.phrasalVerbs.entries()) {
-	    projectPhrase(context, phrase, "phrasal-verbs", stablePath(path, "phrasalVerbs", index), part);
+    projectPhrase(context, phrase, "phrasal-verbs", stablePath(path, "phrasalVerbs", index), part);
   }
-	  projectForms(context, entry.derivedForms, "derived-forms", [...path, "derivedForms"], part);
-	  projectForms(context, entry.inflectedForms, "derived-forms", [...path, "inflectedForms"], part);
-	  projectForms(context, entry.variants ?? [], "derived-forms", [...path, "variants"], part);
+  projectForms(context, entry.derivedForms, "derived-forms", [...path, "derivedForms"], part);
+  projectForms(context, entry.inflectedForms, "derived-forms", [...path, "inflectedForms"], part);
+  projectForms(context, entry.variants ?? [], "derived-forms", [...path, "variants"], part);
   for (const [index, box] of entry.grammarUsageBoxes.entries()) {
-	    projectGrammarUsageBox(context, box, stablePath(path, "grammarUsageBoxes", index), part);
+    projectGrammarUsageBox(context, box, stablePath(path, "grammarUsageBoxes", index), part, usageSubject);
   }
   for (const [index, subentry] of entry.subentries.entries()) {
-	    projectEntry(context, subentry, stablePath(path, "subentries", index), part);
+    projectEntry(
+      context,
+      subentry,
+      stablePath(path, "subentries", index),
+      part,
+      nestedEntryUsageSubject(context, subentry),
+    );
   }
 }
 

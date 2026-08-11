@@ -57,10 +57,15 @@ entry JSON:
 interface SearchDocument {
   dictionaryId: string;
   entryId: string;
-  scope: "sense" | "phrase" | "example" | "usage" | "form";
+  scope: "sense" | "phrase" | "form" | "example" | "resource";
   headword: string;
+  headwordForms?: string[];
   englishText: string;
+  candidateText?: string;
+  definitionText?: string;
   chineseText: string;
+  semanticRole: "definition" | "qualifier" | "guidance" | "expression" | "example" | "heading" | "context";
+  resourceCategory?: string;
   location: {
     section: "definitions" | "idioms" | "phrasal-verbs" | "derived-forms" | "grammar-usage";
     part?: string;
@@ -94,7 +99,10 @@ metadata and currently hidden content from producing results the UI cannot displ
 Search documents are build artifacts. They are validated and imported into an immutable
 sidecar, never attached to `CanonicalEntry` responses or retained in browser state.
 The request-time scope filter selects any non-empty subset in canonical order
-`sense,phrase,form,usage,example`; the product default is definitions, phrases, and forms.
+`sense,phrase,form,example,resource`. The interface presents four choices: 词义 maps to
+`sense,form`, 短语 to `phrase`, 例句 to `example`, and 扩展资料 to `resource`. The default is
+词义 plus 短语. Guidance and qualifiers inherit the scope of their canonical owner instead
+of forming another user-facing content category.
 
 ## Semantic Search Projection
 

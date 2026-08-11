@@ -211,8 +211,8 @@ export function DictionaryHeader({
               type="search"
               autoComplete="off"
               spellCheck={false}
-              placeholder="输入英文，或用中文找词"
-              aria-label="输入英文，或用中文找词"
+              placeholder="输入英文，或用中文描述"
+              aria-label="输入英文，或用中文描述"
               role="combobox"
               aria-autocomplete="list"
               aria-expanded={showSuggestions}

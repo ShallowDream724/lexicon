@@ -17,7 +17,7 @@ import numpy as np
 from corpus import SCOPES, Corpus, load_corpus, report, sha256_file
 from evaluation import evaluate, load_quality
 from provider import OpenAIEmbeddingProvider, ProviderError, UsageLedger, validate_extra
-from sidecar import BUILDER_VERSION, write_sidecar
+from sidecar import BUILDER_VERSION, reusable_texts, write_sidecar
 
 
 DEFAULT_MODEL_KEY = "qwen3-embedding-4b-1024-v1"
@@ -94,7 +94,7 @@ def read_vectors(path: Path, rows: int, dimensions: int) -> list[list[float]]:
     return result
 
 
-def _load_or_create_checkpoint(output: Path, fingerprint: str, count: int, dimensions: int, rebuild: bool) -> dict[str, Any]:
+def _load_or_create_checkpoint(output: Path, fingerprint: str, count: int, dimensions: int, rebuild: bool, initially_completed: set[int] | None = None) -> dict[str, Any]:
     checkpoint_path, matrix_path = _checkpoint_path(output), _matrix_path(output)
     if rebuild:
         for path in (checkpoint_path, matrix_path):
@@ -110,7 +110,8 @@ def _load_or_create_checkpoint(output: Path, fingerprint: str, count: int, dimen
         return checkpoint
     output.mkdir(parents=True, exist_ok=True)
     _initialise_matrix(matrix_path, count, dimensions)
-    checkpoint = {"format": 2, "fingerprint": fingerprint, "dimensions": dimensions, "completed": [False] * count, "usage": {"promptTokens": 0, "requests": 0, "unmetered": False}, "preflight": None}
+    completed = [index in (initially_completed or set()) for index in range(count)]
+    checkpoint = {"format": 2, "fingerprint": fingerprint, "dimensions": dimensions, "completed": completed, "usage": {"promptTokens": 0, "requests": 0, "unmetered": False}, "preflight": None}
     write_json_atomic(checkpoint_path, checkpoint)
     return checkpoint
 
@@ -130,14 +131,14 @@ def _checkpoint_usage(checkpoint: dict[str, Any], result: Any) -> None:
     checkpoint["usage"]["unmetered"] = checkpoint["usage"]["unmetered"] or result.unmetered
 
 
-def _preflight_plan(corpus: Corpus, pending: list[int], result: Any, concurrency: int, batch_size: int, safety_factor: float, ledger: UsageLedger, limit: float | None, multiplier: float) -> dict[str, int | float | None]:
-    per_text = max(1, math.ceil(result.prompt_tokens / min(batch_size, len(corpus.texts))))
+def _preflight_plan(corpus: Corpus, pending: list[int], probe_count: int, result: Any, concurrency: int, batch_size: int, safety_factor: float, ledger: UsageLedger, limit: float | None, multiplier: float) -> dict[str, int | float | None]:
+    per_text = max(1, math.ceil(result.prompt_tokens / probe_count))
     document_estimate = per_text * len(pending)
     max_batch_reservation = math.ceil(per_text * min(batch_size, len(pending)) * safety_factor)
     margin = concurrency * max_batch_reservation
     confirmed = int(ledger.snapshot()["promptTokens"])
     projected = confirmed + document_estimate + margin
-    plan = {"preflightTexts": min(batch_size, len(corpus.texts)), "preflightPromptTokens": result.prompt_tokens, "tokensPerText": per_text, "documentEstimatedPromptTokens": document_estimate, "inFlightReservePromptTokens": margin, "projectedPromptTokens": projected, "projectedWeightedUnits": projected * multiplier, "maximumWeightedUnits": limit}
+    plan = {"preflightTexts": probe_count, "preflightPromptTokens": result.prompt_tokens, "tokensPerText": per_text, "documentEstimatedPromptTokens": document_estimate, "inFlightReservePromptTokens": margin, "projectedPromptTokens": projected, "projectedWeightedUnits": projected * multiplier, "maximumWeightedUnits": limit}
     return plan
 
 
@@ -147,8 +148,17 @@ def _batches(pending: list[int], corpus: Corpus, batch_size: int):
         yield indices, [corpus.texts[index] for index in indices]
 
 
-def build_cached_vectors(args: argparse.Namespace, corpus: Corpus, fingerprint: str) -> tuple[np.memmap, dict[str, Any], UsageLedger]:
-    checkpoint = _load_or_create_checkpoint(args.output_dir, fingerprint, len(corpus.texts), args.dimensions, args.rebuild)
+def build_cached_vectors(args: argparse.Namespace, corpus: Corpus, fingerprint: str, reused_indices: set[int] | None = None) -> tuple[np.memmap, dict[str, Any], UsageLedger]:
+    checkpoint = _load_or_create_checkpoint(args.output_dir, fingerprint, len(corpus.texts), args.dimensions, args.rebuild, reused_indices)
+    if reused_indices:
+        changed = False
+        for index in reused_indices:
+            if not checkpoint["completed"][index]:
+                checkpoint["completed"][index] = True
+                changed = True
+        if changed:
+            checkpoint["preflight"] = None
+            write_json_atomic(_checkpoint_path(args.output_dir), checkpoint)
     usage = checkpoint["usage"]
     ledger = UsageLedger(args.max_weighted_units, args.input_multiplier, int(usage["promptTokens"]), int(usage["requests"]), bool(usage.get("unmetered")))
     pending = [index for index, done in enumerate(checkpoint["completed"]) if not done]
@@ -157,14 +167,15 @@ def build_cached_vectors(args: argparse.Namespace, corpus: Corpus, fingerprint: 
     provider = _provider_from_args(args, ledger, args.document_extra)
     plan = checkpoint.get("preflight")
     if plan is None:
-        probe_texts = list(corpus.texts[:min(args.batch_size, len(corpus.texts))])
+        probe_indices = pending[:min(args.batch_size, len(pending))]
+        probe_texts = [corpus.texts[index] for index in probe_indices]
         probe = provider.embed(probe_texts)
-        _write_vectors(_matrix_path(args.output_dir), list(range(len(probe_texts))), probe.vectors, len(corpus.texts), args.dimensions)
-        for index in range(len(probe_texts)):
+        _write_vectors(_matrix_path(args.output_dir), probe_indices, probe.vectors, len(corpus.texts), args.dimensions)
+        for index in probe_indices:
             checkpoint["completed"][index] = True
         _checkpoint_usage(checkpoint, probe)
         pending = [index for index, done in enumerate(checkpoint["completed"]) if not done]
-        plan = _preflight_plan(corpus, pending, probe, args.concurrency, args.batch_size, args.budget_safety_factor, ledger, args.max_weighted_units, args.input_multiplier)
+        plan = _preflight_plan(corpus, pending, len(probe_indices), probe, args.concurrency, args.batch_size, args.budget_safety_factor, ledger, args.max_weighted_units, args.input_multiplier)
         checkpoint["preflight"] = plan
         write_json_atomic(args.output_dir / "preflight.json", plan)
         write_json_atomic(_checkpoint_path(args.output_dir), checkpoint)
@@ -277,6 +288,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--block-size", type=int, default=4096)
     parser.add_argument("--quality-file", type=Path, action="append")
     parser.add_argument("--top-k", type=int, default=32)
+    parser.add_argument("--minimum-score", type=float, help="Calibrated model-specific absolute cosine-score rejection threshold.")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--rebuild", action="store_true")
     return parser.parse_args()
@@ -298,21 +310,34 @@ def main() -> None:
         if not corpus.texts:
             raise ValueError("selected corpus is empty")
         write_json_atomic(args.output_dir / "corpus-report.json", report(corpus)); print(json.dumps(report(corpus), ensure_ascii=False, indent=2))
-        if args.dry_run:
-            return
         if not args.primary_db.is_file():
             raise ValueError(f"primary database is missing: {args.primary_db}")
+        if args.minimum_score is None or not math.isfinite(args.minimum_score) or args.minimum_score < -1 or args.minimum_score > 1:
+            raise ValueError("--minimum-score must be a finite value from -1 through 1; choose it from calibrated review data")
         fingerprint = build_fingerprint(corpus, args.primary_db, args.model_key, args.provider_model, args.dimensions, args.query_template, args.document_extra, args.query_extra)
+        reused_indices: set[int] = set()
         if args.reuse_vectors_from:
             if args.quality_file:
                 raise ValueError("quality evaluation requires float vectors and cannot be combined with --reuse-vectors-from")
-            matrix = None
-            document_usage = {"promptTokens": 0, "requests": 0, "unmetered": False}
-            ledger = UsageLedger(args.max_weighted_units, args.input_multiplier)
+            source_texts = reusable_texts(args.reuse_vectors_from, args.dimensions, args.model_key, args.provider_model, args.document_extra)
+            reused_indices = {index for index, text in enumerate(corpus.texts) if text in source_texts}
+        reuse_report = {
+            "reusedVectors": len(reused_indices),
+            "newVectors": len(corpus.texts) - len(reused_indices),
+            "source": str(args.reuse_vectors_from) if args.reuse_vectors_from else None,
+            "matchKey": "normalizedChineseText",
+            "minimumScore": args.minimum_score,
+        }
+        write_json_atomic(args.output_dir / "reuse-plan.json", reuse_report)
+        print(json.dumps(reuse_report, ensure_ascii=False, indent=2))
+        if args.dry_run:
+            return
+        if args.reuse_vectors_from:
+            matrix, document_usage, ledger = build_cached_vectors(args, corpus, fingerprint, reused_indices)
         else:
             matrix, document_usage, ledger = build_cached_vectors(args, corpus, fingerprint)
         sidecar = args.sidecar or args.output_dir / "semantic-search.db"
-        metadata = write_sidecar(sidecar, corpus, matrix, args.dimensions, args.primary_db, args.model_key, args.provider_model, args.query_template, args.document_extra, args.query_extra, args.block_size, args.reuse_vectors_from)
+        metadata = write_sidecar(sidecar, corpus, matrix, args.dimensions, args.primary_db, args.model_key, args.provider_model, args.query_template, args.document_extra, args.query_extra, args.minimum_score, args.block_size, args.reuse_vectors_from)
         quality = None
         if args.quality_file:
             provider = _provider_from_args(args, ledger, args.query_extra)

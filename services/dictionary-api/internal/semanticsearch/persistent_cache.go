@@ -5,10 +5,8 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"database/sql"
-	"encoding/binary"
 	"errors"
 	"fmt"
-	"math"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -22,6 +20,13 @@ import (
 type PersistentVectorCache interface {
 	Get(context.Context, string) ([]float32, bool)
 	Put(context.Context, string, []float32)
+}
+
+// PersistentQuantizedVectorCache is the storage-efficient extension used by the
+// dense scan path. It preserves the exact int8 query representation used for scoring.
+type PersistentQuantizedVectorCache interface {
+	GetQuantized(context.Context, string) ([]int8, bool)
+	PutQuantized(context.Context, string, []int8)
 }
 
 type PersistentVectorCacheConfig struct {
@@ -105,7 +110,7 @@ func initializePersistentCache(db *sql.DB) error {
 	return nil
 }
 
-func (c *SQLitePersistentVectorCache) Get(ctx context.Context, query string) ([]float32, bool) {
+func (c *SQLitePersistentVectorCache) GetQuantized(ctx context.Context, query string) ([]int8, bool) {
 	if c == nil {
 		return nil, false
 	}
@@ -126,9 +131,6 @@ func (c *SQLitePersistentVectorCache) Get(ctx context.Context, query string) ([]
 		return nil, false
 	}
 	vector, err := decodeCachedVector(vectorBytes, c.dimensions)
-	if err == nil {
-		vector, err = normalizeEmbedding(vector)
-	}
 	if err != nil {
 		_, _ = c.db.ExecContext(context.Background(), "DELETE FROM query_vectors WHERE cache_key = ?", key)
 		return nil, false
@@ -137,7 +139,7 @@ func (c *SQLitePersistentVectorCache) Get(ctx context.Context, query string) ([]
 	return vector, true
 }
 
-func (c *SQLitePersistentVectorCache) Put(ctx context.Context, query string, vector []float32) {
+func (c *SQLitePersistentVectorCache) PutQuantized(ctx context.Context, query string, vector []int8) {
 	if c == nil || len(vector) != c.dimensions {
 		return
 	}
@@ -183,6 +185,27 @@ func (c *SQLitePersistentVectorCache) Put(ctx context.Context, query string, vec
 	}
 }
 
+// Get and Put retain the original cache interface for callers outside the dense scan.
+// The stored value remains quantized and is dequantized only for this compatibility path.
+func (c *SQLitePersistentVectorCache) Get(ctx context.Context, query string) ([]float32, bool) {
+	quantized, ok := c.GetQuantized(ctx, query)
+	if !ok {
+		return nil, false
+	}
+	vector := make([]float32, len(quantized))
+	for index, value := range quantized {
+		vector[index] = float32(value) / 127
+	}
+	return vector, true
+}
+
+func (c *SQLitePersistentVectorCache) Put(ctx context.Context, query string, vector []float32) {
+	quantized, err := normalizeAndQuantize(vector, c.dimensions)
+	if err == nil {
+		c.PutQuantized(ctx, query, quantized)
+	}
+}
+
 func (c *SQLitePersistentVectorCache) Close() error {
 	if c == nil {
 		return nil
@@ -206,30 +229,27 @@ func (c *SQLitePersistentVectorCache) cacheKey(query string) []byte {
 }
 
 func cacheNamespace(modelKey string, dimensions int, queryTemplate string, queryExtraJSON []byte) []byte {
-	return []byte(fmt.Sprintf("semantic-query-vector-cache-v1\x00%s\x00%d\x00%s\x00%s", modelKey, dimensions, queryTemplate, queryExtraJSON))
+	return []byte(fmt.Sprintf("semantic-query-vector-cache-v2-int8-symmetric-127\x00%s\x00%d\x00%s\x00%s", modelKey, dimensions, queryTemplate, queryExtraJSON))
 }
 
-func encodeCachedVector(vector []float32) ([]byte, error) {
-	encoded := make([]byte, len(vector)*4)
+func encodeCachedVector(vector []int8) ([]byte, error) {
+	if len(vector) == 0 {
+		return nil, errors.New("empty vector")
+	}
+	encoded := make([]byte, len(vector))
 	for index, value := range vector {
-		if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
-			return nil, errors.New("non-finite vector")
-		}
-		binary.LittleEndian.PutUint32(encoded[index*4:], math.Float32bits(value))
+		encoded[index] = byte(value)
 	}
 	return encoded, nil
 }
 
-func decodeCachedVector(encoded []byte, dimensions int) ([]float32, error) {
-	if len(encoded) != dimensions*4 {
+func decodeCachedVector(encoded []byte, dimensions int) ([]int8, error) {
+	if len(encoded) != dimensions {
 		return nil, errors.New("cached vector shape is invalid")
 	}
-	vector := make([]float32, dimensions)
-	for index := range vector {
-		vector[index] = math.Float32frombits(binary.LittleEndian.Uint32(encoded[index*4:]))
-		if math.IsNaN(float64(vector[index])) || math.IsInf(float64(vector[index]), 0) {
-			return nil, errors.New("cached vector is non-finite")
-		}
+	vector := make([]int8, len(encoded))
+	for index, value := range encoded {
+		vector[index] = int8(value)
 	}
 	return vector, nil
 }

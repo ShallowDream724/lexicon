@@ -17,7 +17,7 @@
     "semantic-search:build": "python tools/semantic-search/build.py --output-dir work/semantic-search --sidecar data/semantic-search.db --quality-file tools/semantic-search/quality/default.json --quality-file tools/semantic-search/quality/extended.json",
     "semantic-search:build:custom": "python tools/semantic-search/build.py",
     "semantic-search:test": "python -m unittest discover -s tools/semantic-search -p \"test_*.py\"",
-    "semantic-search:quality:validate": "python tools/semantic-search/quality-v3/build_dataset.py --check && python tools/semantic-search/quality-v3/validate_dataset.py && python tools/semantic-search/quality_eval.py validate --data tools/semantic-search/quality-v3/development.json --reverse-db data/reverse-search.db",
+    "semantic-search:quality:validate": "python tools/semantic-search/calibrate_threshold.py --mode validate --sidecar data/semantic-search.db --dataset tools/semantic-search/quality-v5/threshold-development.json --dataset tools/semantic-search/quality-v5/threshold-holdout.json --disjoint-from tools/semantic-search/quality/default.json --disjoint-from tools/semantic-search/quality/extended.json --disjoint-from tools/semantic-search/quality-v3/development.json --disjoint-from tools/semantic-search/quality-v3/holdout.json --disjoint-from tools/semantic-search/quality-v4/fresh-100.json",
     "semantic-search:quality:api": "python tools/semantic-search/quality_eval.py run --data tools/semantic-search/quality-v3/development.json --base-url http://127.0.0.1:8787 --reverse-db data/reverse-search.db --output work/semantic-search/quality-v3-development.json",
     "data:download": "node scripts/runtime-data.mjs download",
     "data:verify": "node scripts/runtime-data.mjs verify",

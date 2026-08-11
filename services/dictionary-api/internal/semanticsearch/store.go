@@ -25,6 +25,7 @@ type Store struct {
 	modelKey       string
 	queryTemplate  string
 	queryExtraJSON []byte
+	minimumScore   float32
 	vectors        []int8
 	scopeMasks     []uint32
 }
@@ -34,6 +35,7 @@ type metadata struct {
 	modelKey       string
 	queryTemplate  string
 	queryExtraJSON []byte
+	minimumScore   float32
 	vectorCount    int
 	blockSize      int
 }
@@ -71,7 +73,7 @@ func Open(path, expectedPrimarySHA256, expectedReverseSHA256, expectedProjection
 		_ = db.Close()
 		return nil, err
 	}
-	return &Store{db: db, dimensions: meta.dimensions, modelKey: meta.modelKey, queryTemplate: meta.queryTemplate, queryExtraJSON: cloneBytes(meta.queryExtraJSON), vectors: vectors, scopeMasks: masks}, nil
+	return &Store{db: db, dimensions: meta.dimensions, modelKey: meta.modelKey, queryTemplate: meta.queryTemplate, queryExtraJSON: cloneBytes(meta.queryExtraJSON), minimumScore: meta.minimumScore, vectors: vectors, scopeMasks: masks}, nil
 }
 
 func sqliteReadOnlyDSN(path string) string { return "file:" + filepath.ToSlash(path) + "?mode=ro" }
@@ -124,7 +126,11 @@ func validateMetadata(db *sql.DB, primarySHA256, reverseSHA256, projectionVersio
 	if err := validateQueryExtraJSON([]byte(queryExtraJSON)); err != nil {
 		return metadata{}, fmt.Errorf("semantic-search metadata %q is invalid: %w", "query_extra_json", err)
 	}
-	return metadata{dimensions: dimensions, modelKey: modelKey, queryTemplate: queryTemplate, queryExtraJSON: []byte(queryExtraJSON), vectorCount: vectorCount, blockSize: blockSize}, nil
+	minimumScore, err := scoreMetadata(db, "minimum_score")
+	if err != nil {
+		return metadata{}, err
+	}
+	return metadata{dimensions: dimensions, modelKey: modelKey, queryTemplate: queryTemplate, queryExtraJSON: []byte(queryExtraJSON), minimumScore: minimumScore, vectorCount: vectorCount, blockSize: blockSize}, nil
 }
 
 func metadataValue(db *sql.DB, key string) (string, error) {
@@ -148,6 +154,18 @@ func positiveMetadataInt(db *sql.DB, key string, maximum int) (int, error) {
 		return 0, fmt.Errorf("semantic-search metadata %q is invalid", key)
 	}
 	return parsed, nil
+}
+
+func scoreMetadata(db *sql.DB, key string) (float32, error) {
+	value, err := metadataValue(db, key)
+	if err != nil {
+		return 0, err
+	}
+	parsed, err := strconv.ParseFloat(value, 32)
+	if err != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) || parsed < -1 || parsed > 1 {
+		return 0, fmt.Errorf("semantic-search metadata %q is invalid", key)
+	}
+	return float32(parsed), nil
 }
 
 func loadVectors(db *sql.DB, meta metadata) ([]int8, []uint32, error) {
@@ -208,6 +226,12 @@ func validateDocumentsTable(db *sql.DB, vectorCount int) error {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM documents WHERE text_id < 0 OR text_id >= ?`, vectorCount).Scan(&count); err != nil || count != 0 {
 		return errors.New("semantic-search documents reference invalid text IDs")
 	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM documents WHERE semantic_role IS NULL OR semantic_role NOT IN ('definition', 'qualifier', 'guidance', 'expression', 'example', 'heading', 'context')`).Scan(&count); err != nil || count != 0 {
+		return errors.New("semantic-search document semantic role is invalid")
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM documents WHERE resource_category IS NULL OR resource_category NOT IN ('', 'grammar', 'express-yourself', 'vocabulary-building', 'synonyms', 'which-word', 'language-bank', 'collocations', 'homophones', 'british-american', 'more-about', 'wordfinder', 'help', 'origin', 'note', 'other') OR (scope = 'resource' AND resource_category = '') OR (scope <> 'resource' AND resource_category <> '')`).Scan(&count); err != nil || count != 0 {
+		return errors.New("semantic-search document resource category is invalid")
+	}
 	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_index_list('documents') AS l, pragma_index_info(l.name) AS i WHERE i.name = 'text_id'`).Scan(&count); err != nil || count == 0 {
 		return errors.New("semantic-search documents text_id index is missing")
 	}
@@ -251,6 +275,14 @@ func (s *Store) QueryExtraJSON() []byte {
 	return cloneBytes(s.queryExtraJSON)
 }
 
+// MinimumScore is the calibrated absolute rejection threshold stored with this model.
+func (s *Store) MinimumScore() float32 {
+	if s == nil {
+		return 0
+	}
+	return s.minimumScore
+}
+
 func validateQueryExtraJSON(raw []byte) error {
 	if len(raw) == 0 || len(raw) > maxQueryExtraJSONB {
 		return fmt.Errorf("query extra JSON must be between 1 and %d bytes", maxQueryExtraJSONB)
@@ -275,6 +307,17 @@ func validateQueryExtraJSON(raw []byte) error {
 func cloneBytes(value []byte) []byte { return append([]byte(nil), value...) }
 
 func (s *Store) Search(ctx context.Context, queryVector []float32, options Options) (Page, error) {
+	if s == nil || !s.Available() || options.Limit < 1 {
+		return Page{Groups: []Group{}}, nil
+	}
+	query, err := normalizeAndQuantize(queryVector, s.dimensions)
+	if err != nil {
+		return Page{Groups: []Group{}}, err
+	}
+	return s.searchQuantized(ctx, query, options)
+}
+
+func (s *Store) searchQuantized(ctx context.Context, query []int8, options Options) (Page, error) {
 	empty := Page{Groups: []Group{}}
 	if s == nil || !s.Available() || options.Limit < 1 {
 		return empty, nil
@@ -291,9 +334,8 @@ func (s *Store) Search(ctx context.Context, queryVector []float32, options Optio
 	if _, err := options.Scopes.values(); err != nil {
 		return empty, err
 	}
-	query, err := normalizeAndQuantize(queryVector, s.dimensions)
-	if err != nil {
-		return empty, err
+	if len(query) != s.dimensions {
+		return empty, fmt.Errorf("semantic-search query dimensions must equal %d", s.dimensions)
 	}
 	candidateCount, err := candidatePoolLimit(options.Offset, options.Limit)
 	if err != nil {
@@ -416,6 +458,9 @@ func (s *Store) topCandidates(ctx context.Context, query []int8, scopeMask uint3
 				for dimension, value := range query {
 					dot += int32(value) * int32(s.vectors[offset+dimension])
 				}
+				if score(dot) < s.minimumScore {
+					continue
+				}
 				candidate := vectorCandidate{textID: textID, dot: dot}
 				if local.Len() < limit {
 					heap.Push(&local, candidate)
@@ -456,18 +501,20 @@ func betterCandidate(left, right vectorCandidate) bool {
 }
 
 type documentCandidate struct {
-	documentID     int64
-	textID         int
-	entryID        string
-	headword       string
-	scope          Scope
-	english        string
-	chinese        string
-	candidateText  string
-	definitionText string
-	location       Location
-	weight         int
-	dot            int32
+	documentID       int64
+	textID           int
+	entryID          string
+	headword         string
+	scope            Scope
+	semanticRole     SemanticRole
+	resourceCategory ResourceCategory
+	english          string
+	chinese          string
+	candidateText    string
+	definitionText   string
+	location         Location
+	weight           int
+	dot              int32
 }
 
 func (s *Store) documentsForCandidates(ctx context.Context, candidates []vectorCandidate, filter ScopeFilter) ([]documentCandidate, error) {
@@ -488,7 +535,7 @@ func (s *Store) documentsForCandidates(ctx context.Context, candidates []vectorC
 		scopeMarks[index] = "?"
 		arguments = append(arguments, scope)
 	}
-	statement := `SELECT rowid, text_id, entry_id, headword, scope, english_text, chinese_text, candidate_text, definition_text, section, part, owner_id, path_json, weight
+	statement := `SELECT rowid, text_id, entry_id, headword, scope, semantic_role, resource_category, english_text, chinese_text, candidate_text, definition_text, section, part, owner_id, path_json, weight
 		FROM documents WHERE text_id IN (` + strings.Join(ids, ",") + `) AND scope IN (` + strings.Join(scopeMarks, ",") + `)`
 	rows, err := s.db.QueryContext(ctx, statement, arguments...)
 	if err != nil {
@@ -503,11 +550,14 @@ func (s *Store) documentsForCandidates(ctx context.Context, candidates []vectorC
 		var item documentCandidate
 		var pathJSON string
 		var scope string
-		if err := rows.Scan(&item.documentID, &item.textID, &item.entryID, &item.headword, &scope, &item.english, &item.chinese, &item.candidateText, &item.definitionText, &item.location.Section, &item.location.Part, &item.location.OwnerID, &pathJSON, &item.weight); err != nil {
+		if err := rows.Scan(&item.documentID, &item.textID, &item.entryID, &item.headword, &scope, &item.semanticRole, &item.resourceCategory, &item.english, &item.chinese, &item.candidateText, &item.definitionText, &item.location.Section, &item.location.Part, &item.location.OwnerID, &pathJSON, &item.weight); err != nil {
 			return nil, err
 		}
 		if scopeIndex(Scope(scope)) < 0 {
 			return nil, fmt.Errorf("semantic-search document has invalid scope %q", scope)
+		}
+		if item.semanticRole.RetrievalPriority() < 0 || !item.resourceCategory.Valid() || (Scope(scope) == ScopeResource) != (item.resourceCategory != "") {
+			return nil, errors.New("semantic-search document semantic metadata is invalid")
 		}
 		item.scope = Scope(scope)
 		if err := json.Unmarshal([]byte(pathJSON), &item.location.Path); err != nil {
@@ -526,36 +576,28 @@ func groupAndPaginate(candidates []documentCandidate, offset, limit int) Page {
 	if len(candidates) == 0 || offset >= len(candidates) {
 		return Page{Groups: []Group{}}
 	}
-	sort.Slice(candidates, func(i, j int) bool {
-		left, right := candidates[i], candidates[j]
-		if left.dot != right.dot {
-			return left.dot > right.dot
-		}
-		if left.weight != right.weight {
-			return left.weight > right.weight
-		}
-		if left.entryID != right.entryID {
-			return left.entryID < right.entryID
-		}
-		if left.headword != right.headword {
-			return left.headword < right.headword
-		}
-		return left.documentID < right.documentID
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return compareDocumentCandidates(candidates[i], candidates[j], false) < 0
 	})
-	groups := make([]Group, 0, len(candidates))
+	type groupedCandidates struct {
+		entryID    string
+		headword   string
+		score      float32
+		candidates []documentCandidate
+	}
+	groups := make([]groupedCandidates, 0, len(candidates))
 	byEntry := make(map[string]int, len(candidates))
 	for _, candidate := range candidates {
 		index, exists := byEntry[candidate.entryID]
 		if !exists {
 			index = len(groups)
 			byEntry[candidate.entryID] = index
-			groups = append(groups, Group{EntryID: candidate.entryID, Headword: candidate.headword, Score: score(candidate.dot), Matches: make([]Match, 0, maxMatches)})
+			groups = append(groups, groupedCandidates{
+				entryID: candidate.entryID, headword: candidate.headword, score: score(candidate.dot),
+				candidates: make([]documentCandidate, 0, maxMatches),
+			})
 		}
-		group := &groups[index]
-		if len(group.Matches) == maxMatches {
-			continue
-		}
-		group.Matches = append(group.Matches, Match{Scope: candidate.scope, English: candidate.english, Chinese: candidate.chinese, CandidateText: candidate.candidateText, DefinitionText: candidate.definitionText, Location: candidate.location, Score: score(candidate.dot)})
+		groups[index].candidates = append(groups[index].candidates, candidate)
 	}
 	if offset >= len(groups) {
 		return Page{Groups: []Group{}}
@@ -564,11 +606,71 @@ func groupAndPaginate(candidates []documentCandidate, offset, limit int) Page {
 	if end > len(groups) {
 		end = len(groups)
 	}
-	page := Page{Groups: groups[offset:end]}
+	page := Page{Groups: make([]Group, 0, end-offset)}
+	for _, grouped := range groups[offset:end] {
+		sort.SliceStable(grouped.candidates, func(i, j int) bool {
+			return compareDocumentCandidates(grouped.candidates[i], grouped.candidates[j], true) < 0
+		})
+		matches := make([]Match, 0, min(maxMatches, len(grouped.candidates)))
+		for _, candidate := range grouped.candidates[:min(maxMatches, len(grouped.candidates))] {
+			matches = append(matches, Match{Scope: candidate.scope, SemanticRole: candidate.semanticRole, ResourceCategory: candidate.resourceCategory, English: candidate.english, Chinese: candidate.chinese, CandidateText: candidate.candidateText, DefinitionText: candidate.definitionText, Location: candidate.location, Score: score(candidate.dot)})
+		}
+		page.Groups = append(page.Groups, Group{EntryID: grouped.entryID, Headword: grouped.headword, Score: grouped.score, Matches: matches})
+	}
 	if end < len(groups) {
 		page.HasMore, page.NextOffset = true, end
 	}
 	return page
+}
+
+func compareDocumentCandidates(left, right documentCandidate, forEvidence bool) int {
+	leftBand, rightBand := EvidenceBand(score(left.dot)), EvidenceBand(score(right.dot))
+	if leftBand != rightBand {
+		return compareDescending(leftBand, rightBand)
+	}
+	leftRole, rightRole := left.semanticRole.RetrievalPriority(), right.semanticRole.RetrievalPriority()
+	if forEvidence {
+		leftRole, rightRole = left.semanticRole.EvidencePriority(), right.semanticRole.EvidencePriority()
+	}
+	if leftRole != rightRole {
+		return compareDescending(leftRole, rightRole)
+	}
+	if left.dot != right.dot {
+		if left.dot > right.dot {
+			return -1
+		}
+		return 1
+	}
+	if left.weight != right.weight {
+		return compareDescending(left.weight, right.weight)
+	}
+	if left.entryID != right.entryID {
+		return strings.Compare(left.entryID, right.entryID)
+	}
+	if left.headword != right.headword {
+		return strings.Compare(left.headword, right.headword)
+	}
+	return compareAscending64(left.documentID, right.documentID)
+}
+
+func compareDescending(left, right int) int {
+	if left > right {
+		return -1
+	}
+	if left < right {
+		return 1
+	}
+	return 0
+}
+
+func compareAscending64(left, right int64) int {
+	if left < right {
+		return -1
+	}
+	if left > right {
+		return 1
+	}
+	return 0
 }
 
 func score(dot int32) float32 { return float32(dot) / (127 * 127) }

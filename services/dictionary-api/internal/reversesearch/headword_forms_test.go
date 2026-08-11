@@ -112,7 +112,7 @@ func TestImportAcceptsLegacyDocumentsWithoutHeadwordForms(t *testing.T) {
 		t.Fatal(err)
 	}
 	target := filepath.Join(root, "reverse.db")
-	legacy := `{"dictionaryId":"d","entryId":"1","scope":"sense","headword":"one","englishText":"one","chineseText":"一个定义","location":{"section":"definitions","path":["senses","0"]},"weight":1}` + "\n"
+	legacy := `{"dictionaryId":"d","entryId":"1","scope":"sense","headword":"one","englishText":"one","chineseText":"一个定义","semanticRole":"definition","location":{"section":"definitions","path":["senses","0"]},"weight":1}` + "\n"
 	if err := Import(context.Background(), config(dictionary, target, strings.NewReader(legacy), false)); err != nil {
 		t.Fatal(err)
 	}

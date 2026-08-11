@@ -27,7 +27,7 @@ func TestImportOpenAndSearch(t *testing.T) {
 	documents := []SearchDocument{
 		doc("1", ScopeSense, "silicon", "硅是一种化学元素"),
 		doc("1", ScopeExample, "silicon", "这块硅片用于测试"),
-		doc("1", ScopeUsage, "silicon", "硅常用于半导体材料"),
+		doc("1", ScopeResource, "silicon", "硅常用于半导体材料"),
 		doc("2", ScopePhrase, "silicon valley", "硅谷是科技产业中心"),
 		doc("3", ScopeSense, "computer", "计算机是一种电子设备"),
 	}
@@ -87,6 +87,16 @@ func TestImporterValidationAndAtomicReplace(t *testing.T) {
 	}
 	if err := Import(context.Background(), config(dictionary, target, strings.NewReader(`{"dictionaryId":"d","entryId":"1","scope":"bad","headword":"x","englishText":"x","chineseText":"中文","location":{"section":"definitions"},"weight":0}`+"\n"), true)); err == nil {
 		t.Fatal("unknown scope was accepted")
+	}
+	missingRole := doc("sense", ScopeSense, "sense", "词义")
+	missingRole.SemanticRole = ""
+	if err := Import(context.Background(), config(dictionary, target, strings.NewReader(ndjson(t, []SearchDocument{missingRole})), true)); err == nil {
+		t.Fatal("document without a semantic role was accepted")
+	}
+	misplacedResourceCategory := doc("sense", ScopeSense, "sense", "词义")
+	misplacedResourceCategory.ResourceCategory = ResourceGrammar
+	if err := Import(context.Background(), config(dictionary, target, strings.NewReader(ndjson(t, []SearchDocument{misplacedResourceCategory})), true)); err == nil {
+		t.Fatal("resource category on a non-resource document was accepted")
 	}
 	tooLong := strings.Repeat("a", maxLineBytes+1)
 	if err := Import(context.Background(), config(dictionary, target, strings.NewReader(tooLong), true)); err == nil {
@@ -492,7 +502,7 @@ func TestScopeFilterCanonicalizesAndSearchPagesRemainScoped(t *testing.T) {
 		doc("1", ScopeSense, "sense", "共同范围"),
 		doc("2", ScopePhrase, "phrase", "共同范围"),
 		doc("3", ScopeForm, "form", "共同范围"),
-		doc("4", ScopeUsage, "usage", "共同范围"),
+		doc("4", ScopeResource, "usage", "共同范围"),
 		doc("5", ScopeExample, "example", "共同范围"),
 	}, false)
 	store, err := Open(target, digest(t, dictionary))
@@ -660,7 +670,7 @@ func TestMatchAndScopeTiersCannotBeOverriddenByWeights(t *testing.T) {
 		doc("2", ScopeSense, "lexical", "词汇的"),
 		doc("3", ScopeSense, "language", "语言中的词汇"),
 		doc("4", ScopeSense, "post", "词汇职位"),
-		doc("5", ScopeUsage, "usage", "词汇"),
+		doc("5", ScopeResource, "usage", "词汇"),
 	}
 	documents[0].Weight = -1_000_000
 	documents[1].Weight = -1_000_000
@@ -750,10 +760,73 @@ func TestMatchQualityStillOutranksResultScope(t *testing.T) {
 }
 
 func TestPartialCandidateRankingUsesTextRelevanceBeforeScope(t *testing.T) {
-	incidentalSense := candidate{matchTier: 1, resultPriority: 3, score: 100}
-	closerPhrase := candidate{matchTier: 1, resultPriority: 2, score: 120}
+	incidentalSense := candidate{matchTier: 1, resultPriority: 4, rolePriority: 3, score: 100}
+	closerPhrase := candidate{matchTier: 1, resultPriority: 3, rolePriority: 3, score: 120}
 	if compareCandidateRelevance(closerPhrase, incidentalSense) <= 0 {
 		t.Fatal("partial result scope overrode the stronger text match")
+	}
+}
+
+func TestDistributedHighCoverageMatchIsStrongEnoughForHybridProtection(t *testing.T) {
+	root := t.TempDir()
+	dictionary := filepath.Join(root, "dictionary.db")
+	if err := os.WriteFile(dictionary, []byte("primary"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "reverse.db")
+	importSidecar(t, dictionary, target, []SearchDocument{
+		doc("dare", ScopeSense, "dare", "用于否定式，后接不带 to 的动词不定式"),
+	}, false)
+	store, err := Open(target, digest(t, dictionary))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	got, err := store.Search(context.Background(), "后接不定式", allOptions(10))
+	if err != nil || len(got) != 1 || len(got[0].Matches) != 1 {
+		t.Fatalf("distributed lexical match = %#v, %v", got, err)
+	}
+	if got[0].Matches[0].Relevance.Tier != 2 {
+		t.Fatalf("distributed lexical match was left unprotected: %#v", got[0].Matches[0].Relevance)
+	}
+}
+
+func TestPhraseLevelNegationRejectsAnOppositeHighCoverageMatch(t *testing.T) {
+	root := t.TempDir()
+	dictionary := filepath.Join(root, "dictionary.db")
+	if err := os.WriteFile(dictionary, []byte("primary"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "reverse.db")
+	importSidecar(t, dictionary, target, []SearchDocument{
+		doc("unforeseeable", ScopeSense, "unforeseeable", "难以预测"),
+	}, false)
+	store, err := Open(target, digest(t, dictionary))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	got, err := store.Search(context.Background(), "可以预测", allOptions(10))
+	if err != nil || len(got) != 0 {
+		t.Fatalf("opposite-polarity result survived: %#v, %v", got, err)
+	}
+	if hasNegation([]rune("困难预测")) {
+		t.Fatal("a non-negative use of 难 was treated as negation")
+	}
+}
+
+func TestSemanticRoleBreaksEqualRelevanceWithoutOverridingTextQuality(t *testing.T) {
+	direct := candidate{matchTier: 2, candidatePoolTier: 2, resultPriority: 2, rolePriority: 3, score: 100}
+	display := candidate{matchTier: 2, candidatePoolTier: 2, resultPriority: 2, rolePriority: 0, score: 1000}
+	if compareCandidateRelevance(direct, display) <= 0 {
+		t.Fatal("a display heading outranked a direct resource answer at the same lexical tier")
+	}
+	partialDirect := candidate{matchTier: 1, candidatePoolTier: 2, resultPriority: 2, rolePriority: 3, score: 100}
+	partialContext := candidate{matchTier: 1, candidatePoolTier: 2, resultPriority: 2, rolePriority: 1, score: 120}
+	if compareCandidateRelevance(partialContext, partialDirect) <= 0 {
+		t.Fatal("semantic role overrode a stronger partial text match")
 	}
 }
 
@@ -822,7 +895,7 @@ func BenchmarkScopedSearch(b *testing.B) {
 	}
 	target := filepath.Join(root, "reverse.db")
 	documents := make([]SearchDocument, 0, 256)
-	scopes := []Scope{ScopeSense, ScopePhrase, ScopeForm, ScopeUsage, ScopeExample}
+	scopes := []Scope{ScopeSense, ScopePhrase, ScopeForm, ScopeResource, ScopeExample}
 	for index := 0; index < 256; index++ {
 		documents = append(documents, doc(fmt.Sprintf("%03d", index), scopes[index%len(scopes)], fmt.Sprintf("entry-%03d", index), "共同基准"))
 	}
@@ -842,8 +915,20 @@ func BenchmarkScopedSearch(b *testing.B) {
 }
 
 func doc(entryID string, scope Scope, headword, chinese string) SearchDocument {
-	weights := map[Scope]int{ScopeSense: 100, ScopePhrase: 100, ScopeUsage: 60, ScopeForm: 60, ScopeExample: 30}
-	return SearchDocument{DictionaryID: "oalecd", EntryID: entryID, Scope: scope, Headword: headword, EnglishText: headword + " English", ChineseText: chinese, Location: Location{Section: SectionDefinitions, Path: []string{"sense", entryID}}, Weight: weights[scope]}
+	weights := map[Scope]int{ScopeSense: 100, ScopePhrase: 100, ScopeResource: 60, ScopeForm: 60, ScopeExample: 30}
+	document := SearchDocument{DictionaryID: "oalecd", EntryID: entryID, Scope: scope, Headword: headword, EnglishText: headword + " English", ChineseText: chinese, SemanticRole: SemanticRoleDefinition, Location: Location{Section: SectionDefinitions, Path: []string{"sense", entryID}}, Weight: weights[scope]}
+	if scope == ScopePhrase {
+		document.CandidateText = headword
+	}
+	if scope == ScopeExample {
+		document.SemanticRole = SemanticRoleExample
+	}
+	if scope == ScopeResource {
+		document.SemanticRole = SemanticRoleContext
+		document.Origin = OriginGrammarUsageBox
+		document.ResourceCategory = ResourceOther
+	}
+	return document
 }
 
 func allOptions(limit int) Options {

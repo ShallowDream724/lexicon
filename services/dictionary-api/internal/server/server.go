@@ -18,11 +18,13 @@ import (
 	"unicode/utf8"
 
 	"dictionary-api/internal/audio"
+	"dictionary-api/internal/englishsearch"
 	"dictionary-api/internal/etymology"
 	"dictionary-api/internal/media"
 	"dictionary-api/internal/payload"
 	"dictionary-api/internal/reversesearch"
 	"dictionary-api/internal/runtimeentry"
+	"dictionary-api/internal/searchtext"
 	"dictionary-api/internal/semanticsearch"
 	"dictionary-api/internal/termkey"
 	"dictionary-api/internal/typo"
@@ -158,23 +160,33 @@ type suggestion struct {
 	Matches            []searchMatch `json:"matches,omitempty"`
 	MatchesTotal       int           `json:"matchesTotal,omitempty"`
 	rank               int
+	headwordAnchor     bool
+	headwordAnchorRank int
 }
 
 type searchMatch struct {
-	Scope          reversesearch.Scope    `json:"scope"`
-	EnglishText    string                 `json:"englishText"`
-	CandidateText  string                 `json:"candidateText,omitempty"`
-	DefinitionText string                 `json:"definitionText,omitempty"`
-	ChineseText    string                 `json:"chineseText"`
-	Part           string                 `json:"part,omitempty"`
-	Location       reversesearch.Location `json:"location"`
+	Scope            reversesearch.Scope            `json:"scope"`
+	EnglishText      string                         `json:"englishText"`
+	CandidateText    string                         `json:"candidateText,omitempty"`
+	DefinitionText   string                         `json:"definitionText,omitempty"`
+	ChineseText      string                         `json:"chineseText"`
+	Part             string                         `json:"part,omitempty"`
+	Location         reversesearch.Location         `json:"location"`
+	SemanticRole     reversesearch.SemanticRole     `json:"semanticRole,omitempty"`
+	ResourceCategory reversesearch.ResourceCategory `json:"resourceCategory,omitempty"`
+	MatchKind        englishsearch.MatchKind        `json:"matchKind,omitempty"`
+	Relation         string                         `json:"relation,omitempty"`
 
-	hasLexical       bool
-	lexicalPosition  int
-	lexicalRelevance reversesearch.Relevance
-	hasSemantic      bool
-	semanticPosition int
-	semanticScore    float32
+	hasLexical           bool
+	lexicalPosition      int
+	lexicalRelevance     reversesearch.Relevance
+	lexicalSemanticRole  reversesearch.SemanticRole
+	hasSemantic          bool
+	semanticPosition     int
+	semanticScore        float32
+	semanticSemanticRole semanticsearch.SemanticRole
+	querySignificantHits int
+	queryAllHits         int
 }
 
 func (s *Service) search(w http.ResponseWriter, r *http.Request) {
@@ -182,6 +194,11 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) {
 	mode, err := parseSearchMode(parameters.Get("mode"))
 	if err != nil {
 		s.writeError(w, r, http.StatusBadRequest, "invalid_mode", err.Error())
+		return
+	}
+	submitted, err := parseSubmitted(parameters["submitted"])
+	if err != nil {
+		s.writeError(w, r, http.StatusBadRequest, "invalid_submitted", err.Error())
 		return
 	}
 	query := strings.TrimSpace(parameters.Get("q"))
@@ -201,6 +218,13 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) {
 	}
 	scopeValues, hasScope := parameters["scope"]
 	if reversesearch.ContainsCJK(query) {
+		if hasScope && len(scopeValues) == 1 && scopeValues[0] == "" {
+			s.writeJSON(w, http.StatusOK, struct {
+				Query string       `json:"query"`
+				Items []suggestion `json:"items"`
+			}{Query: query, Items: []suggestion{}})
+			return
+		}
 		scopes := reversesearch.DefaultScopeFilter()
 		if hasScope {
 			var err error
@@ -227,7 +251,13 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) {
 		options := reversesearch.Options{Offset: offset, Limit: limit, Scopes: scopes}
 		var page reverseSuggestionPage
 		if mode == searchModeHybrid && semanticEligible(query) {
-			page, err = s.queryHybridReverseSuggestions(r.Context(), query, options, semanticScopeFilter(scopeValues, hasScope))
+			semanticScopes, conversionErr := semanticScopeFilter(scopes)
+			if conversionErr != nil {
+				s.logger.Error("validated reverse-search scopes could not be mapped to semantic search", "error", conversionErr)
+				s.writeError(w, r, http.StatusInternalServerError, "search_failed", "search could not be completed")
+				return
+			}
+			page, err = s.queryHybridReverseSuggestions(r.Context(), query, options, semanticScopes)
 		} else {
 			page, err = s.queryReverseSuggestions(r.Context(), query, options)
 		}
@@ -263,6 +293,23 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var groups []englishSearchGroup
+	var correction *englishSpellingSuggestion
+	if submitted {
+		groups, correction, err = s.queryEnglishPlan(r.Context(), query, true)
+		if err != nil {
+			if isEnglishPlannerError(err) {
+				s.writeError(w, r, http.StatusBadRequest, "invalid_query", err.Error())
+				return
+			}
+			s.logger.Error("English dictionary search planning failed", "error", err)
+			s.writeError(w, r, http.StatusInternalServerError, "search_failed", "search could not be completed")
+			return
+		}
+	}
+
+	// Keep the established type-ahead surface intact while clients adopt groups.
+	// The group contract is authoritative for submitted multi-word navigation.
 	canonical := termkey.Dictionary(query)
 	results, err := s.queryPrefixSuggestions(r.Context(), canonical, maxLimit)
 	if err != nil {
@@ -270,7 +317,8 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, http.StatusInternalServerError, "search_failed", "search could not be completed")
 		return
 	}
-	if len(results) == 0 && typo.Eligible(canonical) {
+	noExactGroup := len(groups) == 0 || len(groups[0].Items) == 0
+	if len(results) == 0 && correction == nil && noExactGroup && typo.Eligible(canonical) {
 		results, err = s.queryTypoSuggestions(r.Context(), canonical, maxLimit)
 		if err != nil {
 			s.logger.Error("dictionary typo search failed", "error", err)
@@ -279,6 +327,14 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) {
 		}
 		for index := range results {
 			results[index].rank += 2
+		}
+		if submitted && len(results) > 0 {
+			suggestedTerm := termkey.Dictionary(results[0].Headword)
+			if suggestedTerm != "" && suggestedTerm != canonical {
+				correction = &englishSpellingSuggestion{
+					Input: canonical, Suggestion: suggestedTerm, Items: append([]suggestion(nil), results...),
+				}
+			}
 		}
 	}
 	if err := s.mergeEtymologySuggestions(r.Context(), query, &results); err != nil {
@@ -290,9 +346,11 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request) {
 		results = results[:limit]
 	}
 	s.writeJSON(w, http.StatusOK, struct {
-		Query string       `json:"query"`
-		Items []suggestion `json:"items"`
-	}{Query: query, Items: results})
+		Query      string                     `json:"query"`
+		Items      []suggestion               `json:"items"`
+		Groups     []englishSearchGroup       `json:"groups,omitempty"`
+		Correction *englishSpellingSuggestion `json:"correction,omitempty"`
+	}{Query: query, Items: results, Groups: groups, Correction: correction})
 }
 
 type reverseSuggestionPage struct {
@@ -327,6 +385,16 @@ func parseSearchMode(value string) (searchMode, error) {
 	}
 }
 
+func parseSubmitted(values []string) (bool, error) {
+	if len(values) == 0 || (len(values) == 1 && values[0] == "false") {
+		return false, nil
+	}
+	if len(values) == 1 && values[0] == "true" {
+		return true, nil
+	}
+	return false, errors.New("submitted must be provided once as true or false")
+}
+
 func semanticEligible(query string) bool {
 	if utf8.RuneCountInString(query) > reversesearch.MaxQueryRunes {
 		return false
@@ -340,17 +408,13 @@ func semanticEligible(query string) bool {
 	return count >= 2
 }
 
-func semanticScopeFilter(scopeValues []string, hasScope bool) semanticsearch.ScopeFilter {
-	if !hasScope {
-		return semanticsearch.DefaultScopeFilter()
-	}
-	values := strings.Split(scopeValues[0], ",")
-	scopes := make([]semanticsearch.Scope, 0, len(values))
+func semanticScopeFilter(scopes reversesearch.ScopeFilter) (semanticsearch.ScopeFilter, error) {
+	values := strings.Split(scopes.String(), ",")
+	semanticScopes := make([]semanticsearch.Scope, 0, len(values))
 	for _, value := range values {
-		scopes = append(scopes, semanticsearch.Scope(value))
+		semanticScopes = append(semanticScopes, semanticsearch.Scope(value))
 	}
-	filter, _ := semanticsearch.NewScopeFilter(scopes...)
-	return filter
+	return semanticsearch.NewScopeFilter(semanticScopes...)
 }
 
 func (s *Service) queryReverseSuggestions(ctx context.Context, query string, options reversesearch.Options) (reverseSuggestionPage, error) {
@@ -384,13 +448,17 @@ func (s *Service) reverseSuggestionsForGroups(ctx context.Context, groups []reve
 			continue
 		}
 		item.rank = index
+		item.headwordAnchor = group.HeadwordAnchor
+		item.headwordAnchorRank = group.HeadwordAnchorRank
 		item.Matches = make([]searchMatch, 0, len(group.Matches))
 		for matchIndex, match := range group.Matches {
 			item.Matches = append(item.Matches, searchMatch{
 				Scope: match.Scope, EnglishText: match.English,
 				CandidateText: match.CandidateText, DefinitionText: match.DefinitionText,
 				ChineseText: match.Chinese, Part: match.Location.Part, Location: match.Location,
+				SemanticRole: match.SemanticRole, ResourceCategory: match.ResourceCategory,
 				hasLexical: true, lexicalPosition: matchIndex, lexicalRelevance: match.Relevance,
+				lexicalSemanticRole: match.SemanticRole,
 			})
 		}
 		item.MatchesTotal = len(item.Matches)
@@ -483,7 +551,7 @@ func (s *Service) queryHybridReverseSuggestions(ctx context.Context, query strin
 		page.semanticStatus = semanticSearchDegraded
 		return page, nil
 	}
-	page := paginateReverseSuggestions(mergeHybridSuggestions(lexical, semantic), options.Offset, options.Limit)
+	page := paginateReverseSuggestions(mergeHybridSuggestions(searchtext.NewQueryProfile(query), lexical, semantic), options.Offset, options.Limit)
 	page.semanticStatus = semanticSearchApplied
 	return page, nil
 }
@@ -535,11 +603,14 @@ func (s *Service) semanticSuggestionsForGroups(ctx context.Context, groups []sem
 				Scope: reversesearch.Scope(match.Scope), EnglishText: match.English,
 				CandidateText: match.CandidateText, DefinitionText: match.DefinitionText,
 				ChineseText: match.Chinese, Part: match.Location.Part,
+				SemanticRole:     reversesearch.SemanticRole(match.SemanticRole),
+				ResourceCategory: reversesearch.ResourceCategory(match.ResourceCategory),
 				Location: reversesearch.Location{
 					Section: reversesearch.Section(match.Location.Section), Part: match.Location.Part,
 					OwnerID: match.Location.OwnerID, Path: append([]string(nil), match.Location.Path...),
 				},
 				hasSemantic: true, semanticPosition: matchIndex, semanticScore: match.Score,
+				semanticSemanticRole: match.SemanticRole,
 			})
 		}
 		item.MatchesTotal = len(item.Matches)
@@ -799,12 +870,12 @@ func (s *Service) mergeEtymologySuggestions(ctx context.Context, query string, r
 	if err != nil {
 		return err
 	}
+	duplicates, err := s.dictionaryTermsExist(ctx, etymologyResults)
+	if err != nil {
+		return err
+	}
 	for _, result := range etymologyResults {
-		duplicate, err := s.dictionaryTermExists(ctx, result.Term)
-		if err != nil {
-			return err
-		}
-		if duplicate {
+		if duplicates[result.Term] {
 			continue
 		}
 		rank := 1
@@ -817,6 +888,59 @@ func (s *Service) mergeEtymologySuggestions(ctx context.Context, query string, r
 	}
 	sortSuggestions(*results)
 	return nil
+}
+
+// dictionaryTermsExist checks all etymology candidates in one primary-database
+// query. Etymology prefix search is bounded, but this keeps a result window
+// from degenerating into one SQL round trip per candidate.
+func (s *Service) dictionaryTermsExist(ctx context.Context, candidates []etymology.SearchResult) (map[string]bool, error) {
+	exists := make(map[string]bool, len(candidates))
+	if len(candidates) == 0 {
+		return exists, nil
+	}
+	type pair struct{ candidate, term string }
+	pairs := make([]pair, 0, len(candidates)*2)
+	seen := make(map[pair]struct{}, len(candidates)*2)
+	for _, candidate := range candidates {
+		for _, term := range termkey.DictionaryQueryVariants(candidate.Term) {
+			value := pair{candidate: candidate.Term, term: term}
+			if _, duplicate := seen[value]; duplicate {
+				continue
+			}
+			seen[value] = struct{}{}
+			pairs = append(pairs, value)
+		}
+	}
+	if len(pairs) == 0 {
+		return exists, nil
+	}
+	var statement strings.Builder
+	statement.WriteString("WITH candidates(candidate, term) AS (VALUES ")
+	arguments := make([]any, 0, len(pairs)*2)
+	for index, value := range pairs {
+		if index > 0 {
+			statement.WriteByte(',')
+		}
+		statement.WriteString("(?, ?)")
+		arguments = append(arguments, value.candidate, value.term)
+	}
+	statement.WriteString(`)
+		SELECT DISTINCT c.candidate
+		FROM candidates c
+		JOIN entry_terms t ON t.term = c.term`)
+	rows, err := s.db.QueryContext(ctx, statement.String(), arguments...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var candidate string
+		if err := rows.Scan(&candidate); err != nil {
+			return nil, err
+		}
+		exists[candidate] = true
+	}
+	return exists, rows.Err()
 }
 
 func sortSuggestions(items []suggestion) {
@@ -847,21 +971,6 @@ func sortSuggestions(items []suggestion) {
 		}
 		return leftItem.Kind < rightItem.Kind
 	})
-}
-
-func (s *Service) dictionaryTermExists(ctx context.Context, term string) (bool, error) {
-	for _, variant := range termkey.DictionaryQueryVariants(term) {
-		var found int
-		err := s.db.QueryRowContext(ctx, `SELECT 1 FROM entry_terms WHERE term = ? LIMIT 1`, variant).Scan(&found)
-		if errors.Is(err, sql.ErrNoRows) {
-			continue
-		}
-		if err != nil {
-			return false, err
-		}
-		return true, nil
-	}
-	return false, nil
 }
 
 func (s *Service) entry(w http.ResponseWriter, r *http.Request) {
