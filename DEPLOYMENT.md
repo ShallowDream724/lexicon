@@ -281,6 +281,16 @@ docker compose \
   up -d --build
 ```
 
+When the pulled `runtime-assets.json` changes, refresh the pinned assets before rebuilding:
+
+```sh
+npm run data:download -- --replace
+npm run data:verify
+```
+
+The downloader keeps matching files, writes each changed asset to a temporary file, verifies
+its size and SHA-256, and only then replaces the previous file.
+
 For an existing-reverse-proxy installation whose private Compose is the parent of its
 Git checkout, update the production tracking branch inside the checkout and rebuild from
 the private deployment directory:
@@ -289,6 +299,8 @@ the private deployment directory:
 cd /path/to/deployment/app
 git switch server
 git pull --ff-only origin server
+LEXICON_DATA_DIR=../data npm run data:download -- --replace
+LEXICON_DATA_DIR=../data npm run data:verify
 cd ..
 docker compose up -d --build
 ```
