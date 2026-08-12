@@ -34,7 +34,7 @@ export const DICTIONARY_SEARCH_SCOPE_CATEGORY_LABELS: Record<
 > = {
   meaning: "词义",
   phrase: "短语",
-  example: "例句",
+  example: "例句与搭配",
   resource: "扩展资料",
 };
 
@@ -166,6 +166,8 @@ export function dictionarySearchMatchSourceLabel(
   resourceCategory?: string,
   matchKind?: string,
   semanticRole?: "definition" | "qualifier" | "guidance" | "expression" | "example" | "heading" | "context",
+  evidenceText?: string,
+  evidenceTranslation?: string,
 ): string {
   if (matchKind === "inflection" || matchKind === "variant") {
     return "词形";
@@ -184,9 +186,78 @@ export function dictionarySearchMatchSourceLabel(
     return "短语";
   }
   if (source === "example") {
-    return "例句";
+    return dictionarySearchExampleEvidenceLabel(evidenceText ?? "", evidenceTranslation ?? "");
   }
   return resourceCategory && resourceCategory in resourceCategoryLabels
     ? resourceCategoryLabels[resourceCategory as DictionarySearchResourceCategory]
     : "扩展资料";
+}
+
+export function dictionarySearchExampleEvidenceLabel(
+  text: string,
+  translation: string,
+): "例句" | "搭配" | "例证" {
+  const normalized = normalizeExampleEvidenceTypography(text);
+  const firstSemanticCharacter = normalized.match(/[\p{L}\p{N}]/u)?.[0];
+  const sentenceStart = Boolean(
+    firstSemanticCharacter && /[\p{Lu}\p{N}]/u.test(firstSemanticCharacter),
+  );
+  const sentenceEnd = /[.!?…]["'’”»\)\]]*$/u.test(normalized);
+  const translationEnd = hasTranslatedSentenceEnd(translation);
+  if (sentenceStart && sentenceEnd && translationEnd) {
+    return "例句";
+  }
+  if (!(sentenceStart && sentenceEnd) && !translationEnd) {
+    return "搭配";
+  }
+  return "例证";
+}
+
+function normalizeExampleEvidenceTypography(text: string): string {
+  let value = text.normalize("NFKC").trim();
+  while (value.startsWith("(")) {
+    const closing = matchingParenthesis(value, 0);
+    if (closing < 0 || !/\s/u.test(value[closing + 1] ?? "")) {
+      break;
+    }
+    value = value.slice(closing + 1).trimStart();
+  }
+  while (value.endsWith(")")) {
+    const opening = matchingOpeningParenthesis(value, value.length - 1);
+    if (opening < 0 || !value.slice(opening + 1, -1).trimStart().startsWith("=")) {
+      break;
+    }
+    value = value.slice(0, opening).trimEnd();
+  }
+  return value;
+}
+
+function matchingParenthesis(value: string, opening: number): number {
+  let depth = 0;
+  for (let index = opening; index < value.length; index += 1) {
+    if (value[index] === "(") depth += 1;
+    if (value[index] === ")" && --depth === 0) return index;
+  }
+  return -1;
+}
+
+function matchingOpeningParenthesis(value: string, closing: number): number {
+  let depth = 0;
+  for (let index = closing; index >= 0; index -= 1) {
+    if (value[index] === ")") depth += 1;
+    if (value[index] === "(" && --depth === 0) return index;
+  }
+  return -1;
+}
+
+function hasTranslatedSentenceEnd(text: string): boolean {
+  let value = text.normalize("NFKC").trim();
+  while (value.endsWith(")")) {
+    const opening = matchingOpeningParenthesis(value, value.length - 1);
+    if (opening < 0) break;
+    const prefix = value.slice(0, opening).trimEnd();
+    if (!/[。！？!?…]["'’”」』】\]]*$/u.test(prefix)) break;
+    value = prefix;
+  }
+  return /[。！？!?…]["'’”」』】\)\]]*$/u.test(value);
 }

@@ -230,6 +230,8 @@ export function SearchResults({
                           match.resourceCategory,
                           match.matchKind,
                           match.semanticRole,
+                          match.candidateText || match.englishText,
+                          match.chineseText,
                         )}
                       </span>
                       {match.part ? (

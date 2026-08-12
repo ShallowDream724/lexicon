@@ -63,9 +63,48 @@ test("renders scope controls only for Chinese reverse search", () => {
 
   assert.match(chinese, /词义/);
   assert.match(chinese, /短语/);
-  assert.match(chinese, /例句/);
+  assert.match(chinese, /例句与搭配/);
   assert.match(chinese, /扩展资料/);
   assert.doesNotMatch(english, /扩展资料/);
+});
+
+test("distinguishes sentence and collocation labels within the shared example scope", () => {
+  const html = renderToStaticMarkup(createElement(SearchResults, {
+    query: "揍",
+    items: [{
+      kind: "dictionary",
+      id: "belt",
+      headword: "belt",
+      partsOfSpeech: ["verb"],
+      translationPreview: "猛击",
+      matches: [
+        {
+          scope: "example",
+          englishText: "I’ll belt you if you do that again.",
+          chineseText: "你要是再这样，我就揍你。",
+          location: { section: "definitions", path: ["senses", "0", "examples", "0"] },
+        },
+        {
+          scope: "example",
+          englishText: "to give sb a beating",
+          chineseText: "把某人揍一顿",
+          location: { section: "definitions", path: ["senses", "1", "examples", "0"] },
+        },
+        {
+          scope: "example",
+          englishText: "Fifth Ave.",
+          chineseText: "第五大街",
+          location: { section: "definitions", path: ["senses", "2", "examples", "0"] },
+        },
+      ],
+    }],
+    pending: false,
+    onSelect: () => undefined,
+  }));
+
+  assert.match(html, />例句<\/span>/);
+  assert.match(html, />搭配<\/span>/);
+  assert.match(html, />例证<\/span>/);
 });
 
 test("labels sense-owned guidance precisely without creating another filter", () => {
