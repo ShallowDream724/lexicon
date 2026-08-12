@@ -16,7 +16,28 @@ test("encodes canonical paths without ambiguous separators", () => {
   );
 });
 
-test("matches a resource location to any indexed descendant", () => {
+test("matches a resource path to its indexed descendants regardless of node owner", () => {
+  assert.equal(searchLocationContains({
+    section: "grammar-usage",
+    ownerId: "box",
+    path: ["grammarUsageBoxes", "0"],
+  }, {
+    section: "grammar-usage",
+    ownerId: "example",
+    path: ["grammarUsageBoxes", "0", "blocks", "2", "value"],
+  }), true);
+});
+
+test("uses the owner only to disambiguate identical paths", () => {
+  assert.equal(searchLocationContains({
+    section: "grammar-usage",
+    ownerId: "box",
+    path: ["grammarUsageBoxes", "0"],
+  }, {
+    section: "grammar-usage",
+    ownerId: "example",
+    path: ["grammarUsageBoxes", "0"],
+  }), false);
   assert.equal(searchLocationContains({
     section: "grammar-usage",
     ownerId: "box",
@@ -24,8 +45,11 @@ test("matches a resource location to any indexed descendant", () => {
   }, {
     section: "grammar-usage",
     ownerId: "box",
-    path: ["grammarUsageBoxes", "0", "blocks", "2", "value"],
+    path: ["grammarUsageBoxes", "0"],
   }), true);
+});
+
+test("does not match unrelated sections or sibling paths", () => {
   assert.equal(searchLocationContains({
     section: "definitions",
     path: ["senses", "0"],
@@ -35,11 +59,18 @@ test("matches a resource location to any indexed descendant", () => {
   }), false);
   assert.equal(searchLocationContains({
     section: "grammar-usage",
-    ownerId: "other-box",
+    ownerId: "box",
     path: ["grammarUsageBoxes", "0"],
   }, {
     section: "grammar-usage",
-    ownerId: "box",
+    ownerId: "example",
+    path: ["grammarUsageBoxes", "1", "blocks", "2", "value"],
+  }), false);
+  assert.equal(searchLocationContains({
+    section: "definitions",
+    path: ["grammarUsageBoxes", "0"],
+  }, {
+    section: "grammar-usage",
     path: ["grammarUsageBoxes", "0", "blocks", "2", "value"],
   }), false);
 });

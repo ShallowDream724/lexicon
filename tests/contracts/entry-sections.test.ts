@@ -4,6 +4,7 @@ import test from "node:test";
 import type {
   CanonicalEntry,
   CanonicalPhrase,
+  CanonicalSense,
 } from "../../packages/dictionary-schema/src/index";
 import {
   buildEntryNavigation,
@@ -23,6 +24,21 @@ const phrase = (id: string, display: string): CanonicalPhrase => ({
   senses: [],
   trailingCrossReferences: [],
   raw: {},
+});
+
+const sense = (id: string, overrides: Partial<CanonicalSense> = {}): CanonicalSense => ({
+  id,
+  order: 0,
+  labels: [],
+  examples: [],
+  usage: [],
+  usageSegments: [],
+  crossReferences: [],
+  illustrations: [],
+  grammarUsageBoxes: [],
+  subsenses: [],
+  raw: {},
+  ...overrides,
 });
 
 test("uses compact dictionary abbreviations for sticky part-of-speech tabs", () => {
@@ -150,6 +166,31 @@ test("projects navigation and auxiliary resources within the active part of spee
   ]);
   assert.deepEqual(verbProjection.illustrations, []);
   assert.deepEqual(verbProjection.grammarUsageBoxes, []);
+});
+
+test("keeps the most specifically owned copy of a repeated resource", () => {
+  const broad = {
+    id: "shared-synonyms",
+    type: "SYNONYMS 同义词辨析",
+    blocks: [],
+    body: [],
+    raw: { placement: "subentry" },
+  };
+  const specific = {
+    ...broad,
+    raw: { placement: "sense" },
+  };
+  const noun = entry({
+    id: "action-noun",
+    partsOfSpeech: [{ text: "noun", tokens: [], raw: "noun" }],
+    grammarUsageBoxes: [broad],
+    senses: [sense("action-sense", { grammarUsageBoxes: [specific] })],
+  });
+
+  const projection = projectEntryPart(entry({ subentries: [noun] }), 0);
+
+  assert.equal(projection.grammarUsageBoxes.length, 1);
+  assert.equal(projection.grammarUsageBoxes[0], specific);
 });
 
 test("projects part-scoped headword metadata and variants", () => {

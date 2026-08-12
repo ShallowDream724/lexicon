@@ -48,14 +48,16 @@ export function searchLocationContains(
   if (!container || container.section !== target.section) {
     return false;
   }
-  if (container.ownerId && target.ownerId && container.ownerId !== target.ownerId) {
-    return false;
+
+  const pathsMatch = container.path.length === target.path.length &&
+    container.path.every((segment, index) => segment === target.path[index]);
+  if (pathsMatch) {
+    return !container.ownerId || !target.ownerId || container.ownerId === target.ownerId;
   }
-  const containerPath = searchLocationPathKey(container.path);
-  const targetPath = searchLocationPathKey(target.path);
-  return containerPath === targetPath || Boolean(
-    containerPath && targetPath.startsWith(`${containerPath}/`),
-  );
+
+  return container.path.length > 0 &&
+    container.path.length < target.path.length &&
+    container.path.every((segment, index) => segment === target.path[index]);
 }
 
 function elementsWithAttribute(root: ParentNode, attribute: string): HTMLElement[] {

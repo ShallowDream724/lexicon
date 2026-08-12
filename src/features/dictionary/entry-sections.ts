@@ -177,6 +177,39 @@ function dedupeBy<T>(items: T[], keyFor: (item: T) => string | undefined): T[] {
   });
 }
 
+type ScopedResource<T> = {
+  value: T;
+  specificity: number;
+};
+
+function dedupeResourcesByMostSpecific<T>(
+  items: ScopedResource<T>[],
+  keyFor: (item: T) => string | undefined,
+): T[] {
+  const result: T[] = [];
+  const selected = new Map<string, { index: number; specificity: number }>();
+
+  for (const item of items) {
+    const key = keyFor(item.value);
+    if (!key) {
+      result.push(item.value);
+      continue;
+    }
+    const current = selected.get(key);
+    if (!current) {
+      selected.set(key, { index: result.length, specificity: item.specificity });
+      result.push(item.value);
+      continue;
+    }
+    if (item.specificity > current.specificity) {
+      result[current.index] = item.value;
+      selected.set(key, { ...current, specificity: item.specificity });
+    }
+  }
+
+  return result;
+}
+
 function collectScopedForms(
   entry: CanonicalEntry,
   field: "derivedForms" | "inflectedForms" | "variants",
@@ -300,20 +333,26 @@ function projectHeaderLabels(
   ]);
 }
 
-function collectSenseResources(senses: CanonicalSense[]): {
-  illustrations: CanonicalIllustration[];
-  boxes: CanonicalGrammarUsageBox[];
+function collectSenseResources(senses: CanonicalSense[], specificity: number): {
+  illustrations: ScopedResource<CanonicalIllustration>[];
+  boxes: ScopedResource<CanonicalGrammarUsageBox>[];
 } {
   return senses.reduce(
     (result, sense) => {
-      const nested = collectSenseResources(sense.subsenses);
-      result.illustrations.push(...sense.illustrations, ...nested.illustrations);
-      result.boxes.push(...sense.grammarUsageBoxes, ...nested.boxes);
+      const nested = collectSenseResources(sense.subsenses, specificity + 1);
+      result.illustrations.push(
+        ...sense.illustrations.map((value) => ({ value, specificity })),
+        ...nested.illustrations,
+      );
+      result.boxes.push(
+        ...sense.grammarUsageBoxes.map((value) => ({ value, specificity })),
+        ...nested.boxes,
+      );
       return result;
     },
     {
-      illustrations: [] as CanonicalIllustration[],
-      boxes: [] as CanonicalGrammarUsageBox[],
+      illustrations: [] as ScopedResource<CanonicalIllustration>[],
+      boxes: [] as ScopedResource<CanonicalGrammarUsageBox>[],
     },
   );
 }
@@ -322,36 +361,37 @@ function collectScopedResources(
   entry: CanonicalEntry,
   selectedPart: string | undefined,
   includeUnscoped: boolean,
+  specificity = 0,
 ): {
-  illustrations: CanonicalIllustration[];
-  boxes: CanonicalGrammarUsageBox[];
+  illustrations: ScopedResource<CanonicalIllustration>[];
+  boxes: ScopedResource<CanonicalGrammarUsageBox>[];
 } {
   const senses = visibleSensesForEntry(entry, selectedPart, includeUnscoped);
-  const senseResources = collectSenseResources(senses);
+  const senseResources = collectSenseResources(senses, specificity + 1);
   const nestedResources = entry.subentries.reduce(
     (result, subentry) => {
       if (selectedPart && !subtreeMatchesPart(subentry, selectedPart)) {
         return result;
       }
-      const nested = collectScopedResources(subentry, selectedPart, false);
+      const nested = collectScopedResources(subentry, selectedPart, false, specificity + 1);
       result.illustrations.push(...nested.illustrations);
       result.boxes.push(...nested.boxes);
       return result;
     },
     {
-      illustrations: [] as CanonicalIllustration[],
-      boxes: [] as CanonicalGrammarUsageBox[],
+      illustrations: [] as ScopedResource<CanonicalIllustration>[],
+      boxes: [] as ScopedResource<CanonicalGrammarUsageBox>[],
     },
   );
 
   return {
     illustrations: [
-      ...entry.illustrations,
+      ...entry.illustrations.map((value) => ({ value, specificity })),
       ...senseResources.illustrations,
       ...nestedResources.illustrations,
     ],
     boxes: [
-      ...entry.grammarUsageBoxes,
+      ...entry.grammarUsageBoxes.map((value) => ({ value, specificity })),
       ...senseResources.boxes,
       ...nestedResources.boxes,
     ],
@@ -409,10 +449,10 @@ export function projectEntryPart(
   const variants = collectScopedForms(entry, "variants", selectedPart);
   const resources = collectScopedResources(entry, selectedPart, activeIndex === 0);
   const illustrations = dedupeBy(
-    resources.illustrations,
+    resources.illustrations.map((item) => item.value),
     (illustration) => illustration.key ?? illustration.text,
   );
-  const grammarUsageBoxes = dedupeBy(
+  const grammarUsageBoxes = dedupeResourcesByMostSpecific(
     resources.boxes,
     (box) => box.id ?? `${box.type ?? ""}:${box.title?.text ?? ""}`,
   );
